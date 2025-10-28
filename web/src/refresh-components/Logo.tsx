@@ -47,11 +47,6 @@ export default function Logo({ folded, className }: LogoProps) {
           {settings.enterpriseSettings?.application_name}
         </Text>
       </div>
-      {!NEXT_PUBLIC_DO_NOT_USE_TOGGLE_OFF_DANSWER_POWERED && (
-        <Text secondaryBody text03 className="ml-[33px]">
-          Powered by Onyx
-        </Text>
-      )}
     </div>
   ) : (
     <OnyxLogoTypeIcon size={88} className={className} />

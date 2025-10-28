@@ -389,11 +389,11 @@
   --background-neutral-dark-03: var(--grey-80);
 
   /* Background / Tint */
-  --background-tint-00: var(--grey-100);
-  --background-tint-01: var(--tint-95);
-  --background-tint-02: var(--tint-90);
-  --background-tint-03: var(--tint-85);
-  --background-tint-04: var(--tint-80);
+  --background-tint-00: #101010;
+  --background-tint-01: #101010;
+  --background-tint-02: #1a1a1a;
+  --background-tint-03: #242424;
+  --background-tint-04: #2e2e2e;
   --background-tint-inverted-04: var(--tint-20);
   --background-tint-inverted-03: var(--tint-10);
   --background-tint-inverted-02: var(--tint-05);
