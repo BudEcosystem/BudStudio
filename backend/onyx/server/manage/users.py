@@ -623,7 +623,7 @@ def verify_user_logged_in(
         # the key-value store
         if AUTH_TYPE == AuthType.DISABLED:
             store = get_kv_store()
-            return fetch_no_auth_user(store)
+            return fetch_no_auth_user(store, anonymous_user_enabled=False)
         if anonymous_user_enabled(tenant_id=tenant_id):
             store = get_kv_store()
             return fetch_no_auth_user(store, anonymous_user_enabled=True)

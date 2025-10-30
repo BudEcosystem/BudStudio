@@ -11,6 +11,10 @@ const PROTECTED_ROUTES = ["/chat", "/admin", "/assistants", "/connector"];
 // Public route prefixes (no authentication required)
 const PUBLIC_ROUTES = ["/auth", "/anonymous", "/_next", "/api"];
 
+// Cache for auth type check (to avoid fetching on every request)
+let authTypeCache: { authType: string; timestamp: number } | null = null;
+const AUTH_TYPE_CACHE_TTL = 60000; // 60 seconds
+
 // NOTE: have to have the "/:path*" here since NextJS doesn't allow any real JS to
 // be run before the config is defined e.g. if we try and do a .map it will complain
 export const config = {
@@ -48,6 +52,30 @@ const EE_ROUTES = [
   "/admin/billing",
 ];
 
+async function getAuthType(): Promise<string | null> {
+  // Check cache first
+  const now = Date.now();
+  if (authTypeCache && now - authTypeCache.timestamp < AUTH_TYPE_CACHE_TTL) {
+    return authTypeCache.authType;
+  }
+
+  // Fetch auth type from backend
+  try {
+    const internalUrl = process.env.INTERNAL_URL || "http://127.0.0.1:8080";
+    const response = await fetch(`${internalUrl}/auth/type`, {
+      cache: "no-store",
+    });
+    if (response.ok) {
+      const data = await response.json();
+      authTypeCache = { authType: data.auth_type, timestamp: now };
+      return data.auth_type;
+    }
+  } catch (e) {
+    console.error("Failed to fetch auth type in middleware:", e);
+  }
+  return null;
+}
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
@@ -61,14 +89,21 @@ export async function middleware(request: NextRequest) {
   );
 
   if (isProtectedRoute && !isPublicRoute) {
-    const authCookie = request.cookies.get(FASTAPI_USERS_AUTH_COOKIE_NAME);
+    // Check if auth is disabled before requiring cookies
+    const authType = await getAuthType();
+    const authDisabled = authType === "disabled";
 
-    if (!authCookie) {
-      const loginUrl = new URL("/auth/login", request.url);
-      // Preserve full URL including query params and hash for deep linking
-      const fullPath = pathname + request.nextUrl.search + request.nextUrl.hash;
-      loginUrl.searchParams.set("next", fullPath);
-      return NextResponse.redirect(loginUrl);
+    // Only require auth cookie if auth is NOT disabled
+    if (!authDisabled) {
+      const authCookie = request.cookies.get(FASTAPI_USERS_AUTH_COOKIE_NAME);
+
+      if (!authCookie) {
+        const loginUrl = new URL("/auth/login", request.url);
+        // Preserve full URL including query params and hash for deep linking
+        const fullPath = pathname + request.nextUrl.search + request.nextUrl.hash;
+        loginUrl.searchParams.set("next", fullPath);
+        return NextResponse.redirect(loginUrl);
+      }
     }
   }
 

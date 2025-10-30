@@ -36,8 +36,9 @@ export default async function Page(props: PageProps) {
   }
 
   // simply take the user to the home page if Auth is disabled
+  // If there's a next URL, respect it (e.g., admin panel access)
   if (authTypeMetadata?.authType === "disabled") {
-    return redirect("/chat");
+    return redirect(nextUrl || "/chat");
   }
 
   // if user is already logged in, take them to the main app page

@@ -1,18 +1,18 @@
 dependencies:
-- name: cloudnative-pg
-  repository: https://cloudnative-pg.github.io/charts
-  version: 0.26.0
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 16.7.18
 - name: vespa
   repository: https://onyx-dot-app.github.io/vespa-helm-charts
   version: 0.2.24
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.13.3
-- name: redis
-  repository: https://ot-container-kit.github.io/helm-charts
-  version: 0.16.6
+- name: valkey
+  repository: https://charts.bitnami.com/bitnami
+  version: 3.0.20
 - name: minio
   repository: https://charts.min.io/
   version: 5.4.0
-digest: sha256:c5604f05ed5b7cbe4d1b2167370e1e42cb3d97c879fbccc6ef881934ba4683e2
-generated: "2025-10-03T13:48:55.815175-07:00"
+digest: sha256:112402b9947d8d1f2c811aabca8efc68928e2b64f668e5a8614fa7ea3a2b5526
+generated: "2025-10-29T18:21:42.291082805Z"
