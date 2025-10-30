@@ -87,26 +87,26 @@ const custom_assistants_items = (
     },
   ];
 
-  if (!isCurator) {
-    items.push(
-      {
-        name: "Slack Bots",
-        icon: SlackIconSkeleton,
-        link: "/admin/bots",
-      },
-      {
-        name: "Actions",
-        icon: ToolIconSkeleton,
-        link: "/admin/actions",
-      }
-    );
-  } else {
-    items.push({
-      name: "Actions",
-      icon: ToolIconSkeleton,
-      link: "/admin/actions",
-    });
-  }
+  // if (!isCurator) {
+  //   items.push(
+  //     {
+  //       name: "Slack Bots",
+  //       icon: SlackIconSkeleton,
+  //       link: "/admin/bots",
+  //     },
+  //     {
+  //       name: "Actions",
+  //       icon: ToolIconSkeleton,
+  //       link: "/admin/actions",
+  //     }
+  //   );
+  // } else {
+  //   items.push({
+  //     name: "Actions",
+  //     icon: ToolIconSkeleton,
+  //     link: "/admin/actions",
+  //   });
+  // }
 
   if (enableEnterprise) {
     items.push({
@@ -127,14 +127,14 @@ const collections = (
   kgExposed: boolean,
   customAnalyticsEnabled: boolean
 ) => [
-  {
-    name: "Connectors",
-    items: connectors_items(),
-  },
-  {
-    name: "Document Management",
-    items: document_management_items(),
-  },
+  // {
+  //   name: "Connectors",
+  //   items: connectors_items(),
+  // },
+  // {
+  //   name: "Document Management",
+  //   items: document_management_items(),
+  // },
   {
     name: "Custom Assistants",
     items: custom_assistants_items(isCurator, enableEnterprise),
@@ -168,21 +168,21 @@ const collections = (
               icon: CpuIconSkeleton,
               link: "/admin/configuration/llm",
             },
-            ...(!enableCloud
-              ? [
-                  {
-                    error: settings?.settings.needs_reindexing,
-                    name: "Search Settings",
-                    icon: SearchIcon,
-                    link: "/admin/configuration/search",
-                  },
-                ]
-              : []),
-            {
-              name: "Document Processing",
-              icon: DocumentIcon2,
-              link: "/admin/configuration/document-processing",
-            },
+            // ...(!enableCloud
+            //   ? [
+            //       {
+            //         error: settings?.settings.needs_reindexing,
+            //         name: "Search Settings",
+            //         icon: SearchIcon,
+            //         link: "/admin/configuration/search",
+            //       },
+            //     ]
+            //   : []),
+            // {
+            //   name: "Document Processing",
+            //   icon: DocumentIcon2,
+            //   link: "/admin/configuration/document-processing",
+            // },
             ...(kgExposed
               ? [
                   {
@@ -194,35 +194,35 @@ const collections = (
               : []),
           ],
         },
-        {
-          name: "User Management",
-          items: [
-            {
-              name: "Users",
-              icon: UsersIconSkeleton,
-              link: "/admin/users",
-            },
-            ...(enableEnterprise
-              ? [
-                  {
-                    name: "Groups",
-                    icon: GroupsIconSkeleton,
-                    link: "/admin/groups",
-                  },
-                ]
-              : []),
-            {
-              name: "API Keys",
-              icon: KeyIconSkeleton,
-              link: "/admin/api-key",
-            },
-            {
-              name: "Token Rate Limits",
-              icon: ShieldIconSkeleton,
-              link: "/admin/token-rate-limits",
-            },
-          ],
-        },
+        // {
+        //   name: "User Management",
+        //   items: [
+        //     {
+        //       name: "Users",
+        //       icon: UsersIconSkeleton,
+        //       link: "/admin/users",
+        //     },
+        //     ...(enableEnterprise
+        //       ? [
+        //           {
+        //             name: "Groups",
+        //             icon: GroupsIconSkeleton,
+        //             link: "/admin/groups",
+        //           },
+        //         ]
+        //       : []),
+        //     {
+        //       name: "API Keys",
+        //       icon: KeyIconSkeleton,
+        //       link: "/admin/api-key",
+        //     },
+        //     {
+        //       name: "Token Rate Limits",
+        //       icon: ShieldIconSkeleton,
+        //       link: "/admin/token-rate-limits",
+        //     },
+        //   ],
+        // },
         ...(enableEnterprise
           ? [
               {
@@ -341,11 +341,11 @@ export default function AdminSidebar({
         }
         footer={
           <div className="flex flex-col px-2 gap-2">
-            {combinedSettings.webVersion && (
+            {/* {combinedSettings.webVersion && (
               <Text text02 secondaryBody className="px-2 pt-1">
                 {`Onyx version: ${combinedSettings.webVersion}`}
               </Text>
-            )}
+            )} */}
             <Settings />
           </div>
         }

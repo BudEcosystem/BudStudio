@@ -1033,9 +1033,10 @@ export function ActionToggle({
                     />
                   );
                 })}
+                {/* Temporarily hidden - uncomment to re-enable */}
                 {/* More Connectors & Actions. Only show if user is admin or curator, since
                 they are the only ones who can manage actions. */}
-                {(isAdmin || isCurator) && (
+                {/* {(isAdmin || isCurator) && (
                   <>
                     <div className="border-b border-border mx-3.5 mt-2" />
                     <div className="mx-2 mt-2.5 mb-2">
@@ -1050,7 +1051,7 @@ export function ActionToggle({
                       </Button>
                     </div>
                   </>
-                )}
+                )} */}
               </>
             )}
           </div>

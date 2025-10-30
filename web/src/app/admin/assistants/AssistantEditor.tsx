@@ -1353,11 +1353,11 @@ export function AssistantEditor({
                       </div>
                     )}
 
-                    <Separator />
+                    {/* <Separator /> */}
                     <div className="py-2">
-                      <p className="block font-medium text-sm mb-2">Actions</p>
+                      {/* <p className="block font-medium text-sm mb-2">Actions</p> */}
 
-                      {imageGenerationTool && (
+                      {/* {imageGenerationTool && (
                         <>
                           <div className="flex items-center content-start mb-2">
                             <FastField
@@ -1379,9 +1379,9 @@ export function AssistantEditor({
                             </FastField>
                           </div>
                         </>
-                      )}
+                      )} */}
 
-                      {webSearchTool && (
+                      {/* {webSearchTool && (
                         <>
                           <FastField
                             name={`enabled_tools_map.${webSearchTool.id}`}
@@ -1395,15 +1395,15 @@ export function AssistantEditor({
                             )}
                           </FastField>
                         </>
-                      )}
+                      )} */}
 
                       {/* Regular Custom Tools */}
-                      {customTools.length > 0 && (
+                      {/* {customTools.length > 0 && (
                         <MemoizedToolList tools={customTools} />
-                      )}
+                      )} */}
 
                       {/* MCP Server Tools - Hierarchical Structure */}
-                      {Object.keys(mcpToolsByServer).length > 0 &&
+                      {/* {Object.keys(mcpToolsByServer).length > 0 &&
                         Object.entries(mcpToolsByServer).map(
                           ([serverId, serverTools]) => {
                             const serverIdNum = parseInt(serverId);
@@ -1447,7 +1447,7 @@ export function AssistantEditor({
                               />
                             );
                           }
-                        )}
+                        )} */}
                     </div>
                   </div>
                 </div>

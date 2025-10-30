@@ -335,7 +335,7 @@ function AppSidebarInner() {
       <div className="px-2">
         {(isAdmin || isCurator) && (
           <SidebarTab
-            href="/admin/indexing/status"
+            href="/admin/configuration/default-assistant"
             leftIcon={SvgSettings}
             folded={folded}
           >
