@@ -534,13 +534,13 @@ function ChatInputBarInner({
               selectedFileIds={currentMessageFiles.map((f) => f.id)}
             />
             {/* Temporarily hidden - uncomment to re-enable */}
-            {/* {selectedAssistant.tools.length > 0 && (
+            {selectedAssistant.tools.length > 0 && (
               <ActionToggle
                 selectedAssistant={selectedAssistant}
                 filterManager={filterManager}
                 availableSources={memoizedAvailableSources}
               />
-            )} */}
+            )}
             {showDeepResearch && (
               <SelectButton
                 leftIcon={SvgHourglass}

@@ -179,3 +179,8 @@ class ThemePreference(str, PyEnum):
     LIGHT = "light"
     DARK = "dark"
     SYSTEM = "system"
+
+
+class WebSearchProviderType(str, PyEnum):
+    SERPER = "serper"
+    EXA = "exa"

@@ -168,6 +168,11 @@ const collections = (
               icon: CpuIconSkeleton,
               link: "/admin/configuration/llm",
             },
+            {
+              name: "Web Search",
+              icon: SearchIcon,
+              link: "/admin/configuration/web-search",
+            },
             // ...(!enableCloud
             //   ? [
             //       {

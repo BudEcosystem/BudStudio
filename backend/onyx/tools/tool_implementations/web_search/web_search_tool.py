@@ -7,6 +7,7 @@ from typing_extensions import override
 from onyx.chat.prompt_builder.answer_prompt_builder import AnswerPromptBuilder
 from onyx.configs.chat_configs import EXA_API_KEY
 from onyx.configs.chat_configs import SERPER_API_KEY
+from onyx.db.web_search import fetch_web_search_providers
 from onyx.llm.interfaces import LLM
 from onyx.llm.models import PreviousMessage
 from onyx.tools.message import ToolCallSummary
@@ -50,7 +51,17 @@ class WebSearchTool(Tool[None]):
     @override
     @classmethod
     def is_available(cls, db_session: Session) -> bool:
-        """Available only if EXA or SERPER API key is configured."""
+        """Available only if EXA or SERPER API key is configured (either in DB or env vars)."""
+        # Check database for configured providers
+        try:
+            db_providers = fetch_web_search_providers(db_session)
+            if db_providers:
+                return True
+        except Exception:
+            # If database check fails, fall through to env var check
+            pass
+
+        # Fall back to environment variables
         return bool(EXA_API_KEY) or bool(SERPER_API_KEY)
 
     def tool_definition(self) -> dict:

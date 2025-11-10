@@ -66,6 +66,7 @@ from onyx.db.enums import (
     MCPAuthenticationPerformer,
     MCPTransport,
     ThemePreference,
+    WebSearchProviderType,
 )
 from onyx.configs.constants import NotificationType
 from onyx.configs.constants import SearchFeedbackType
@@ -2426,6 +2427,21 @@ class CloudEmbeddingProvider(Base):
 
     def __repr__(self) -> str:
         return f"<EmbeddingProvider(type='{self.provider_type}')>"
+
+
+class WebSearchProvider(Base):
+    __tablename__ = "web_search_provider"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_type: Mapped[WebSearchProviderType] = mapped_column(
+        Enum(WebSearchProviderType, native_enum=False), nullable=False, unique=True
+    )
+    api_key: Mapped[str] = mapped_column(EncryptedString(), nullable=False)
+    # should only be set for a single provider
+    is_default: Mapped[bool | None] = mapped_column(Boolean, unique=True, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<WebSearchProvider(type='{self.provider_type}', is_default={self.is_default})>"
 
 
 class DocumentSet(Base):

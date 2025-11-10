@@ -1381,7 +1381,7 @@ export function AssistantEditor({
                         </>
                       )} */}
 
-                      {/* {webSearchTool && (
+                      {webSearchTool && (
                         <>
                           <FastField
                             name={`enabled_tools_map.${webSearchTool.id}`}
@@ -1395,7 +1395,7 @@ export function AssistantEditor({
                             )}
                           </FastField>
                         </>
-                      )} */}
+                      )}
 
                       {/* Regular Custom Tools */}
                       {/* {customTools.length > 0 && (
