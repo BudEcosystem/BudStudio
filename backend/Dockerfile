@@ -101,7 +101,7 @@ RUN groupadd -g 1001 onyx && \
     chown onyx:onyx /var/log/onyx
 
 # Enterprise Version Files
-COPY --chown=onyx:onyx ./ee /app/ee
+# COPY --chown=onyx:onyx ./ee /app/ee
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Set up application files
