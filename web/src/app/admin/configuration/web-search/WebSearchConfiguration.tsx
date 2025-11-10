@@ -81,7 +81,7 @@ export function WebSearchConfiguration() {
         <Title className="text-lg mb-3">Configured Providers</Title>
 
         {(!providers || providers.length === 0) && (
-          <Callout type="info" title="No providers configured">
+          <Callout type="notice" title="No providers configured">
             Add a web search provider to enable web search functionality.
           </Callout>
         )}
@@ -112,7 +112,7 @@ export function WebSearchConfiguration() {
       </div>
 
       {defaultProvider && (
-        <Callout type="info" title="Default Provider">
+        <Callout type="notice" title="Default Provider">
           {defaultProvider.provider_type === "serper" ? "Serper" : "Exa"} is
           currently set as the default web search provider.
         </Callout>
@@ -180,7 +180,7 @@ function ProviderCard({
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <Text headingH3>{displayName}</Text>
+            <Text className="text-base font-medium">{displayName}</Text>
             {isDefault && (
               <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
                 Default
