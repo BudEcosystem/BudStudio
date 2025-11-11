@@ -70,7 +70,7 @@ def web_search(
     if graph_config.inputs.persona is None:
         raise ValueError("persona is not set")
 
-    provider = get_default_provider()
+    provider = get_default_provider(graph_config.persistence.db_session)
     if not provider:
         raise ValueError("No internet search provider found")
 

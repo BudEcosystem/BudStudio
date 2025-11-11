@@ -163,7 +163,9 @@ def web_search(
     """
     Tool for searching the public internet.
     """
-    search_provider = get_default_provider()
+    search_provider = get_default_provider(
+        run_context.context.run_dependencies.db_session
+    )
     if search_provider is None:
         raise ValueError("No search provider found")
     response = _web_search_core(run_context, queries, search_provider)
@@ -267,7 +269,9 @@ def open_url(run_context: RunContextWrapper[ChatTurnContext], urls: List[str]) -
     """
     Tool for fetching and extracting full content from web pages.
     """
-    search_provider = get_default_provider()
+    search_provider = get_default_provider(
+        run_context.context.run_dependencies.db_session
+    )
     if search_provider is None:
         raise ValueError("No search provider found")
     response = _open_url_core(run_context, urls, search_provider)

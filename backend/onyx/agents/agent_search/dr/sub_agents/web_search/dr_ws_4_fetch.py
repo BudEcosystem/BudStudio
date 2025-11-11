@@ -41,7 +41,7 @@ def web_fetch(
     if graph_config.inputs.persona is None:
         raise ValueError("persona is not set")
 
-    provider = get_default_provider()
+    provider = get_default_provider(graph_config.persistence.db_session)
     if provider is None:
         raise ValueError("No web search provider found")
 
