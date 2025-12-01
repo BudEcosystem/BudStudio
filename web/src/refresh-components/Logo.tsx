@@ -49,6 +49,6 @@ export default function Logo({ folded, className }: LogoProps) {
       </div>
     </div>
   ) : (
-    <OnyxLogoTypeIcon size={88} className={className} />
+    <OnyxLogoTypeIcon size={100} className={className} />
   );
 }
