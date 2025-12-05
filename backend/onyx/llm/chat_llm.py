@@ -332,7 +332,7 @@ class DefaultMultiLLM(LLM):
 
     def _safe_model_config(self) -> dict:
         dump = self.config.model_dump()
-        dump["api_key"] = mask_string(dump.get("api_key", ""))
+        dump["api_key"] = mask_string(dump.get("api_key") or "")
         credentials_file = dump.get("credentials_file")
         if isinstance(credentials_file, str) and credentials_file:
             dump["credentials_file"] = mask_string(credentials_file)

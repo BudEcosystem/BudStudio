@@ -206,7 +206,8 @@ export interface FileChatDisplay {
 
 export interface StreamingError {
   error: string;
-  stack_trace: string;
+  stack_trace?: string;
+  auth_error?: boolean;
 }
 
 export interface InputPrompt {

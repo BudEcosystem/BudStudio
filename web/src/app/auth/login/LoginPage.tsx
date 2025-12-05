@@ -5,6 +5,7 @@ import LoginText from "@/app/auth/login/LoginText";
 import Link from "next/link";
 import SignInButton from "@/app/auth/login/SignInButton";
 import EmailPasswordForm from "./EmailPasswordForm";
+import OidcDirectLoginForm from "./OidcDirectLoginForm";
 import { NEXT_PUBLIC_FORGOT_PASSWORD_ENABLED } from "@/lib/constants";
 import { useSendAuthRequiredMessage } from "@/lib/extension/utils";
 import Text from "@/refresh-components/texts/Text";
@@ -25,12 +26,18 @@ export default function LoginPage({
 }: LoginPageProps) {
   useSendAuthRequiredMessage();
 
+  // OIDC uses custom form with built-in header - no LoginText wrapper needed
+  if (authTypeMetadata?.authType === "oidc") {
+    return <OidcDirectLoginForm nextUrl={nextUrl} allowRegistration={true} />;
+  }
+
   return (
     <div className="flex flex-col w-full justify-center">
+
+      {/* Other OAuth types (Google, SAML) - SSO redirect button */}
       {authUrl &&
         authTypeMetadata &&
         authTypeMetadata.authType !== "cloud" &&
-        // basic auth is handled below w/ the EmailPasswordForm
         authTypeMetadata.authType !== "basic" && (
           <div className="flex flex-col w-full gap-4">
             <LoginText />
@@ -75,6 +82,7 @@ export default function LoginPage({
         </>
       )}
 
+      {/* Show signup link for non-OIDC auth types */}
       {!hidePageRedirect && (
         <p className="text-center mt-4">
           Don&apos;t have an account?{" "}

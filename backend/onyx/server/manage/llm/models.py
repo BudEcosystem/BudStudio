@@ -270,3 +270,14 @@ class OpenRouterFinalModelResponse(BaseModel):
     name: str
     max_input_tokens: int
     supports_image_input: bool
+
+
+# Bud Foundry dynamic models fetch (OpenAI-compatible API with user token)
+class BudFoundryModelsRequest(BaseModel):
+    api_base: str
+
+
+class BudFoundryModelResponse(BaseModel):
+    name: str
+    max_input_tokens: int | None = None
+    supports_image_input: bool = False

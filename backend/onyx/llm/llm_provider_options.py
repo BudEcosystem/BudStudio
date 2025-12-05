@@ -138,6 +138,10 @@ OLLAMA_API_KEY_CONFIG_KEY = "OLLAMA_API_KEY"
 # OpenRouter
 OPENROUTER_PROVIDER_NAME = "openrouter"
 
+# Bud Foundry (uses user's Keycloak/OIDC token for authentication)
+BUD_FOUNDRY_PROVIDER_NAME = "bud_foundry"
+BUD_FOUNDRY_PROVIDER_DISPLAY_NAME = "BudFoundryProvider"  # Used to identify in DB
+
 IGNORABLE_ANTHROPIC_MODELS = [
     "claude-2",
     "claude-instant-1",
@@ -235,6 +239,7 @@ _PROVIDER_TO_VISIBLE_MODELS_MAP = {
     VERTEXAI_PROVIDER_NAME: VERTEXAI_VISIBLE_MODEL_NAMES,
     OLLAMA_PROVIDER_NAME: [],
     OPENROUTER_PROVIDER_NAME: [],
+    BUD_FOUNDRY_PROVIDER_NAME: [],  # Models fetched dynamically per-user
 }
 
 
@@ -388,6 +393,17 @@ def fetch_available_well_known_llms() -> list[WellKnownLLMProviderDescriptor]:
             default_model=None,
             default_fast_model=None,
             default_api_base="https://openrouter.ai/api/v1",
+        ),
+        WellKnownLLMProviderDescriptor(
+            name=BUD_FOUNDRY_PROVIDER_NAME,
+            display_name="Bud Foundry",
+            api_key_required=False,  # Uses user's OAuth token
+            api_base_required=True,  # The Bud Foundry API endpoint
+            api_version_required=False,
+            custom_config_keys=[],
+            model_configurations=[],  # Fetched dynamically per-user
+            default_model=None,
+            default_fast_model=None,
         ),
     ]
 

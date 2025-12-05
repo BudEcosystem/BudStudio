@@ -49,6 +49,8 @@ from onyx.server.manage.llm.models import OllamaModelsRequest
 from onyx.server.manage.llm.models import OpenRouterFinalModelResponse
 from onyx.server.manage.llm.models import OpenRouterModelDetails
 from onyx.server.manage.llm.models import OpenRouterModelsRequest
+from onyx.server.manage.llm.models import BudFoundryModelsRequest
+from onyx.server.manage.llm.models import BudFoundryModelResponse
 from onyx.server.manage.llm.models import TestLLMRequest
 from onyx.server.manage.llm.models import VisionProviderResponse
 from onyx.utils.logger import setup_logger
@@ -339,11 +341,29 @@ def list_llm_provider_basics(
     user: User | None = Depends(current_chat_accessible_user),
     db_session: Session = Depends(get_session),
 ) -> list[LLMProviderDescriptor]:
+    from onyx.llm.llm_provider_options import BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
+
     start_time = datetime.now(timezone.utc)
     logger.debug("Starting to fetch basic LLM providers for user")
 
     llm_provider_list: list[LLMProviderDescriptor] = []
     for llm_provider_model in fetch_existing_llm_providers_for_user(db_session, user):
+        # For Bud Foundry with OAuth user, ensure initialization (which syncs models)
+        if (
+            llm_provider_model.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
+            and user
+            and user.oauth_accounts
+        ):
+            try:
+                from onyx.llm.factory import _ensure_bud_foundry_initialized
+
+                _ensure_bud_foundry_initialized(user)
+                # Expire and refresh to get updated model_configurations from the other session's commit
+                db_session.expire(llm_provider_model, ["model_configurations"])
+                db_session.refresh(llm_provider_model, ["model_configurations"])
+            except Exception as e:
+                logger.warning(f"Failed to initialize Bud Foundry: {e}")
+
         from_model_start = datetime.now(timezone.utc)
         full_llm_provider = LLMProviderDescriptor.from_model(llm_provider_model)
         from_model_end = datetime.now(timezone.utc)
@@ -649,6 +669,104 @@ def get_openrouter_available_models(
     if not results:
         raise HTTPException(
             status_code=400, detail="No compatible models found from OpenRouter"
+        )
+
+    return sorted(results, key=lambda m: m.name.lower())
+
+
+@basic_router.post("/bud-foundry/available-models")
+def get_bud_foundry_available_models(
+    request: BudFoundryModelsRequest,
+    user: User | None = Depends(current_chat_accessible_user),
+) -> list[BudFoundryModelResponse]:
+    """Fetch available models from Bud Foundry using the user's OAuth token.
+
+    This endpoint uses the user's Keycloak/OIDC token to authenticate with
+    the Bud Foundry API, which returns only the models the user has access to.
+    """
+    # Get user's OAuth token
+    if not user or not user.oauth_accounts:
+        raise HTTPException(
+            status_code=401,
+            detail="User must be authenticated with OAuth to fetch Bud Foundry models",
+        )
+
+    user_oauth_token = user.oauth_accounts[0].access_token
+    if not user_oauth_token:
+        raise HTTPException(
+            status_code=401,
+            detail="No OAuth token found for user",
+        )
+
+    # Call Bud Foundry's OpenAI-compatible /v1/models endpoint
+    cleaned_api_base = request.api_base.strip().rstrip("/")
+    if not cleaned_api_base:
+        raise HTTPException(
+            status_code=400,
+            detail="API base URL is required to fetch Bud Foundry models",
+        )
+
+    models_url = f"{cleaned_api_base}/v1/models"
+    headers = {"Authorization": f"Bearer {user_oauth_token}"}
+
+    try:
+        response = httpx.get(models_url, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        response_json = response.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication failed with Bud Foundry. Your token may have expired.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to fetch Bud Foundry models: {e}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to fetch Bud Foundry models: {e}",
+        )
+
+    # Parse OpenAI-compatible response format: {"data": [{"id": "model-name", ...}]}
+    data = response_json.get("data", [])
+    if not isinstance(data, list) or len(data) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No models found from Bud Foundry for your account",
+        )
+
+    results: list[BudFoundryModelResponse] = []
+    for item in data:
+        try:
+            model_id = item.get("id")
+            if not model_id:
+                continue
+
+            # Skip embedding models
+            if "embed" in model_id.lower():
+                continue
+
+            results.append(
+                BudFoundryModelResponse(
+                    name=model_id,
+                    max_input_tokens=item.get("context_length")
+                    or item.get("max_tokens")
+                    or GEN_AI_MODEL_FALLBACK_MAX_TOKENS,
+                    supports_image_input=item.get("supports_vision", False),
+                )
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to parse Bud Foundry model entry",
+                extra={"error": str(e), "item": str(item)[:1000]},
+            )
+
+    if not results:
+        raise HTTPException(
+            status_code=400,
+            detail="No compatible models found from Bud Foundry for your account",
         )
 
     return sorted(results, key=lambda m: m.name.lower())

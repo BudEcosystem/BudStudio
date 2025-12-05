@@ -55,7 +55,9 @@ export const LLMSelector: React.FC<LLMSelectorProps> = ({
           (currentDescriptor?.provider === provider.provider ||
             currentDescriptor?.name === provider.name);
 
-        if (!modelConfiguration.is_visible && !matchesCurrentSelection) {
+        // For Bud Foundry, all models are visible by default (fetched dynamically per-user)
+        const isBudFoundry = provider.provider === "bud_foundry";
+        if (!isBudFoundry && !modelConfiguration.is_visible && !matchesCurrentSelection) {
           return;
         }
 

@@ -91,6 +91,15 @@ export const NEXT_PUBLIC_INCLUDE_ERROR_POPUP_SUPPORT_LINK =
 export const NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY =
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
+// Auth page branding - logo shown on login/signup pages
+export const NEXT_PUBLIC_AUTH_LOGO_URL =
+  process.env.NEXT_PUBLIC_AUTH_LOGO_URL || "/images/BudLogo.png";
+
+// Auth page tagline - shown on login/signup pages
+export const NEXT_PUBLIC_AUTH_TAGLINE =
+  process.env.NEXT_PUBLIC_AUTH_TAGLINE ||
+  "Useful. Private. Real time. Offline. Safe Intelligence in your Pocket.";
+
 // Add support for custom URL protocols in markdown links
 export const ALLOWED_URL_PROTOCOLS = [
   "http:",

@@ -776,14 +776,21 @@ export function useChatController({
               Object.hasOwn(packet, "error") &&
               (packet as any).error != null
             ) {
-              setUncaughtError(
-                frozenSessionId,
-                (packet as StreamingError).error
-              );
+              const streamingError = packet as StreamingError;
+
+              // Check if this is an authentication error - redirect to OIDC for re-auth
+              if (streamingError.auth_error) {
+                console.log("Authentication error detected, redirecting to OIDC authorize");
+                const returnUrl = window.location.href;
+                window.location.href = `/auth/oidc/authorize?next=${encodeURIComponent(returnUrl)}`;
+                return;
+              }
+
+              setUncaughtError(frozenSessionId, streamingError.error);
               updateChatStateAction(frozenSessionId, "input");
               updateSubmittedMessage(getCurrentSessionId(), "");
 
-              throw new Error((packet as StreamingError).error);
+              throw new Error(streamingError.error);
             } else if (Object.hasOwn(packet, "message_id")) {
               finalMessage = packet as BackendMessage;
             } else if (Object.hasOwn(packet, "stop_reason")) {
@@ -1033,6 +1040,18 @@ export function useChatController({
       if (response.ok) {
         const maxTokens = (await response.json()).max_tokens as number;
         setMaxTokens(maxTokens);
+      } else if (response.status === 401) {
+        // Check for OIDC re-auth requirement
+        try {
+          const data = await response.json();
+          if (data.reauth_required === "oidc") {
+            console.log("OIDC token expired, redirecting to OIDC authorize");
+            const returnUrl = window.location.href;
+            window.location.href = `/auth/oidc/authorize?next=${encodeURIComponent(returnUrl)}`;
+          }
+        } catch (e) {
+          // Ignore JSON parse errors
+        }
       }
     }
     fetchMaxTokens();

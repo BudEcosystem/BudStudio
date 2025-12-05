@@ -158,6 +158,30 @@ export const dynamicProviderConfigs: Record<
     successMessage: (count: number) =>
       `Successfully fetched ${count} models from OpenRouter.`,
   },
+  bud_foundry: {
+    // Note: This uses the non-admin endpoint because it requires user's OAuth token
+    endpoint: "/api/llm/bud-foundry/available-models",
+    isDisabled: (values) => !values.api_base,
+    disabledReason: "API Base is required to fetch Bud Foundry models",
+    buildRequestBody: ({ values }) => ({
+      api_base: values.api_base,
+    }),
+    processResponse: (data: OllamaModelResponse[], llmProviderDescriptor) =>
+      data.map((modelData) => {
+        const existingConfig = llmProviderDescriptor.model_configurations.find(
+          (config) => config.name === modelData.name
+        );
+        return {
+          name: modelData.name,
+          is_visible: existingConfig?.is_visible ?? true,
+          max_input_tokens: modelData.max_input_tokens,
+          supports_image_input: modelData.supports_image_input ?? false,
+        };
+      }),
+    getModelNames: (data: OllamaModelResponse[]) => data.map((m) => m.name),
+    successMessage: (count: number) =>
+      `Successfully fetched ${count} models from Bud Foundry for your account.`,
+  },
 };
 
 export const fetchModels = async (

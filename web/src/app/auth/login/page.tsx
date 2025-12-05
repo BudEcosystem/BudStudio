@@ -8,6 +8,7 @@ import {
 } from "@/lib/userSS";
 import { redirect } from "next/navigation";
 import AuthFlowContainer from "@/components/auth/AuthFlowContainer";
+import BudAuthLayout from "@/components/auth/BudAuthLayout";
 import LoginPage from "./LoginPage";
 
 export interface PageProps {
@@ -72,10 +73,24 @@ export default async function Page(props: PageProps) {
     return redirect(authUrl);
   }
 
+  // Use BudAuthLayout for OIDC (split layout with Game of Life background)
+  if (authTypeMetadata?.authType === "oidc") {
+    return (
+      <BudAuthLayout>
+        <LoginPage
+          authUrl={authUrl}
+          authTypeMetadata={authTypeMetadata}
+          nextUrl={nextUrl!}
+          hidePageRedirect={true}
+        />
+      </BudAuthLayout>
+    );
+  }
+
+  // Default layout for other auth types
   const ssoLoginFooterContent =
     authTypeMetadata &&
     (authTypeMetadata.authType === "google_oauth" ||
-      authTypeMetadata.authType === "oidc" ||
       authTypeMetadata.authType === "saml") ? (
       <>Need access? Reach out to your IT admin to get access.</>
     ) : undefined;

@@ -345,3 +345,46 @@ def update_default_vision_provider(
     new_default.is_default_vision_provider = True
     new_default.default_vision_model = vision_model
     db_session.commit()
+
+
+def update_bud_foundry_model_configurations(
+    db_session: Session,
+    models: list[dict],
+) -> None:
+    """Update model configurations for Bud Foundry provider.
+
+    This function replaces all existing model configurations for the Bud Foundry
+    provider with the newly fetched models from the Bud Foundry API.
+    """
+    from onyx.llm.llm_provider_options import BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
+
+    # Find the Bud Foundry provider by name (since provider type is "openai")
+    provider = db_session.scalar(
+        select(LLMProviderModel).where(
+            LLMProviderModel.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
+        )
+    )
+
+    if not provider:
+        return
+
+    # Delete existing model configurations
+    db_session.query(ModelConfiguration).filter(
+        ModelConfiguration.llm_provider_id == provider.id
+    ).delete(synchronize_session="fetch")
+
+    db_session.flush()
+
+    # Insert new model configurations
+    for model in models:
+        db_session.execute(
+            insert(ModelConfiguration)
+            .values(
+                llm_provider_id=provider.id,
+                name=model["name"],
+                is_visible=model["is_visible"],
+                max_input_tokens=model.get("max_input_tokens"),
+                supports_image_input=model.get("supports_image_input", False),
+            )
+            .on_conflict_do_nothing()
+        )

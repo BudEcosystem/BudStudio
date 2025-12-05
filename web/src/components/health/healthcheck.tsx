@@ -31,12 +31,12 @@ export const HealthCheckBanner = () => {
     dedupingInterval: 30000, // 30 seconds
   });
 
-  // Handle 403 errors from the /api/me endpoint
+  // Handle 403 errors from the /api/me endpoint - redirect to login immediately
   useEffect(() => {
     if (userError && userError.status === 403) {
       logout().then(() => {
         if (!pathname?.includes("/auth")) {
-          setShowLoggedOutModal(true);
+          window.location.href = "/auth/login";
         }
       });
     }

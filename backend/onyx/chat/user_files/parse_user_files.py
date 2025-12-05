@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from onyx.db.models import Persona
+from onyx.db.models import User
 from onyx.db.models import UserFile
 from onyx.db.projects import get_user_files_from_project
 from onyx.db.user_file import update_last_accessed_at_for_user_files
@@ -23,7 +24,7 @@ def parse_user_files(
     actual_user_input: str,
     project_id: int | None,
     # should only be None if auth is disabled
-    user_id: UUID | None,
+    user: User | None,
 ) -> tuple[list[InMemoryChatFile], list[UserFile], SearchToolOverrideKwargs | None]:
     """
     Parse user files and project into in-memory chat files and create search tool override kwargs.
@@ -35,7 +36,7 @@ def parse_user_files(
         persona: Persona to calculate available tokens
         actual_user_input: User's input message for token calculation
         project_id: Project ID to validate file ownership
-        user_id: User ID to validate file ownership
+        user: User to validate file ownership and for LLM token calculation
 
     Returns:
         Tuple of (
@@ -45,6 +46,9 @@ def parse_user_files(
                 overflow
         )
     """
+    # Extract user_id for internal use
+    user_id = user.id if user is not None else None
+
     # Return empty results if no files or project specified
     if not user_file_ids and not project_id:
         return [], [], None
@@ -99,6 +103,7 @@ def parse_user_files(
     available_tokens = compute_max_document_tokens_for_persona(
         persona=persona,
         actual_user_input=actual_user_input,
+        user=user,
     )
     uploaded_context_cap = int(available_tokens * 0.5)
 

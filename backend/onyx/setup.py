@@ -11,6 +11,7 @@ from onyx.configs.constants import KV_REINDEX_KEY
 from onyx.configs.constants import KV_SEARCH_SETTINGS
 from onyx.configs.embedding_configs import SUPPORTED_EMBEDDING_MODELS
 from onyx.configs.embedding_configs import SupportedEmbeddingModel
+from onyx.configs.model_configs import BUD_FOUNDRY_API_BASE
 from onyx.configs.model_configs import FAST_GEN_AI_MODEL_VERSION
 from onyx.configs.model_configs import GEN_AI_API_KEY
 from onyx.configs.model_configs import GEN_AI_MODEL_VERSION
@@ -29,6 +30,7 @@ from onyx.db.enums import EmbeddingPrecision
 from onyx.db.index_attempt import cancel_indexing_attempts_past_model
 from onyx.db.index_attempt import expire_index_attempts
 from onyx.db.llm import fetch_default_provider
+from onyx.db.llm import fetch_existing_llm_provider
 from onyx.db.llm import update_default_provider
 from onyx.db.llm import upsert_llm_provider
 from onyx.db.search_settings import get_active_search_settings
@@ -43,6 +45,7 @@ from onyx.document_index.vespa.index import VespaIndex
 from onyx.indexing.models import IndexingSetting
 from onyx.key_value_store.factory import get_kv_store
 from onyx.key_value_store.interface import KvKeyNotFoundError
+from onyx.llm.llm_provider_options import BUD_FOUNDRY_PROVIDER_NAME
 from onyx.llm.llm_provider_options import OPEN_AI_MODEL_NAMES
 from onyx.natural_language_processing.search_nlp_models import EmbeddingModel
 from onyx.natural_language_processing.search_nlp_models import warm_up_bi_encoder
@@ -317,6 +320,54 @@ def setup_postgres(db_session: Session) -> None:
             llm_provider_upsert_request=model_req, db_session=db_session
         )
         update_default_provider(provider_id=new_llm_provider.id, db_session=db_session)
+
+    # Auto-setup Bud Foundry if API base is configured
+    if BUD_FOUNDRY_API_BASE:
+        existing_bud_foundry = fetch_existing_llm_provider(
+            name="BudFoundryProvider", db_session=db_session
+        )
+        if existing_bud_foundry:
+            needs_update = False
+            # Update provider type if needed (litellm doesn't recognize bud_foundry as a provider)
+            if existing_bud_foundry.provider != "openai":
+                logger.notice(
+                    f"Updating BudFoundryProvider from '{existing_bud_foundry.provider}' to 'openai' provider type"
+                )
+                existing_bud_foundry.provider = "openai"
+                needs_update = True
+            # Update api_base if it has changed (e.g., /v1 was added to the env var)
+            if existing_bud_foundry.api_base != BUD_FOUNDRY_API_BASE:
+                logger.notice(
+                    f"Updating BudFoundryProvider api_base from '{existing_bud_foundry.api_base}' to '{BUD_FOUNDRY_API_BASE}'"
+                )
+                existing_bud_foundry.api_base = BUD_FOUNDRY_API_BASE
+                needs_update = True
+            if needs_update:
+                db_session.commit()
+        else:
+            logger.notice("Setting up Bud Foundry LLM provider.")
+            model_req = LLMProviderUpsertRequest(
+                name="BudFoundryProvider",
+                provider="openai",  # Use OpenAI-compatible provider for litellm
+                api_key=None,  # Uses user's OAuth token
+                api_base=BUD_FOUNDRY_API_BASE,
+                api_version=None,
+                custom_config=None,
+                default_model_name="auto",  # Placeholder - resolved per-user
+                fast_default_model_name="auto",
+                is_public=True,
+                groups=[],
+                model_configurations=[],
+                api_key_changed=False,
+            )
+            new_provider = upsert_llm_provider(
+                llm_provider_upsert_request=model_req, db_session=db_session
+            )
+            # Set as default if no other default exists
+            if fetch_default_provider(db_session) is None:
+                update_default_provider(
+                    provider_id=new_provider.id, db_session=db_session
+                )
 
 
 def update_default_multipass_indexing(db_session: Session) -> None:

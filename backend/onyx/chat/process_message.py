@@ -86,6 +86,7 @@ from onyx.file_store.utils import build_frontend_file_url
 from onyx.file_store.utils import load_all_chat_files
 from onyx.kg.models import KGException
 from onyx.llm.exceptions import GenAIDisabledException
+from onyx.llm.factory import AuthenticationRequiredError
 from onyx.llm.factory import get_llm_model_and_settings_for_persona
 from onyx.llm.factory import get_llms_for_persona
 from onyx.llm.factory import get_main_llm_from_tuple
@@ -427,9 +428,13 @@ def stream_chat_message_objects(
                 llm_override=new_msg_req.llm_override or chat_session.llm_override,
                 additional_headers=litellm_additional_headers,
                 long_term_logger=long_term_logger,
+                user=user,
             )
         except GenAIDisabledException:
             raise RuntimeError("LLM is disabled. Can't use chat flow without LLM.")
+        except AuthenticationRequiredError:
+            # Re-raise to be caught by chat_backend's stream_generator
+            raise
 
         llm_provider = llm.config.model_provider
         llm_model_name = llm.config.model_name
@@ -544,7 +549,7 @@ def stream_chat_message_objects(
             db_session=db_session,
             persona=persona,
             actual_user_input=message_text,
-            user_id=user_id,
+            user=user,
         )
         if not search_tool_override_kwargs_for_user_files:
             latest_query_files.extend(in_memory_user_files)
@@ -805,6 +810,7 @@ def stream_chat_message_objects(
                             new_msg_req.llm_override or chat_session.llm_override
                         ),
                         additional_headers=litellm_additional_headers,
+                        user=user,
                     )
                 )
             ),
@@ -854,6 +860,10 @@ def stream_chat_message_objects(
 
     # TODO: remove after moving kg stuff to api endpoint
     except KGException:
+        raise
+
+    except AuthenticationRequiredError:
+        # Re-raise so chat_backend can handle with auth_error response
         raise
 
     except Exception as e:

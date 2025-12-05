@@ -10,9 +10,9 @@ import httpx
 from fastapi_users.manager import BaseUserManager
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from onyx.configs.app_configs import OAUTH_CLIENT_ID
-from onyx.configs.app_configs import OAUTH_CLIENT_SECRET
-from onyx.configs.app_configs import TRACK_EXTERNAL_IDP_EXPIRY
+# Import module instead of values directly to ensure we read
+# the current values at runtime (after potential provisioning updates)
+from onyx.configs import app_configs
 from onyx.db.models import OAuthAccount
 from onyx.db.models import User
 from onyx.utils.logger import setup_logger
@@ -23,6 +23,88 @@ logger = setup_logger()
 REFRESH_ENDPOINTS = {
     "google": "https://oauth2.googleapis.com/token",
 }
+
+
+def _get_oidc_token_endpoint_sync() -> str | None:
+    """Synchronously fetch the OIDC token endpoint from the discovery URL."""
+    from onyx.configs.app_configs import OPENID_CONFIG_URL
+
+    if not OPENID_CONFIG_URL:
+        return None
+
+    try:
+        response = httpx.get(OPENID_CONFIG_URL, follow_redirects=True, timeout=10.0)
+        if response.status_code == 200:
+            return response.json().get("token_endpoint")
+    except Exception as e:
+        logger.warning(f"Failed to fetch OIDC token endpoint: {e}")
+    return None
+
+
+def refresh_oauth_token_sync(
+    user: User,
+    oauth_account: OAuthAccount,
+) -> str | None:
+    """
+    Synchronously refresh an OAuth token using the refresh token.
+    Returns the new access token if successful, None otherwise.
+
+    This is used for on-demand token refresh when a 401 is encountered.
+    """
+    if not oauth_account.refresh_token:
+        logger.warning(
+            f"No refresh token available for {user.email}'s {oauth_account.oauth_name} account"
+        )
+        return None
+
+    provider = oauth_account.oauth_name
+
+    # Get the token endpoint
+    if provider in REFRESH_ENDPOINTS:
+        token_url = REFRESH_ENDPOINTS[provider]
+    elif provider == "oidc":
+        token_url = _get_oidc_token_endpoint_sync()
+        if not token_url:
+            logger.warning("OIDC token endpoint not available for refresh")
+            return None
+    else:
+        logger.warning(f"Refresh endpoint not configured for provider: {provider}")
+        return None
+
+    try:
+        logger.info(f"Refreshing OAuth token for {user.email}'s {provider} account (sync)")
+
+        response = httpx.post(
+            token_url,
+            data={
+                "client_id": app_configs.OAUTH_CLIENT_ID,
+                "client_secret": app_configs.OAUTH_CLIENT_SECRET,
+                "refresh_token": oauth_account.refresh_token,
+                "grant_type": "refresh_token",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10.0,
+        )
+
+        if response.status_code != 200:
+            logger.error(
+                f"Failed to refresh OAuth token: Status {response.status_code}, Response: {response.text}"
+            )
+            return None
+
+        token_data = response.json()
+        new_access_token = token_data.get("access_token")
+
+        if new_access_token:
+            logger.info(f"Successfully refreshed OAuth token for {user.email} (sync)")
+            # Note: We don't update the database here - caller should handle that
+            return new_access_token
+
+        return None
+
+    except Exception as e:
+        logger.exception(f"Error refreshing OAuth token (sync): {str(e)}")
+        return None
 
 
 # NOTE: Keeping this as a utility function for potential future debugging,
@@ -84,8 +166,8 @@ async def refresh_oauth_token(
             response = await client.post(
                 REFRESH_ENDPOINTS[provider],
                 data={
-                    "client_id": OAUTH_CLIENT_ID,
-                    "client_secret": OAUTH_CLIENT_SECRET,
+                    "client_id": app_configs.OAUTH_CLIENT_ID,
+                    "client_secret": app_configs.OAUTH_CLIENT_SECRET,
                     "refresh_token": oauth_account.refresh_token,
                     "grant_type": "refresh_token",
                 },
@@ -123,7 +205,7 @@ async def refresh_oauth_token(
                 updated_data["expires_at"] = new_expires_at
 
                 # Update oidc_expiry in user model if we're tracking it
-                if TRACK_EXTERNAL_IDP_EXPIRY:
+                if app_configs.TRACK_EXTERNAL_IDP_EXPIRY:
                     oidc_expiry = datetime.fromtimestamp(
                         new_expires_at, tz=timezone.utc
                     )

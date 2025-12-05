@@ -499,3 +499,85 @@ This helps with placing things properly on the screen and seeing how they look d
 .dbg-green {
   border: 1px solid green;
 }
+
+/* BUD AUTH LAYOUT - Game of Life Background */
+
+.login-left-panel {
+  background: #0d0d0d;
+}
+
+.gol-bg::after {
+  content: "";
+  position: absolute;
+  bottom: -400px;
+  left: -250px;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
+  filter: blur(48.8px);
+  transform: rotate(318deg);
+  z-index: 1;
+  animation: golMoveDown 8s ease-in-out infinite alternate;
+}
+
+.gol-bg::before {
+  content: "";
+  position: absolute;
+  bottom: -470px;
+  right: -200px;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
+  mix-blend-mode: screen;
+  filter: blur(48.8px);
+  transform: rotate(145deg);
+  z-index: 2;
+  animation: golMoveUp 8s ease-in-out infinite alternate;
+  border-radius: 30%;
+}
+
+.gol-overlay::after {
+  content: "";
+  position: absolute;
+  bottom: -400px;
+  left: -250px;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
+  filter: blur(48.8px);
+  transform: rotate(318deg);
+  animation: golMoveDown 8s ease-in-out infinite alternate;
+}
+
+.gol-overlay::before {
+  content: "";
+  position: absolute;
+  bottom: -470px;
+  right: -200px;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
+  mix-blend-mode: screen;
+  filter: blur(48.8px);
+  transform: rotate(145deg);
+  animation: golMoveUp 8s ease-in-out infinite alternate;
+  border-radius: 30%;
+}
+
+@keyframes golMoveUp {
+  0% {
+    transform: rotate(145deg) translateY(0);
+  }
+  100% {
+    transform: rotate(145deg) translateY(-200px);
+  }
+}
+
+@keyframes golMoveDown {
+  0% {
+    transform: rotate(318deg) translateX(500px);
+  }
+  100% {
+    transform: rotate(318deg) translateX(200px);
+  }
+}

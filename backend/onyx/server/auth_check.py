@@ -52,6 +52,9 @@ PUBLIC_ENDPOINT_SPECS = [
     # oidc
     ("/auth/oidc/authorize", {"GET"}),
     ("/auth/oidc/callback", {"GET"}),
+    # oidc direct access grant (custom login form)
+    ("/auth/oidc/direct-login", {"POST"}),
+    ("/auth/oidc/direct-register", {"POST"}),
     # saml
     ("/auth/saml/authorize", {"GET"}),
     ("/auth/saml/callback", {"POST"}),

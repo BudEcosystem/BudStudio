@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import traceback
 from collections.abc import AsyncGenerator
@@ -124,6 +125,7 @@ from onyx.server.token_rate_limits.api import (
     router as token_rate_limit_settings_router,
 )
 from onyx.server.utils import BasicAuthenticationError
+from onyx.auth.keycloak_provisioning import provision_keycloak_client
 from onyx.setup import setup_multitenant_onyx
 from onyx.setup import setup_onyx
 from onyx.tracing.braintrust_tracing import setup_braintrust_if_creds_available
@@ -137,6 +139,7 @@ from onyx.utils.telemetry import RecordType
 from onyx.utils.variable_functionality import fetch_versioned_implementation
 from onyx.utils.variable_functionality import global_version
 from onyx.utils.variable_functionality import set_is_ee_based_on_env_variable
+from onyx.llm.factory import AuthenticationRequiredError
 from shared_configs.configs import CORS_ALLOWED_ORIGIN
 from shared_configs.configs import MULTI_TENANT
 from shared_configs.configs import POSTGRES_DEFAULT_SCHEMA
@@ -178,6 +181,23 @@ def value_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=400,
         content={"message": str(exc)},
+    )
+
+
+def authentication_required_handler(
+    _: Request, exc: AuthenticationRequiredError
+) -> JSONResponse:
+    """Handle AuthenticationRequiredError by returning 401 with OIDC re-auth indicator.
+
+    This is different from a 403 (Onyx session expired) - the user's Onyx session
+    is still valid, but their external IDP (Keycloak) token has expired.
+    The frontend should redirect to /auth/oidc/authorize for silent re-auth.
+    """
+    logger.warning(f"Authentication required (OIDC re-auth needed): {exc}")
+    return JSONResponse(
+        status_code=401,
+        content={"detail": str(exc), "reauth_required": "oidc"},
+        headers={"X-Reauth-Required": "oidc"},
     )
 
 
@@ -257,6 +277,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Will throw exception if an issue is found
     verify_auth()
+
+    # Auto-provision Keycloak OAuth client if needed
+    # This allows Onyx to automatically create/fetch its Keycloak client credentials
+    # at startup when OAUTH_CLIENT_ID is not configured but OPENID_CONFIG_URL is set.
+    if AUTH_TYPE == AuthType.OIDC and not OAUTH_CLIENT_ID:
+        provisioned = provision_keycloak_client()
+        if provisioned:
+            client_id, client_secret = provisioned
+            # Update the module-level variables so they're available for auth setup
+            import onyx.configs.app_configs as app_configs
+
+            app_configs.OAUTH_CLIENT_ID = client_id
+            app_configs.OAUTH_CLIENT_SECRET = client_secret
+            # Also update os.environ for any code that reads directly from env
+            os.environ["OAUTH_CLIENT_ID"] = client_id
+            os.environ["OAUTH_CLIENT_SECRET"] = client_secret
+            logger.notice("Successfully provisioned Keycloak OAuth client credentials.")
 
     if OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET:
         logger.notice("Both OAuth Client ID and Secret are configured.")
@@ -503,6 +540,15 @@ def get_application(lifespan_override: Lifespan | None = None) -> FastAPI:
             prefix="/auth",
         )
 
+        # Add Direct Access Grant router for custom login form
+        from onyx.auth.oidc_direct import router as oidc_direct_router
+
+        include_auth_router_with_prefix(
+            application,
+            oidc_direct_router,
+            prefix="/auth",
+        )
+
     elif AUTH_TYPE == AuthType.SAML:
         include_auth_router_with_prefix(
             application,
@@ -527,6 +573,11 @@ def get_application(lifespan_override: Lifespan | None = None) -> FastAPI:
     )
 
     application.add_exception_handler(ValueError, value_error_handler)
+
+    # Handle AuthenticationRequiredError globally - returns 403 to trigger frontend redirect
+    application.add_exception_handler(
+        AuthenticationRequiredError, authentication_required_handler
+    )
 
     application.add_middleware(
         CORSMiddleware,

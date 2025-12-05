@@ -466,6 +466,8 @@ def handle_new_chat_message(
         )
 
     def stream_generator() -> Generator[str, None, None]:
+        from onyx.llm.factory import AuthenticationRequiredError
+
         try:
             for packet in stream_chat_message(
                 new_msg_req=chat_message_req,
@@ -479,6 +481,10 @@ def handle_new_chat_message(
                 is_connected=is_connected_func,
             ):
                 yield packet
+
+        except AuthenticationRequiredError as e:
+            logger.warning(f"Authentication required during chat: {e}")
+            yield json.dumps({"error": str(e), "auth_error": True})
 
         except Exception as e:
             logger.exception("Error in chat message streaming")
@@ -571,6 +577,7 @@ def get_max_document_tokens(
     return MaxSelectedDocumentTokens(
         max_tokens=compute_max_document_tokens_for_persona(
             persona=persona,
+            user=user,
         ),
     )
 
@@ -602,6 +609,7 @@ def get_available_context_tokens_for_session(
 
     available = compute_max_document_tokens_for_persona(
         persona=chat_session.persona,
+        user=user,
     )
 
     return AvailableContextTokensResponse(available_tokens=available)
@@ -632,7 +640,7 @@ class ChatSeedResponse(BaseModel):
 def seed_chat(
     chat_seed_request: ChatSeedRequest,
     # NOTE: realistically, this will be an API key not an actual user
-    _: User | None = Depends(current_user),
+    user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> ChatSeedResponse:
     try:
@@ -652,7 +660,7 @@ def seed_chat(
         root_message = get_or_create_root_message(
             chat_session_id=new_chat_session.id, db_session=db_session
         )
-        llm, fast_llm = get_llms_for_persona(persona=new_chat_session.persona)
+        llm, fast_llm = get_llms_for_persona(persona=new_chat_session.persona, user=user)
 
         tokenizer = get_tokenizer(
             model_name=llm.config.model_name,

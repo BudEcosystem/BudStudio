@@ -60,6 +60,11 @@ GEN_AI_API_KEY = os.environ.get("GEN_AI_API_KEY")
 GEN_AI_MODEL_VERSION = os.environ.get("GEN_AI_MODEL_VERSION")
 FAST_GEN_AI_MODEL_VERSION = os.environ.get("FAST_GEN_AI_MODEL_VERSION")
 
+# Bud Foundry - auto-enabled when API base is set
+BUD_FOUNDRY_API_BASE = os.environ.get("BUD_FOUNDRY_API_BASE")
+# Bud Foundry app base - for /playground/initialize endpoint (auth)
+BUD_FOUNDRY_APP_BASE = os.environ.get("BUD_FOUNDRY_APP_BASE")
+
 # Override the auto-detection of LLM max context length
 GEN_AI_MAX_TOKENS = int(os.environ.get("GEN_AI_MAX_TOKENS") or 0) or None
 
