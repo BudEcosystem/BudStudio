@@ -140,10 +140,10 @@ def test_llm_configuration(
 
 @admin_router.post("/test/default")
 def test_default_provider(
-    _: User | None = Depends(current_admin_user),
+    user: User | None = Depends(current_admin_user),
 ) -> None:
     try:
-        llm, fast_llm = get_default_llms()
+        llm, fast_llm = get_default_llms(user=user)
     except ValueError:
         logger.exception("Failed to fetch default LLM Provider")
         raise HTTPException(status_code=400, detail="No LLM Provider setup")
