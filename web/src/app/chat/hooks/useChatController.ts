@@ -778,11 +778,11 @@ export function useChatController({
             ) {
               const streamingError = packet as StreamingError;
 
-              // Check if this is an authentication error - redirect to OIDC for re-auth
+              // Check if this is an authentication error - redirect to login page for re-auth
               if (streamingError.auth_error) {
-                console.log("Authentication error detected, redirecting to OIDC authorize");
+                console.log("Authentication error detected, redirecting to login page");
                 const returnUrl = window.location.href;
-                window.location.href = `/auth/oidc/authorize?next=${encodeURIComponent(returnUrl)}`;
+                window.location.href = `/auth/login?next=${encodeURIComponent(returnUrl)}`;
                 return;
               }
 
@@ -1045,9 +1045,9 @@ export function useChatController({
         try {
           const data = await response.json();
           if (data.reauth_required === "oidc") {
-            console.log("OIDC token expired, redirecting to OIDC authorize");
+            console.log("OIDC token expired, redirecting to login page");
             const returnUrl = window.location.href;
-            window.location.href = `/auth/oidc/authorize?next=${encodeURIComponent(returnUrl)}`;
+            window.location.href = `/auth/login?next=${encodeURIComponent(returnUrl)}`;
           }
         } catch (e) {
           // Ignore JSON parse errors

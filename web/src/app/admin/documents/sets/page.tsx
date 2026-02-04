@@ -250,7 +250,7 @@ const DocumentSetTable = ({
                       {/* Federated Connectors */}
                       {documentSet.federated_connector_summaries &&
                         documentSet.federated_connector_summaries.length >
-                          0 && (
+                        0 && (
                           <>
                             {documentSet.cc_pair_summaries.length > 0 && (
                               <div className="mb-3" />
@@ -261,8 +261,8 @@ const DocumentSetTable = ({
                                   <div
                                     className={
                                       ind !==
-                                      documentSet.federated_connector_summaries
-                                        .length -
+                                        documentSet.federated_connector_summaries
+                                          .length -
                                         1
                                         ? "mb-3"
                                         : ""
@@ -289,7 +289,7 @@ const DocumentSetTable = ({
                     ) : documentSet.cc_pair_summaries.length > 0 ||
                       (documentSet.federated_connector_summaries &&
                         documentSet.federated_connector_summaries.length >
-                          0) ? (
+                        0) ? (
                       <Badge variant="in_progress" icon={FiClock}>
                         Syncing
                       </Badge>
@@ -400,7 +400,7 @@ const Main = () => {
       <Text className="mb-3">
         <b>Document Sets</b> allow you to group logically connected documents
         into a single bundle. These can then be used as a filter when performing
-        searches to control the scope of information Onyx searches over.
+        searches to control the scope of information.
       </Text>
 
       <div className="mb-3"></div>

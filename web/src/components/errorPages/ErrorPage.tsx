@@ -11,7 +11,7 @@ export default function Error() {
       </div>
 
       <Text text03>
-        It seems there was a problem loading your Onyx settings. This could be
+        It seems there was a problem loading your settings. This could be
         due to a configuration issue or incomplete setup.
       </Text>
 

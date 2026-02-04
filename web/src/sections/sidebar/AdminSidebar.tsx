@@ -87,26 +87,26 @@ const custom_assistants_items = (
     },
   ];
 
-  // if (!isCurator) {
-  //   items.push(
-  //     {
-  //       name: "Slack Bots",
-  //       icon: SlackIconSkeleton,
-  //       link: "/admin/bots",
-  //     },
-  //     {
-  //       name: "Actions",
-  //       icon: ToolIconSkeleton,
-  //       link: "/admin/actions",
-  //     }
-  //   );
-  // } else {
-  //   items.push({
-  //     name: "Actions",
-  //     icon: ToolIconSkeleton,
-  //     link: "/admin/actions",
-  //   });
-  // }
+  if (!isCurator) {
+    items.push(
+      // {
+      //   name: "Slack Bots",
+      //   icon: SlackIconSkeleton,
+      //   link: "/admin/bots",
+      // },
+      {
+        name: "Actions",
+        icon: ToolIconSkeleton,
+        link: "/admin/actions",
+      }
+    );
+  } else {
+    items.push({
+      name: "Actions",
+      icon: ToolIconSkeleton,
+      link: "/admin/actions",
+    });
+  }
 
   if (enableEnterprise) {
     items.push({
@@ -127,20 +127,20 @@ const collections = (
   kgExposed: boolean,
   customAnalyticsEnabled: boolean
 ) => [
-  // {
-  //   name: "Connectors",
-  //   items: connectors_items(),
-  // },
-  // {
-  //   name: "Document Management",
-  //   items: document_management_items(),
-  // },
-  {
-    name: "Custom Assistants",
-    items: custom_assistants_items(isCurator, enableEnterprise),
-  },
-  ...(isCurator
-    ? [
+    {
+      name: "Connectors",
+      items: connectors_items(),
+    },
+    {
+      name: "Document Management",
+      items: document_management_items(),
+    },
+    {
+      name: "Custom Assistants",
+      items: custom_assistants_items(isCurator, enableEnterprise),
+    },
+    ...(isCurator
+      ? [
         {
           name: "User Management",
           items: [
@@ -152,9 +152,9 @@ const collections = (
           ],
         },
       ]
-    : []),
-  ...(!isCurator
-    ? [
+      : []),
+    ...(!isCurator
+      ? [
         {
           name: "Configuration",
           items: [
@@ -190,12 +190,12 @@ const collections = (
             // },
             ...(kgExposed
               ? [
-                  {
-                    name: "Knowledge Graph",
-                    icon: BrainIcon,
-                    link: "/admin/kg",
-                  },
-                ]
+                {
+                  name: "Knowledge Graph",
+                  icon: BrainIcon,
+                  link: "/admin/kg",
+                },
+              ]
               : []),
           ],
         },
@@ -230,35 +230,35 @@ const collections = (
         // },
         ...(enableEnterprise
           ? [
-              {
-                name: "Performance",
-                items: [
-                  {
-                    name: "Usage Statistics",
-                    icon: FiActivity,
-                    link: "/admin/performance/usage",
-                  },
-                  ...(settings?.settings.query_history_type !== "disabled"
-                    ? [
-                        {
-                          name: "Query History",
-                          icon: DatabaseIconSkeleton,
-                          link: "/admin/performance/query-history",
-                        },
-                      ]
-                    : []),
-                  ...(!enableCloud && customAnalyticsEnabled
-                    ? [
-                        {
-                          name: "Custom Analytics",
-                          icon: FiBarChart2,
-                          link: "/admin/performance/custom-analytics",
-                        },
-                      ]
-                    : []),
-                ],
-              },
-            ]
+            {
+              name: "Performance",
+              items: [
+                {
+                  name: "Usage Statistics",
+                  icon: FiActivity,
+                  link: "/admin/performance/usage",
+                },
+                ...(settings?.settings.query_history_type !== "disabled"
+                  ? [
+                    {
+                      name: "Query History",
+                      icon: DatabaseIconSkeleton,
+                      link: "/admin/performance/query-history",
+                    },
+                  ]
+                  : []),
+                ...(!enableCloud && customAnalyticsEnabled
+                  ? [
+                    {
+                      name: "Custom Analytics",
+                      icon: FiBarChart2,
+                      link: "/admin/performance/custom-analytics",
+                    },
+                  ]
+                  : []),
+              ],
+            },
+          ]
           : []),
         {
           name: "Settings",
@@ -270,27 +270,27 @@ const collections = (
             },
             ...(enableEnterprise
               ? [
-                  {
-                    name: "Whitelabeling",
-                    icon: PaintingIconSkeleton,
-                    link: "/admin/whitelabeling",
-                  },
-                ]
+                {
+                  name: "Whitelabeling",
+                  icon: PaintingIconSkeleton,
+                  link: "/admin/whitelabeling",
+                },
+              ]
               : []),
             ...(enableCloud
               ? [
-                  {
-                    name: "Billing",
-                    icon: MdOutlineCreditCard,
-                    link: "/admin/billing",
-                  },
-                ]
+                {
+                  name: "Billing",
+                  icon: MdOutlineCreditCard,
+                  link: "/admin/billing",
+                },
+              ]
               : []),
           ],
         },
       ]
-    : []),
-];
+      : []),
+  ];
 
 interface AdminSidebarProps {
   // These props are passed down from a server component (Layout.tsx) that

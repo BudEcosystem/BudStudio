@@ -851,7 +851,7 @@ auth:
       rootPassword: "minioadmin"
   oauth:
     # -- Enable or disable this secret entirely. Will remove from env var configurations and remove any created secrets.
-    enabled: false
+    enabled: true
     # -- Overwrite the default secret name, ignored if existingSecret is defined
     secretName: 'onyx-oauth'
     # -- Use a secret specified elsewhere
@@ -861,11 +861,16 @@ auth:
       OAUTH_CLIENT_ID: "oauth_client_id"
       OAUTH_CLIENT_SECRET: "oauth_client_secret"
       OAUTH_COOKIE_SECRET: "oauth_cookie_secret"
+      # Keycloak admin password for auto-provisioning OAuth client
+      KEYCLOAK_ADMIN_PASSWORD: "keycloak_admin_password"
     # -- Secrets values IF existingSecret is empty. Key here must match the value in secretKeys to be used. Values will be base64 encoded in the k8s cluster.
+    # Note: If oauth_client_id is empty and keycloak_admin_password is set,
+    # Onyx will auto-provision an OAuth client from Keycloak at startup.
     values:
       oauth_client_id: ""
       oauth_client_secret: ""
       oauth_cookie_secret: ""
+      keycloak_admin_password: ""
   smtp:
     # -- Enable or disable this secret entirely. Will remove from env var configurations and remove any created secrets.
     enabled: false
@@ -882,7 +887,14 @@ auth:
 
 configMap:
   # Change this for production uses unless Onyx is only accessible behind VPN
-  AUTH_TYPE: "disabled"
+  AUTH_TYPE: "oidc"
+  OPENID_CONFIG_URL: "https://keycloak.bud.studio/realms/bud-keycloak/.well-known/openid-configuration"
+  # Keycloak auto-provisioning configuration
+  # If OAUTH_CLIENT_ID is not set, Onyx will attempt to create/fetch a client from Keycloak
+  # using these admin credentials. Leave KEYCLOAK_ADMIN_PASSWORD empty to disable auto-provisioning.
+  KEYCLOAK_ADMIN_USERNAME: "bud"
+  KEYCLOAK_REALM: "bud-keycloak"
+  ONYX_CLIENT_NAME: "onyx-client"
   # 1 Day Default
   SESSION_EXPIRE_TIME_SECONDS: "86400"
   # Can be something like onyx.app, as an extra double-check
@@ -963,6 +975,9 @@ configMap:
   DOMAIN: "localhost"
   # Chat Configs
   HARD_DELETE_CHATS: ""
+
+  BUD_FOUNDRY_API_BASE: "https://gateway.dev.bud.studio"
+  BUD_FOUNDRY_APP_BASE: "https://app.dev.bud.studio"
 
 # Traefik IngressRoute Configuration
 # Enable this to expose Onyx through Traefik ingress controller

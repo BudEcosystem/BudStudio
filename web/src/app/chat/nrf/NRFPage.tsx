@@ -237,9 +237,8 @@ export default function NRFPage({
           >
             <div className="pointer-events-auto absolute top-[40%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-center w-[90%] lg:max-w-3xl">
               <h1
-                className={`pl-2 text-xl text-left w-full mb-4 ${
-                  theme === "light" ? "text-text-800" : "text-white"
-                }`}
+                className={`pl-2 text-xl text-left w-full mb-4 ${theme === "light" ? "text-text-800" : "text-white"
+                  }`}
               >
                 {isNight
                   ? "End your day with Onyx"
@@ -325,7 +324,7 @@ export default function NRFPage({
             <DialogDescription>
               You&apos;ll see your browser&apos;s default new tab page instead.
               <br />
-              You can turn it back on anytime in your Onyx settings.
+              You can turn it back on anytime in your settings.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex gap-2 justify-center">

@@ -199,13 +199,15 @@ def construct_tools(
     """Constructs tools based on persona configuration and available APIs.
 
     Will simply skip tools that are not allowed/available."""
+    from onyx.llm.factory import _get_fresh_oauth_token
+
     tool_dict: dict[int, list[Tool]] = {}
 
     mcp_tool_cache: dict[int, dict[int, MCPTool]] = {}
-    # Get user's OAuth token if available
+    # Get user's OAuth token if available - fetch fresh from DB
     user_oauth_token = None
-    if user and user.oauth_accounts:
-        user_oauth_token = user.oauth_accounts[0].access_token
+    if user:
+        user_oauth_token = _get_fresh_oauth_token(user)
 
     for db_tool_model in persona.tools:
         # If allowed_tool_ids is specified, skip tools not in the allowed list

@@ -191,12 +191,16 @@ def authentication_required_handler(
 
     This is different from a 403 (Onyx session expired) - the user's Onyx session
     is still valid, but their external IDP (Keycloak) token has expired.
-    The frontend should redirect to /auth/oidc/authorize for silent re-auth.
+    The frontend should redirect to /auth/oidc/authorize for re-auth.
+
+    The force_login flag tells the frontend to add prompt=login to the OIDC
+    authorization URL, which forces the IdP to re-authenticate the user and
+    issue fresh tokens (prevents redirect loop when refresh token is dead).
     """
     logger.warning(f"Authentication required (OIDC re-auth needed): {exc}")
     return JSONResponse(
         status_code=401,
-        content={"detail": str(exc), "reauth_required": "oidc"},
+        content={"detail": str(exc), "reauth_required": "oidc", "force_login": True},
         headers={"X-Reauth-Required": "oidc"},
     )
 

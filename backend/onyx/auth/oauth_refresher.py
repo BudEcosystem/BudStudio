@@ -87,9 +87,32 @@ def refresh_oauth_token_sync(
         )
 
         if response.status_code != 200:
+            error_body = response.text
             logger.error(
-                f"Failed to refresh OAuth token: Status {response.status_code}, Response: {response.text}"
+                f"Failed to refresh OAuth token: Status {response.status_code}, Response: {error_body}"
             )
+
+            # If invalid_grant, the refresh token is dead - clear stale tokens
+            # so the next OIDC re-auth flow gets fresh tokens
+            if "invalid_grant" in error_body:
+                logger.warning(
+                    f"Refresh token expired for {user.email}, clearing stale OAuth tokens"
+                )
+                try:
+                    from onyx.db.engine.sql_engine import get_session_with_current_tenant
+                    from sqlalchemy import update
+
+                    with get_session_with_current_tenant() as db_session:
+                        db_session.execute(
+                            update(OAuthAccount)
+                            .where(OAuthAccount.id == oauth_account.id)
+                            .values(access_token="", refresh_token="", expires_at=None)
+                        )
+                        db_session.commit()
+                    logger.info(f"Cleared stale OAuth tokens for {user.email}")
+                except Exception as clear_err:
+                    logger.warning(f"Failed to clear stale OAuth tokens: {clear_err}")
+
             return None
 
         token_data = response.json()

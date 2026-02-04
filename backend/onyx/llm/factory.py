@@ -34,6 +34,43 @@ from onyx.utils.long_term_log import LongTermLogger
 logger = setup_logger()
 
 
+def _get_fresh_oauth_token(user: User) -> str | None:
+    """Fetch fresh OAuth access token from database.
+
+    The user object loaded from session may have stale oauth_accounts data.
+    This ensures we get the current token from the database.
+    """
+    from onyx.db.models import OAuthAccount
+
+    with get_session_with_current_tenant() as db_session:
+        oauth_account = db_session.query(OAuthAccount).filter(
+            OAuthAccount.user_id == user.id
+        ).first()
+
+        if oauth_account and oauth_account.access_token:
+            return oauth_account.access_token
+    return None
+
+
+def _get_fresh_oauth_account(user: User) -> "OAuthAccount | None":
+    """Fetch fresh OAuth account from database.
+
+    Returns the full OAuthAccount object for cases where we need
+    both access_token and refresh_token.
+    """
+    from onyx.db.models import OAuthAccount
+
+    with get_session_with_current_tenant() as db_session:
+        oauth_account = db_session.query(OAuthAccount).filter(
+            OAuthAccount.user_id == user.id
+        ).first()
+        if oauth_account:
+            # Detach from session so it can be used outside the context
+            db_session.expunge(oauth_account)
+            return oauth_account
+    return None
+
+
 def _sync_bud_foundry_models_to_db(user: User, api_base: str) -> None:
     """Fetch models from Bud Foundry and save to database.
 
@@ -43,7 +80,11 @@ def _sync_bud_foundry_models_to_db(user: User, api_base: str) -> None:
     import httpx
     from onyx.db.llm import update_bud_foundry_model_configurations
 
-    access_token = user.oauth_accounts[0].access_token
+    # Fetch fresh token from database
+    access_token = _get_fresh_oauth_token(user)
+    if not access_token:
+        logger.warning("No access token available for Bud Foundry model sync")
+        return
     try:
         cleaned_api_base = api_base.rstrip("/")
         response = httpx.get(
@@ -104,14 +145,19 @@ def _ensure_bud_foundry_initialized(
         logger.warning("BUD_FOUNDRY_API_BASE not configured, skipping initialization")
         return
 
-    if not user or not user.oauth_accounts:
+    if not user:
         raise AuthenticationRequiredError(
             "OAuth authentication required for Bud Foundry"
         )
 
-    oauth_account = user.oauth_accounts[0]
-    access_token = oauth_account.access_token
+    # Fetch fresh OAuth account from database - user object may have stale oauth_accounts
+    oauth_account = _get_fresh_oauth_account(user)
+    if not oauth_account:
+        raise AuthenticationRequiredError(
+            "OAuth authentication required for Bud Foundry"
+        )
 
+    access_token = oauth_account.access_token
     if not access_token:
         raise AuthenticationRequiredError(
             "Access token not available for Bud Foundry initialization"
@@ -221,8 +267,11 @@ def _resolve_bud_foundry_model(
         logger.warning("BUD_FOUNDRY_API_BASE not configured")
         return None
 
-    # Get access token for API calls
-    user_oauth_token = user.oauth_accounts[0].access_token
+    # Get access token for API calls - fetch fresh from DB
+    user_oauth_token = _get_fresh_oauth_token(user)
+    if not user_oauth_token:
+        logger.warning("No access token available for Bud Foundry model resolution")
+        return None
 
     try:
         cleaned_api_base = BUD_FOUNDRY_API_BASE.rstrip("/")
@@ -315,10 +364,10 @@ def get_llms_for_persona(
     model = model_version_override or persona.llm_model_version_override
     fast_model = llm_provider.fast_default_model_name or llm_provider.default_model_name
 
-    # Get user's OAuth token for Bud Foundry provider
+    # Get user's OAuth token for Bud Foundry provider - fetch fresh from DB
     user_oauth_token = None
-    if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user and user.oauth_accounts:
-        user_oauth_token = user.oauth_accounts[0].access_token
+    if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user:
+        user_oauth_token = _get_fresh_oauth_token(user)
 
     # Resolve "auto" model for Bud Foundry provider
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME:
@@ -587,10 +636,10 @@ def get_default_llms(
         llm_provider.fast_default_model_name or llm_provider.default_model_name
     )
 
-    # Get user's OAuth token for Bud Foundry provider
+    # Get user's OAuth token for Bud Foundry provider - fetch fresh from DB
     user_oauth_token = None
-    if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user and user.oauth_accounts:
-        user_oauth_token = user.oauth_accounts[0].access_token
+    if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user:
+        user_oauth_token = _get_fresh_oauth_token(user)
 
     # Resolve "auto" model for Bud Foundry provider
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and model_name == "auto":

@@ -21,6 +21,8 @@ export default async function Page(props: PageProps) {
   const nextUrl = Array.isArray(searchParams?.next)
     ? searchParams?.next[0]
     : searchParams?.next || null;
+  // Check if this is an OIDC re-auth request (token expired but session valid)
+  const isOidcReauth = searchParams?.reauth === "oidc";
 
   // catch cases where the backend is completely unreachable here
   // without try / catch, will just raise an exception and the page
@@ -43,7 +45,8 @@ export default async function Page(props: PageProps) {
   }
 
   // if user is already logged in, take them to the main app page
-  if (currentUser && currentUser.is_active && !currentUser.is_anonymous_user) {
+  // UNLESS this is an OIDC re-auth request (token expired but session still valid)
+  if (currentUser && currentUser.is_active && !currentUser.is_anonymous_user && !isOidcReauth) {
     console.log("Login page: User is logged in, redirecting to chat", {
       userId: currentUser.id,
       is_active: currentUser.is_active,
@@ -57,6 +60,11 @@ export default async function Page(props: PageProps) {
     // Add a query parameter to indicate this is a redirect from login
     // This will help prevent redirect loops
     return redirect("/chat?from=login");
+  }
+
+  // Log OIDC re-auth situation
+  if (isOidcReauth) {
+    console.log("Login page: OIDC re-auth required, showing login form instead of redirecting to chat");
   }
 
   // get where to send the user to authenticate

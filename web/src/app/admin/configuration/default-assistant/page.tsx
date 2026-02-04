@@ -222,7 +222,7 @@ function DefaultAssistantConfig() {
 
         <Separator />
 
-        {/* <div>
+        <div>
           <Text mainUiBody text04 className="font-medium text-sm mb-2">
             Actions
           </Text>
@@ -244,7 +244,7 @@ function DefaultAssistantConfig() {
                 />
               ))}
           </div>
-        </div> */}
+        </div>
       </div>
     </div>
   );

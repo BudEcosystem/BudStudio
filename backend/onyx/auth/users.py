@@ -1279,6 +1279,7 @@ def get_oauth_router(
     async def authorize(
         request: Request,
         scopes: List[str] = Query(None),
+        force_login: bool = Query(False),
     ) -> OAuth2AuthorizeResponse:
         referral_source = request.cookies.get("referral_source", None)
 
@@ -1307,6 +1308,10 @@ def get_oauth_router(
             authorization_url = add_url_params(
                 authorization_url, {"access_type": "offline", "prompt": "consent"}
             )
+        # For OIDC with force_login, force the IdP to re-authenticate
+        # This is needed when the refresh token has expired (invalid_grant)
+        elif force_login and oauth_client.name == "oidc":
+            authorization_url = add_url_params(authorization_url, {"prompt": "login"})
 
         return OAuth2AuthorizeResponse(authorization_url=authorization_url)
 

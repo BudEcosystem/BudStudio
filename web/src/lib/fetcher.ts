@@ -26,16 +26,19 @@ const DEFAULT_AUTH_ERROR_MSG =
 const DEFAULT_ERROR_MSG = "An error occurred while fetching the data.";
 
 /**
- * Handles OIDC re-authentication by redirecting to the OIDC authorize endpoint.
+ * Handles OIDC re-authentication by redirecting to the login page.
  * This is used when the user's external IDP token has expired but their Onyx session is still valid.
+ * The user will need to re-enter credentials on the custom login page to get fresh tokens.
  */
 export const handleOIDCReauth = (): void => {
   // Only redirect if not already on auth pages
   if (!window.location.pathname.includes("/auth")) {
     // Store current URL to return after re-auth
     const returnUrl = window.location.href;
-    console.log("OIDC token expired, redirecting to OIDC authorize for re-auth");
-    window.location.href = `/auth/oidc/authorize?next=${encodeURIComponent(returnUrl)}`;
+    console.log("OIDC token expired, redirecting to login page for re-auth");
+    // Add reauth=oidc to signal the login page to trigger OIDC flow
+    // instead of redirecting back to chat (which would cause a loop)
+    window.location.href = `/auth/login?next=${encodeURIComponent(returnUrl)}&reauth=oidc`;
   }
 };
 
