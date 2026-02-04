@@ -1,0 +1,65 @@
+appId: com.bud.studio
+productName: Bud Studio
+copyright: Copyright © 2026 Bud
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - package.json
+
+extraResources:
+  # Include the Next.js standalone build
+  - from: ../web/.next/standalone
+    to: web
+    filter:
+      - "**/*"
+  # Include static assets
+  - from: ../web/.next/static
+    to: web/.next/static
+  # Include public folder
+  - from: ../web/public
+    to: web/public
+  # Include .env file for configuration
+  - .env
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  icon: resources/icon.png
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.png
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: resources/icon.png
+  category: Office
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
