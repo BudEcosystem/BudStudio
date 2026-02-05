@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target/
+
+# Cargo lock (optional - keep if you want reproducible builds)
+# Cargo.lock
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

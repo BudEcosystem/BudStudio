@@ -60,6 +60,36 @@ export async function OPTIONS(
   return handleRequest(request, params.path);
 }
 
+// Helper function to process Set-Cookie headers for desktop app compatibility
+// Strips the Secure flag when running locally (for Tauri WebView which doesn't
+// treat localhost as a secure context like Chrome does)
+function processSetCookieHeaders(headers: Headers): Headers {
+  const newHeaders = new Headers();
+
+  // Copy all headers except set-cookie (we'll handle those specially)
+  headers.forEach((value, key) => {
+    if (key.toLowerCase() !== "set-cookie") {
+      newHeaders.set(key, value);
+    }
+  });
+
+  // Process set-cookie headers if running in desktop/override mode
+  const setCookieHeader = headers.get("set-cookie");
+  if (setCookieHeader && process.env.OVERRIDE_API_PRODUCTION === "true") {
+    // Strip the Secure flag from cookies for localhost/desktop compatibility
+    // This is safe because we're running locally, not over the internet
+    const modifiedCookie = setCookieHeader
+      .split(",")
+      .map(cookie => cookie.replace(/;\s*Secure/gi, ""))
+      .join(",");
+    newHeaders.set("set-cookie", modifiedCookie);
+  } else if (setCookieHeader) {
+    newHeaders.set("set-cookie", setCookieHeader);
+  }
+
+  return newHeaders;
+}
+
 async function handleRequest(request: NextRequest, path: string[]) {
   if (
     process.env.NODE_ENV !== "development" &&
@@ -96,6 +126,9 @@ async function handleRequest(request: NextRequest, path: string[]) {
       duplex: "half",
     });
 
+    // Process headers to handle cookies for desktop compatibility
+    const processedHeaders = processSetCookieHeaders(response.headers);
+
     // Check if the response is a stream
     if (
       response.headers.get("Transfer-Encoding") === "chunked" ||
@@ -107,12 +140,12 @@ async function handleRequest(request: NextRequest, path: string[]) {
 
       return new NextResponse(readable, {
         status: response.status,
-        headers: response.headers,
+        headers: processedHeaders,
       });
     } else {
       return new NextResponse(response.body, {
         status: response.status,
-        headers: response.headers,
+        headers: processedHeaders,
       });
     }
   } catch (error: unknown) {
