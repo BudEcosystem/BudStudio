@@ -254,6 +254,9 @@
     </div>
 
     <script>
+        // Set desktop flag for the web app to detect we're in Tauri
+        localStorage.setItem("bud-is-desktop", "true");
+
         // Game of Life Animation
         (function() {
             const DESIRED_CELL_COUNT = 13;

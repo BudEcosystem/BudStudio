@@ -168,8 +168,21 @@ async fn main() {
 
                         // Get the main window
                         if let Some(window) = handle.get_webview_window("main") {
-                            // Navigate to Next.js server
-                            let _ = window.eval(&format!("window.location.href = '{}'", url));
+                            // Small delay to ensure window is ready
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+                            // Navigate to Next.js server using Tauri's navigate method
+                            log::info!("Navigating to {}", url);
+                            match url.parse::<tauri::Url>() {
+                                Ok(parsed_url) => {
+                                    if let Err(e) = window.navigate(parsed_url) {
+                                        log::error!("Failed to navigate: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to parse URL: {}", e);
+                                }
+                            }
                         }
                     }
                     Err(e) => {

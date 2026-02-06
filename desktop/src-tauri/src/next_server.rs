@@ -61,28 +61,50 @@ impl NextServer {
         log::info!("Starting Next.js server on port {}", self.port);
         self.base_path = standalone_path.clone();
 
-        let server_js = format!("{}/server.js", standalone_path);
+        // In debug mode, use Next.js dev server for hot reload
+        // In release mode, use the standalone build
+        let child = if cfg!(debug_assertions) {
+            // Development mode: run `npm run dev` in the web directory
+            let web_dir = std::path::Path::new(&standalone_path)
+                .parent() // .next
+                .and_then(|p| p.parent()) // web
+                .ok_or_else(|| anyhow::anyhow!("Could not determine web directory"))?;
 
-        // Check if server.js exists
-        if !std::path::Path::new(&server_js).exists() {
-            return Err(anyhow::anyhow!(
-                "Next.js standalone server not found at {}. Please build the Next.js app first.",
-                server_js
-            ));
-        }
+            log::info!("Starting Next.js dev server in {:?}", web_dir);
 
-        // Start the Node.js process
-        let child = Command::new("node")
-            .arg(&server_js)
-            .env("PORT", self.port.to_string())
-            .env("HOSTNAME", "127.0.0.1")
-            .env("INTERNAL_URL", "https://chat.pnap.bud.studio/api")
-            .env("OVERRIDE_API_PRODUCTION", "true")
-            .current_dir(&standalone_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Failed to start Next.js server")?;
+            Command::new("npm")
+                .args(["run", "dev", "--", "--port", &self.port.to_string()])
+                .env("INTERNAL_URL", "https://chat.pnap.bud.studio/api")
+                .env("OVERRIDE_API_PRODUCTION", "true")
+                .current_dir(web_dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .context("Failed to start Next.js dev server")?
+        } else {
+            // Production mode: use standalone build
+            let server_js = format!("{}/server.js", standalone_path);
+
+            // Check if server.js exists
+            if !std::path::Path::new(&server_js).exists() {
+                return Err(anyhow::anyhow!(
+                    "Next.js standalone server not found at {}. Please build the Next.js app first.",
+                    server_js
+                ));
+            }
+
+            Command::new("node")
+                .arg(&server_js)
+                .env("PORT", self.port.to_string())
+                .env("HOSTNAME", "127.0.0.1")
+                .env("INTERNAL_URL", "https://chat.pnap.bud.studio/api")
+                .env("OVERRIDE_API_PRODUCTION", "true")
+                .current_dir(&standalone_path)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .context("Failed to start Next.js server")?
+        };
 
         log::info!("Next.js process started with PID: {:?}", child.id());
 

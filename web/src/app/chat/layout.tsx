@@ -5,6 +5,7 @@ import { ChatProvider } from "@/refresh-components/contexts/ChatContext";
 import { ProjectsProvider } from "./projects/ProjectsContext";
 import AppSidebar from "@/sections/sidebar/AppSidebar";
 import { ChatModalProvider } from "@/refresh-components/contexts/ChatModalContext";
+import { DesktopModeProvider, DesktopHeader, ModeRenderer, AgentSessionProvider } from "@/components/desktop";
 
 export default async function Layout({
   children,
@@ -43,7 +44,8 @@ export default async function Layout({
   } = data;
 
   return (
-    <>
+    <DesktopModeProvider>
+      <DesktopHeader />
       <ChatProvider
         proSearchToggled={proSearchToggled}
         inputPrompts={inputPrompts}
@@ -62,13 +64,17 @@ export default async function Layout({
       >
         <ChatModalProvider>
           <ProjectsProvider initialProjects={projects}>
-            <div className="flex flex-row w-full h-full">
-              <AppSidebar />
-              {children}
-            </div>
+            <AgentSessionProvider>
+              <div className="flex flex-row w-full h-full">
+                <AppSidebar />
+                <ModeRenderer>
+                  {children}
+                </ModeRenderer>
+              </div>
+            </AgentSessionProvider>
           </ProjectsProvider>
         </ChatModalProvider>
       </ChatProvider>
-    </>
+    </DesktopModeProvider>
   );
 }

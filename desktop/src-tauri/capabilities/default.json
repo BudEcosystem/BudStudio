@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "identifier": "default",
+  "description": "Default capabilities for the main window",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*", "https://127.0.0.1:*", "https://localhost:*"]
+  },
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "core:window:allow-start-dragging",
+    "core:window:default"
+  ]
+}

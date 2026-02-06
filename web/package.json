@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev --turbo",
     "build": "next build",
+    "build:standalone": "next build && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public",
     "start": "next start",
     "lint": "next lint",
     "lint:unused": "eslint --ext .js,.jsx,.ts,.tsx --rule 'unused-imports/no-unused-imports: error' --quiet --fix=false src/",
