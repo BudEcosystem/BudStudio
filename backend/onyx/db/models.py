@@ -57,6 +57,9 @@ from onyx.configs.constants import FileOrigin
 from onyx.configs.constants import MessageType
 from onyx.db.enums import (
     AccessType,
+    AgentMemorySource,
+    AgentMessageRole,
+    AgentSessionStatus,
     EmbeddingPrecision,
     IndexingMode,
     SyncType,
@@ -3900,3 +3903,168 @@ class ExternalGroupPermissionSyncAttempt(Base):
 
     def is_finished(self) -> bool:
         return self.status.is_terminal()
+
+
+"""
+BudAgent Tables - Desktop AI Agent functionality
+"""
+
+
+class AgentSession(Base):
+    """Represents an agent session for the BudAgent desktop application.
+
+    An agent session tracks a conversation with the AI agent including its status,
+    model used, workspace context, and usage statistics.
+    """
+
+    __tablename__ = "agent_session"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[AgentSessionStatus] = mapped_column(
+        Enum(AgentSessionStatus, native_enum=False),
+        default=AgentSessionStatus.ACTIVE,
+        index=True,
+    )
+    # Reference to the LLM model configuration used for this session
+    model_config_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_configuration.id", ondelete="SET NULL"), nullable=True
+    )
+    # Workspace path for the agent session (project directory)
+    workspace_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Usage statistics
+    total_tokens_used: Mapped[int] = mapped_column(Integer, default=0)
+    total_tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    # Timestamps
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    model_configuration: Mapped["ModelConfiguration | None"] = relationship(
+        "ModelConfiguration"
+    )
+    messages: Mapped[list["AgentMessage"]] = relationship(
+        "AgentMessage", back_populates="session", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_agent_session_user_status", "user_id", "status"),
+        Index("ix_agent_session_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentSession(id={self.id!r}, status={self.status!r})>"
+
+
+class AgentMessage(Base):
+    """Represents a message within an agent session.
+
+    Messages can be from the user, assistant, tool calls/results, or system messages.
+    Tool-related fields are populated for tool call and tool result messages.
+    """
+
+    __tablename__ = "agent_message"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent_session.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[AgentMessageRole] = mapped_column(
+        Enum(AgentMessageRole, native_enum=False), nullable=False
+    )
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Tool-related fields
+    tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    tool_input: Mapped[dict[str, Any] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
+    tool_output: Mapped[dict[str, Any] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
+    tool_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Usage tracking
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Extended thinking content (for Claude models with extended thinking)
+    thinking_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Timestamps
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    session: Mapped["AgentSession"] = relationship(
+        "AgentSession", back_populates="messages"
+    )
+
+    __table_args__ = (Index("ix_agent_message_session_created", "session_id", "created_at"),)
+
+    def __repr__(self) -> str:
+        return f"<AgentMessage(id={self.id!r}, role={self.role!r})>"
+
+
+class AgentMemory(Base):
+    """Stores persistent memory entries for the agent.
+
+    Memories are facts or information extracted from agent sessions that can be
+    recalled in future sessions to provide context and personalization.
+    """
+
+    __tablename__ = "agent_memory"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Hash of content for deduplication
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Source of the memory
+    source: Mapped[AgentMemorySource] = mapped_column(
+        Enum(AgentMemorySource, native_enum=False), nullable=True
+    )
+    # Session that generated this memory (if from a session)
+    source_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent_session.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Timestamps
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_accessed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    source_session: Mapped["AgentSession | None"] = relationship("AgentSession")
+
+    __table_args__ = (
+        Index("ix_agent_memory_user_source", "user_id", "source"),
+        Index("ix_agent_memory_content_hash", "content_hash"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentMemory(id={self.id!r}, source={self.source!r})>"

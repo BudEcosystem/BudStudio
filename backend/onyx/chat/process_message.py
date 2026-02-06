@@ -651,6 +651,12 @@ def stream_chat_message_objects(
         )
 
         prompt_override = new_msg_req.prompt_override or chat_session.prompt_override
+        # DEBUG: Log prompt_override
+        logger.info(f"[BUD-DEBUG] prompt_override received: {prompt_override is not None}")
+        if prompt_override:
+            logger.info(f"[BUD-DEBUG] prompt_override.system_prompt length: {len(prompt_override.system_prompt) if prompt_override.system_prompt else 0}")
+            logger.info(f"[BUD-DEBUG] prompt_override.system_prompt preview: {prompt_override.system_prompt[:200] if prompt_override.system_prompt else 'NONE'}...")
+
         if new_msg_req.persona_override_config:
             prompt_config = PromptConfig(
                 system_prompt=new_msg_req.persona_override_config.prompts[
@@ -669,6 +675,11 @@ def stream_chat_message_objects(
             )
         else:
             prompt_config = PromptConfig.from_model(persona)
+
+        # DEBUG: Log prompt_config
+        logger.info(f"[BUD-DEBUG] prompt_config.system_prompt length: {len(prompt_config.system_prompt)}")
+        logger.info(f"[BUD-DEBUG] prompt_config.system_prompt preview: {prompt_config.system_prompt[:200]}...")
+        logger.info(f"[BUD-DEBUG] persona.is_default_persona: {persona.is_default_persona}")
 
         # Retrieve project-specific instructions if this chat session is associated with a project.
         project_instructions: str | None = (
@@ -774,13 +785,42 @@ def stream_chat_message_objects(
             files=latest_query_files,
         )
         mem_callback = make_memories_callback(user, db_session)
+
+        # Determine which system message builder to use:
+        # - v2 builder: for default persona with simple agent framework (appends custom instructions)
+        # - regular builder: for custom personas OR when prompt_override provides a custom system prompt
+        # When prompt_override.system_prompt is provided, use regular builder to allow full replacement
+        has_custom_system_prompt = prompt_override and prompt_override.system_prompt
+        use_v2_system_message = (
+            simple_agent_framework_enabled
+            and persona.is_default_persona
+            and not has_custom_system_prompt  # Skip v2 if custom system prompt is explicitly provided
+        )
+
+        # DEBUG: Log which path will be taken
+        logger.info(f"[BUD-DEBUG] simple_agent_framework_enabled: {simple_agent_framework_enabled}")
+        logger.info(f"[BUD-DEBUG] has_custom_system_prompt: {has_custom_system_prompt}")
+        logger.info(f"[BUD-DEBUG] Using v2 system message: {use_v2_system_message}")
+
         system_message = (
             default_build_system_message_for_default_assistant_v2(
                 prompt_config, llm.config, mem_callback, tools
             )
-            if simple_agent_framework_enabled and persona.is_default_persona
+            if use_v2_system_message
             else default_build_system_message(prompt_config, llm.config, mem_callback)
         )
+
+        # DEBUG: Log the final system message
+        if system_message:
+            system_content = str(system_message.content)
+            logger.info(f"[BUD-DEBUG] system_message length: {len(system_content)}")
+            logger.info(f"[BUD-DEBUG] system_message preview (first 500 chars): {system_content[:500]}...")
+            # Check if custom instructions are included
+            if "Custom Instructions" in system_content:
+                logger.info("[BUD-DEBUG] Custom Instructions section IS present in system message")
+            else:
+                logger.info("[BUD-DEBUG] Custom Instructions section is NOT present")
+
         prompt_builder = AnswerPromptBuilder(
             user_message=prompt_user_message,
             system_message=system_message,

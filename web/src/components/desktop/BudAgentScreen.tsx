@@ -1,41 +1,96 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/logo/Logo";
-import { useAgentSession, AgentMessage } from "./AgentSessionContext";
+import {
+  useAgentSession,
+  AgentMessage,
+  ToolCallInfo,
+} from "./AgentSessionContext";
+import { ToolApprovalDialog } from "./ToolApprovalDialog";
+import { MemoryUpdateDialog } from "./MemoryUpdateDialog";
 import ChatInputBar from "@/app/chat/components/input/ChatInputBar";
 import { useChatContext } from "@/refresh-components/contexts/ChatContext";
 import { useAgentsContext } from "@/refresh-components/contexts/AgentsContext";
 import { useLlmManager, useFilters } from "@/lib/hooks";
 import { useProjectsContext } from "@/app/chat/projects/ProjectsContext";
 import { ChatState } from "@/app/chat/interfaces";
+import {
+  useAgentSSE,
+  createToolCallInfo,
+  updateToolCallWithResult,
+  updateToolCallApprovalRequired,
+} from "@/lib/desktop";
+import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
+import { FiSquare, FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
+
+/**
+ * Interface for a pending tool approval request.
+ */
+interface PendingApproval {
+  toolCallId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+}
+
+/**
+ * Interface for a pending memory update request.
+ */
+interface PendingMemoryUpdate {
+  toolCallId: string;
+  toolName: string;
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+}
+
+// Default workspace path - in production this would come from configuration
+const DEFAULT_WORKSPACE_PATH = "/Users/dittops/Documents/projects/onyx";
 
 /**
  * BudAgent Screen - Autonomous agent chat interface
- * Similar to chat but with its own sessions for agent tasks
+ * Uses SSE streaming from the local agent API for real-time updates
  */
 export function BudAgentScreen() {
   const [message, setMessage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [chatState, setChatState] = useState<ChatState>("input");
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const currentAgentMessageIdRef = useRef<string | null>(null);
+  const accumulatedContentRef = useRef<string>("");
+  const toolCallsRef = useRef<ToolCallInfo[]>([]);
 
-  const { currentSession, currentSessionId, createSession, addMessage } =
-    useAgentSession();
+  const {
+    currentSession,
+    currentSessionId,
+    createSession,
+    addMessage,
+    updateMessage,
+    sessionPreferences,
+    setAlwaysAllowTool,
+    setAlwaysAllowMemoryUpdates,
+    isToolAlwaysAllowed,
+  } = useAgentSession();
+
+  // SSE streaming hook
+  const { execute, abort } = useAgentSSE();
 
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
-  const { agents: availableAssistants, liveAssistant } = useAgentsContext();
+  const { agents: availableAssistants, currentAgent } = useAgentsContext();
   const { setCurrentMessageFiles } = useProjectsContext();
 
   // Set up hooks that ChatInputBar needs
   const llmManager = useLlmManager(llmProviders);
   const filterManager = useFilters();
 
-  // Use the default assistant or first available
-  const selectedAssistant = liveAssistant || availableAssistants[0];
+  // Use the current agent or first available
+  // The ChatInputBar requires a non-null assistant, so we'll render a placeholder if none available
+  const selectedAssistant = currentAgent || availableAssistants[0] || null;
 
   const messages = currentSession?.messages || [];
 
@@ -43,6 +98,25 @@ export function BudAgentScreen() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abort();
+    };
+  }, [abort]);
+
+  /**
+   * Update the current agent message with new content or tool calls.
+   */
+  const updateCurrentAgentMessage = useCallback(
+    (updates: Partial<Omit<AgentMessage, "id" | "timestamp" | "role">>) => {
+      if (currentAgentMessageIdRef.current && currentSessionId) {
+        updateMessage(currentSessionId, currentAgentMessageIdRef.current, updates);
+      }
+    },
+    [currentSessionId, updateMessage]
+  );
 
   const handleSubmit = useCallback(() => {
     if (!message.trim() || isProcessing) return;
@@ -54,51 +128,406 @@ export function BudAgentScreen() {
       sessionId = newSession.id;
     }
 
+    const userMessage = message.trim();
+
     // Add user message
     addMessage(sessionId, {
       role: "user",
-      content: message,
+      content: userMessage,
     });
 
+    // Clear input and set processing state
     setMessage("");
     setIsProcessing(true);
     setChatState("streaming");
 
-    // Simulate agent response (TODO: integrate with actual agent backend)
-    setTimeout(() => {
-      addMessage(sessionId!, {
-        role: "agent",
-        content:
-          "I understand you want me to help with that task. Let me work on it autonomously...",
-        status: "complete",
-      });
-      setIsProcessing(false);
-      setChatState("input");
-    }, 1500);
-  }, [message, isProcessing, currentSessionId, createSession, addMessage]);
+    // Reset refs for new agent response
+    accumulatedContentRef.current = "";
+    toolCallsRef.current = [];
+
+    // Create initial agent message (will be updated via streaming)
+    const agentMsg = addMessage(sessionId, {
+      role: "agent",
+      content: "",
+      status: "thinking",
+    });
+    currentAgentMessageIdRef.current = agentMsg.id;
+
+    // Store sessionId and messageId in local variables for closure
+    const activeSessionId = sessionId;
+    const activeMessageId = agentMsg.id;
+
+    // Helper to update the agent message using local variables (not stale state)
+    const updateAgentMsg = (updates: Partial<Omit<AgentMessage, "id" | "timestamp" | "role">>) => {
+      updateMessage(activeSessionId, activeMessageId, updates);
+    };
+
+    // Execute the agent via SSE
+    execute(
+      {
+        sessionId: activeSessionId,
+        message: userMessage,
+        workspacePath: DEFAULT_WORKSPACE_PATH,
+      },
+      {
+        onThinking: () => {
+          updateAgentMsg({ status: "thinking" });
+        },
+
+        onText: (content) => {
+          accumulatedContentRef.current += content;
+          updateAgentMsg({
+            content: accumulatedContentRef.current,
+            status: "streaming",
+          });
+        },
+
+        onToolStart: (toolName, toolInput, toolCallId) => {
+          const newToolCall = createToolCallInfo(toolName, toolInput, toolCallId);
+          toolCallsRef.current = [...toolCallsRef.current, newToolCall];
+          updateAgentMsg({
+            toolCalls: toolCallsRef.current,
+            status: "streaming",
+          });
+        },
+
+        onToolResult: (toolName, toolOutput, toolError, toolCallId) => {
+          toolCallsRef.current = updateToolCallWithResult(
+            toolCallsRef.current,
+            toolCallId,
+            toolOutput,
+            toolError
+          );
+          updateAgentMsg({
+            toolCalls: toolCallsRef.current,
+          });
+        },
+
+        onApprovalRequired: async (toolName, toolInput, toolCallId) => {
+          // Update the tool call status to show it's awaiting approval
+          toolCallsRef.current = updateToolCallApprovalRequired(
+            toolCallsRef.current,
+            toolCallId
+          );
+          updateAgentMsg({
+            toolCalls: toolCallsRef.current,
+          });
+
+          // Check if this is a memory file operation
+          const filePath = toolInput.path as string | undefined;
+          const isMemory = filePath && isMemoryFile(filePath);
+
+          // Check if we should auto-approve based on preferences
+          if (isMemory && sessionPreferences.alwaysAllowMemoryUpdates) {
+            // Auto-approve memory updates
+            handleToolApprove(toolCallId, false);
+            return;
+          }
+
+          if (!isMemory && isToolAlwaysAllowed(toolName)) {
+            // Auto-approve this tool
+            handleToolApprove(toolCallId, false);
+            return;
+          }
+
+          // For memory file operations, try to fetch the current content for diff
+          if (isMemory && (toolName === "write_file" || toolName === "edit_file")) {
+            try {
+              // Try to read the current file content
+              const response = await fetch("/api/local-agent/read-file", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  workspacePath: DEFAULT_WORKSPACE_PATH,
+                  filePath,
+                }),
+              });
+
+              let oldContent = "";
+              if (response.ok) {
+                const data = await response.json();
+                oldContent = data.content || "";
+              }
+
+              // Determine new content based on tool type
+              let newContent = "";
+              if (toolName === "write_file") {
+                newContent = (toolInput.content as string) || "";
+              } else if (toolName === "edit_file") {
+                // For edit operations, apply the edit to show the result
+                const oldText = toolInput.oldText as string;
+                const newText = toolInput.newText as string;
+                if (oldText && oldContent.includes(oldText)) {
+                  newContent = oldContent.replace(oldText, newText || "");
+                } else {
+                  // Can't preview the edit, fall back to regular approval
+                  setPendingApproval({ toolCallId, toolName, toolInput });
+                  return;
+                }
+              }
+
+              // Show the memory update dialog
+              setPendingMemoryUpdate({
+                toolCallId,
+                toolName,
+                filePath,
+                oldContent,
+                newContent,
+              });
+              return;
+            } catch (error) {
+              console.error("Failed to read file for memory update preview:", error);
+              // Fall back to regular approval dialog
+            }
+          }
+
+          // Show the regular approval dialog
+          setPendingApproval({
+            toolCallId,
+            toolName,
+            toolInput,
+          });
+        },
+
+        onComplete: (content) => {
+          // Use the complete content from the event
+          updateAgentMsg({
+            content: content || accumulatedContentRef.current,
+            status: "complete",
+          });
+        },
+
+        onError: (error) => {
+          updateAgentMsg({
+            content:
+              accumulatedContentRef.current ||
+              `Error: ${error}`,
+            status: "error",
+          });
+        },
+
+        onStopped: () => {
+          updateAgentMsg({
+            content:
+              accumulatedContentRef.current ||
+              "Agent execution was stopped.",
+            status: "stopped",
+          });
+        },
+
+        onDone: () => {
+          setIsProcessing(false);
+          setChatState("input");
+          currentAgentMessageIdRef.current = null;
+        },
+      }
+    );
+  }, [
+    message,
+    isProcessing,
+    currentSessionId,
+    createSession,
+    addMessage,
+    updateMessage,
+    execute,
+    sessionPreferences,
+    isToolAlwaysAllowed,
+    setAlwaysAllowMemoryUpdates,
+  ]);
 
   const stopProcessing = useCallback(() => {
-    setIsProcessing(false);
-    setChatState("input");
+    abort();
+  }, [abort]);
+
+  /**
+   * Handle tool approval - send approval to the backend and continue execution.
+   */
+  const handleToolApprove = useCallback(
+    async (toolCallId: string, alwaysAllow: boolean) => {
+      if (!currentSessionId) return;
+
+      // Find the pending approval to check if it's for a specific tool
+      const approval = pendingApproval;
+      if (approval && alwaysAllow) {
+        // Check if this is a memory file
+        const filePath = approval.toolInput.path as string | undefined;
+        if (filePath && isMemoryFile(filePath)) {
+          setAlwaysAllowMemoryUpdates(true);
+        } else {
+          setAlwaysAllowTool(approval.toolName);
+        }
+      }
+
+      try {
+        const response = await fetch("/api/local-agent/approve", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            toolCallId,
+            approved: true,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to approve tool:", await response.text());
+        }
+      } catch (error) {
+        console.error("Error approving tool:", error);
+      }
+    },
+    [currentSessionId, pendingApproval, setAlwaysAllowTool, setAlwaysAllowMemoryUpdates]
+  );
+
+  /**
+   * Handle memory update approval - similar to tool approval but can set memory preference.
+   */
+  const handleMemoryUpdateApprove = useCallback(
+    async (toolCallId: string, alwaysAllow: boolean) => {
+      if (!currentSessionId) return;
+
+      // Store preference if user opted to always allow
+      if (alwaysAllow) {
+        setAlwaysAllowMemoryUpdates(true);
+      }
+
+      try {
+        const response = await fetch("/api/local-agent/approve", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            toolCallId,
+            approved: true,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to approve memory update:", await response.text());
+        }
+      } catch (error) {
+        console.error("Error approving memory update:", error);
+      }
+
+      setPendingMemoryUpdate(null);
+    },
+    [currentSessionId, setAlwaysAllowMemoryUpdates]
+  );
+
+  /**
+   * Handle memory update denial.
+   */
+  const handleMemoryUpdateDeny = useCallback(
+    async (toolCallId: string) => {
+      if (!currentSessionId) return;
+
+      try {
+        const response = await fetch("/api/local-agent/approve", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            toolCallId,
+            approved: false,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to deny memory update:", await response.text());
+        }
+
+        // Update the tool call status to show it was denied
+        toolCallsRef.current = toolCallsRef.current.map((tc) =>
+          tc.id === toolCallId
+            ? { ...tc, status: "error" as const, error: "Memory update denied by user" }
+            : tc
+        );
+        updateCurrentAgentMessage({
+          toolCalls: toolCallsRef.current,
+        });
+      } catch (error) {
+        console.error("Error denying memory update:", error);
+      }
+
+      setPendingMemoryUpdate(null);
+    },
+    [currentSessionId, updateCurrentAgentMessage]
+  );
+
+  /**
+   * Close the memory update dialog without taking action.
+   */
+  const handleMemoryUpdateDialogClose = useCallback(() => {
+    setPendingMemoryUpdate(null);
   }, []);
 
-  const handleFileUpload = useCallback(
-    (files: File[]) => {
-      // TODO: Implement file upload for agent
-      console.log("File upload for agent:", files);
+  /**
+   * Handle tool denial - send denial to the backend and stop the tool.
+   */
+  const handleToolDeny = useCallback(
+    async (toolCallId: string) => {
+      if (!currentSessionId) return;
+
+      try {
+        const response = await fetch("/api/local-agent/approve", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sessionId: currentSessionId,
+            toolCallId,
+            approved: false,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error("Failed to deny tool:", await response.text());
+        }
+
+        // Update the tool call status to show it was denied
+        toolCallsRef.current = toolCallsRef.current.map((tc) =>
+          tc.id === toolCallId
+            ? { ...tc, status: "error" as const, error: "Tool execution denied by user" }
+            : tc
+        );
+        updateCurrentAgentMessage({
+          toolCalls: toolCallsRef.current,
+        });
+      } catch (error) {
+        console.error("Error denying tool:", error);
+      }
     },
-    []
+    [currentSessionId, updateCurrentAgentMessage]
   );
+
+  /**
+   * Close the approval dialog without taking action.
+   */
+  const handleApprovalDialogClose = useCallback(() => {
+    setPendingApproval(null);
+  }, []);
+
+  const handleFileUpload = useCallback((files: File[]) => {
+    // TODO: Implement file upload for agent
+    console.log("File upload for agent:", files);
+  }, []);
 
   // No-op handlers for features not used in agent mode
   const noOp = useCallback(() => {}, []);
 
   return (
-    <div className="flex-1 flex flex-col h-full">
+    <div className="flex-1 flex flex-col h-full" data-testid="bud-agent-screen">
       {/* Messages Area */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" data-testid="agent-messages-container">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+          <div className="flex flex-col items-center justify-center h-full text-center px-4" data-testid="agent-intro">
             <div className="mb-6">
               <Logo size="large" />
             </div>
@@ -125,10 +554,11 @@ export function BudAgentScreen() {
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
+          <div className="max-w-3xl mx-auto py-6 px-4 space-y-6" data-testid="agent-messages-list">
             {messages.map((msg: AgentMessage) => (
               <div
                 key={msg.id}
+                data-testid={`agent-message-${msg.role}`}
                 className={cn(
                   "flex",
                   msg.role === "user" ? "justify-end" : "justify-start"
@@ -148,69 +578,236 @@ export function BudAgentScreen() {
                         Bud Agent
                       </span>
                       {msg.status && msg.status !== "complete" && (
-                        <span className="text-xs text-text-subtle">
-                          {msg.status}...
+                        <span
+                          data-testid="agent-message-status"
+                          className={cn(
+                            "text-xs",
+                            msg.status === "error"
+                              ? "text-red-500"
+                              : msg.status === "stopped"
+                                ? "text-yellow-500"
+                                : "text-text-subtle"
+                          )}
+                        >
+                          {msg.status === "thinking" && "thinking..."}
+                          {msg.status === "streaming" && "responding..."}
+                          {msg.status === "error" && "error"}
+                          {msg.status === "stopped" && "stopped"}
                         </span>
                       )}
                     </div>
                   )}
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+
+                  {/* Tool calls display */}
+                  {msg.role === "agent" && msg.toolCalls && msg.toolCalls.length > 0 && (
+                    <div className="mb-3 space-y-2" data-testid="agent-tool-calls">
+                      {msg.toolCalls.map((toolCall) => (
+                        <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Message content */}
+                  {msg.content && (
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  )}
                 </div>
               </div>
             ))}
-            {isProcessing && (
-              <div className="flex justify-start">
-                <div className="rounded-2xl px-4 py-3 bg-background-emphasis">
-                  <div className="flex items-center gap-2">
-                    <span className="text-purple-500 text-xs font-medium">
-                      Bud Agent
-                    </span>
-                    <div className="flex gap-1">
-                      <span
-                        className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
-                        style={{ animationDelay: "0ms" }}
-                      />
-                      <span
-                        className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
-                        style={{ animationDelay: "150ms" }}
-                      />
-                      <span
-                        className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
-                        style={{ animationDelay: "300ms" }}
-                      />
+
+            {/* Thinking indicator when processing but no content yet */}
+            {isProcessing &&
+              (!currentAgentMessageIdRef.current ||
+                !accumulatedContentRef.current) && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl px-4 py-3 bg-background-emphasis">
+                    <div className="flex items-center gap-2">
+                      <span className="text-purple-500 text-xs font-medium">
+                        Bud Agent
+                      </span>
+                      <div className="flex gap-1">
+                        <span
+                          className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
+                          style={{ animationDelay: "0ms" }}
+                        />
+                        <span
+                          className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <span
+                          className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
+                          style={{ animationDelay: "300ms" }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
+      {/* Stop button - shown when processing */}
+      {isProcessing && (
+        <div className="flex justify-center py-2">
+          <button
+            onClick={stopProcessing}
+            data-testid="agent-stop-button"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+          >
+            <FiSquare className="w-4 h-4" />
+            Stop Agent
+          </button>
+        </div>
+      )}
+
       {/* Input Area - using the same ChatInputBar component */}
       <div className="p-4 flex justify-center">
-        <ChatInputBar
-          message={message}
-          setMessage={setMessage}
-          onSubmit={handleSubmit}
-          stopGenerating={stopProcessing}
-          chatState={chatState}
-          llmManager={llmManager}
-          filterManager={filterManager}
-          selectedAssistant={selectedAssistant}
-          selectedDocuments={[]}
-          removeDocs={noOp}
-          toggleDocumentSidebar={noOp}
-          handleFileUpload={handleFileUpload}
-          textAreaRef={textAreaRef}
-          retrievalEnabled={false}
-          deepResearchEnabled={false}
-          toggleDeepResearch={noOp}
-          currentSessionFileTokenCount={0}
-          availableContextTokens={120000}
-        />
+        {selectedAssistant ? (
+          <ChatInputBar
+            message={message}
+            setMessage={setMessage}
+            onSubmit={handleSubmit}
+            stopGenerating={stopProcessing}
+            chatState={chatState}
+            llmManager={llmManager}
+            filterManager={filterManager}
+            selectedAssistant={selectedAssistant}
+            selectedDocuments={[]}
+            removeDocs={noOp}
+            toggleDocumentSidebar={noOp}
+            handleFileUpload={handleFileUpload}
+            textAreaRef={textAreaRef}
+            retrievalEnabled={false}
+            deepResearchEnabled={false}
+            toggleDeepResearch={noOp}
+            currentSessionFileTokenCount={0}
+            availableContextTokens={120000}
+          />
+        ) : (
+          <div className="text-sm text-text-subtle">
+            Loading assistants...
+          </div>
+        )}
       </div>
+
+      {/* Tool Approval Dialog */}
+      {pendingApproval && (
+        <ToolApprovalDialog
+          isOpen={true}
+          toolName={pendingApproval.toolName}
+          toolInput={pendingApproval.toolInput}
+          toolCallId={pendingApproval.toolCallId}
+          onApprove={handleToolApprove}
+          onDeny={handleToolDeny}
+          onClose={handleApprovalDialogClose}
+        />
+      )}
+
+      {/* Memory Update Dialog */}
+      {pendingMemoryUpdate && (
+        <MemoryUpdateDialog
+          isOpen={true}
+          filePath={pendingMemoryUpdate.filePath}
+          oldContent={pendingMemoryUpdate.oldContent}
+          newContent={pendingMemoryUpdate.newContent}
+          toolCallId={pendingMemoryUpdate.toolCallId}
+          onApprove={handleMemoryUpdateApprove}
+          onDeny={handleMemoryUpdateDeny}
+          onClose={handleMemoryUpdateDialogClose}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Display component for a single tool call.
+ */
+function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const getStatusIcon = () => {
+    switch (toolCall.status) {
+      case "running":
+        return (
+          <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+        );
+      case "complete":
+        return <FiCheck className="w-4 h-4 text-green-500" />;
+      case "error":
+        return <FiX className="w-4 h-4 text-red-500" />;
+      case "approval_required":
+        return <FiAlertCircle className="w-4 h-4 text-yellow-500" />;
+      default:
+        return <FiTool className="w-4 h-4 text-text-subtle" />;
+    }
+  };
+
+  const getStatusText = () => {
+    switch (toolCall.status) {
+      case "running":
+        return "Running...";
+      case "complete":
+        return "Complete";
+      case "error":
+        return "Error";
+      case "approval_required":
+        return "Approval Required";
+      default:
+        return "";
+    }
+  };
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden" data-testid={`tool-call-${toolCall.name}`}>
+      {/* Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        data-testid={`tool-call-header-${toolCall.name}`}
+        className="w-full flex items-center gap-2 px-3 py-2 bg-background hover:bg-background-emphasis transition-colors text-left"
+      >
+        {getStatusIcon()}
+        <span className="flex-1 text-xs font-medium truncate" data-testid="tool-call-name">
+          {toolCall.name}
+        </span>
+        <span className="text-xs text-text-subtle" data-testid={`tool-call-status-${toolCall.status}`}>{getStatusText()}</span>
+      </button>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="border-t border-border p-3 space-y-2 text-xs">
+          {/* Input */}
+          <div>
+            <div className="font-medium text-text-subtle mb-1">Input:</div>
+            <pre className="bg-background p-2 rounded overflow-auto max-h-32">
+              {JSON.stringify(toolCall.input, null, 2)}
+            </pre>
+          </div>
+
+          {/* Output */}
+          {toolCall.output && (
+            <div>
+              <div className="font-medium text-text-subtle mb-1">Output:</div>
+              <pre className="bg-background p-2 rounded overflow-auto max-h-32 whitespace-pre-wrap">
+                {toolCall.output}
+              </pre>
+            </div>
+          )}
+
+          {/* Error */}
+          {toolCall.error && (
+            <div>
+              <div className="font-medium text-red-500 mb-1">Error:</div>
+              <pre className="bg-red-500/10 text-red-500 p-2 rounded overflow-auto max-h-32 whitespace-pre-wrap">
+                {toolCall.error}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

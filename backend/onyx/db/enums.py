@@ -184,3 +184,37 @@ class ThemePreference(str, PyEnum):
 class WebSearchProviderType(str, PyEnum):
     SERPER = "serper"
     EXA = "exa"
+
+
+class AgentSessionStatus(str, PyEnum):
+    """Status of an agent session"""
+
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STOPPED = "stopped"
+
+    def is_terminal(self) -> bool:
+        terminal_states = {
+            AgentSessionStatus.COMPLETED,
+            AgentSessionStatus.FAILED,
+            AgentSessionStatus.STOPPED,
+        }
+        return self in terminal_states
+
+
+class AgentMessageRole(str, PyEnum):
+    """Role of a message in an agent session"""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+    SYSTEM = "system"
+
+
+class AgentMemorySource(str, PyEnum):
+    """Source of an agent memory entry"""
+
+    SESSION = "session"
+    USER_INPUT = "user_input"
+    AUTO = "auto"

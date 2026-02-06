@@ -8,4 +8,13 @@ export {
   useAgentSession,
   type AgentSession,
   type AgentMessage,
+  type SessionPreferences,
 } from "./AgentSessionContext";
+export {
+  ToolApprovalDialog,
+  type ToolApprovalDialogProps,
+} from "./ToolApprovalDialog";
+export {
+  MemoryUpdateDialog,
+  type MemoryUpdateDialogProps,
+} from "./MemoryUpdateDialog";

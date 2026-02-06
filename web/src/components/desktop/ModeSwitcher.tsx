@@ -46,6 +46,7 @@ export function ModeSwitcher({
     <div
       className={cn("relative flex items-center rounded-full px-1.5 py-1 gap-0.5", className)}
       style={styles.container}
+      data-testid="mode-switcher"
     >
       {/* Sliding indicator */}
       <div
@@ -63,6 +64,7 @@ export function ModeSwitcher({
         style={{
           color: currentMode === "chat" ? styles.activeText : styles.inactiveText,
         }}
+        data-testid="mode-switch-chat"
       >
         Chat
       </button>
@@ -79,6 +81,7 @@ export function ModeSwitcher({
         style={{
           color: currentMode === "agent" ? styles.activeText : styles.inactiveText,
         }}
+        data-testid="mode-switch-agent"
       >
         Bud
       </button>
