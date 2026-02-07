@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/logo/Logo";
 import {
@@ -45,8 +45,36 @@ interface PendingMemoryUpdate {
   newContent: string;
 }
 
-// Default workspace path - in production this would come from configuration
-const DEFAULT_WORKSPACE_PATH = "/Users/dittops/Documents/projects/onyx";
+/**
+ * Default fallback workspace path used when no configuration is provided.
+ * In Docker/server deployments this directory is auto-created by the API route.
+ */
+const FALLBACK_WORKSPACE_PATH = "/tmp/bud-workspace";
+
+/**
+ * Returns the workspace path from (in priority order):
+ * 1. NEXT_PUBLIC_BUD_WORKSPACE_PATH environment variable
+ * 2. localStorage key "bud-workspace-path"
+ * 3. FALLBACK_WORKSPACE_PATH
+ */
+function getWorkspacePath(): string {
+  // 1. Environment variable (set at build/deploy time)
+  const envPath = process.env.NEXT_PUBLIC_BUD_WORKSPACE_PATH;
+  if (envPath && envPath.trim()) {
+    return envPath.trim();
+  }
+
+  // 2. localStorage (set by user or Tauri desktop app)
+  if (typeof window !== "undefined") {
+    const storedPath = localStorage.getItem("bud-workspace-path");
+    if (storedPath && storedPath.trim()) {
+      return storedPath.trim();
+    }
+  }
+
+  // 3. Fallback
+  return FALLBACK_WORKSPACE_PATH;
+}
 
 /**
  * BudAgent Screen - Autonomous agent chat interface
@@ -82,7 +110,7 @@ export function BudAgentScreen() {
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
   const { agents: availableAssistants, currentAgent } = useAgentsContext();
-  const { setCurrentMessageFiles } = useProjectsContext();
+  const { setCurrentMessageFiles: _setCurrentMessageFiles } = useProjectsContext();
 
   // Set up hooks that ChatInputBar needs
   const llmManager = useLlmManager(llmProviders);
@@ -118,14 +146,34 @@ export function BudAgentScreen() {
     [currentSessionId, updateMessage]
   );
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (!message.trim() || isProcessing) return;
 
-    // Create a new session if there isn't one
+    // Ensure we have a backend session. The backend requires a UUID session
+    // created via POST /api/agent/sessions. The local AgentSessionContext
+    // uses its own IDs for UI state tracking, but the execute endpoint
+    // needs the real backend session ID.
     let sessionId = currentSessionId;
     if (!sessionId) {
-      const newSession = createSession();
-      sessionId = newSession.id;
+      try {
+        // Create the session on the backend first
+        const resp = await fetch("/api/agent/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: message.trim().slice(0, 50) }),
+        });
+        if (!resp.ok) {
+          console.error("Failed to create backend session");
+          return;
+        }
+        const data = await resp.json();
+        // Create a local session using the backend's UUID as the ID
+        const newSession = createSession(data.session_id);
+        sessionId = newSession.id;
+      } catch (err) {
+        console.error("Failed to create agent session:", err);
+        return;
+      }
     }
 
     const userMessage = message.trim();
@@ -167,7 +215,7 @@ export function BudAgentScreen() {
       {
         sessionId: activeSessionId,
         message: userMessage,
-        workspacePath: DEFAULT_WORKSPACE_PATH,
+        workspacePath: getWorkspacePath(),
       },
       {
         onThinking: () => {
@@ -238,7 +286,7 @@ export function BudAgentScreen() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  workspacePath: DEFAULT_WORKSPACE_PATH,
+                  workspacePath: getWorkspacePath(),
                   filePath,
                 }),
               });
@@ -337,7 +385,13 @@ export function BudAgentScreen() {
 
   const stopProcessing = useCallback(() => {
     abort();
-  }, [abort]);
+    // Also signal the backend to stop the agent loop
+    if (currentSessionId) {
+      fetch(`/api/agent/sessions/${currentSessionId}/stop`, {
+        method: "POST",
+      }).catch((err) => console.error("Failed to stop agent:", err));
+    }
+  }, [abort, currentSessionId]);
 
   /**
    * Handle tool approval - send approval to the backend and continue execution.
@@ -359,14 +413,13 @@ export function BudAgentScreen() {
       }
 
       try {
-        const response = await fetch("/api/local-agent/approve", {
+        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            sessionId: currentSessionId,
-            toolCallId,
+            tool_call_id: toolCallId,
             approved: true,
           }),
         });
@@ -394,14 +447,13 @@ export function BudAgentScreen() {
       }
 
       try {
-        const response = await fetch("/api/local-agent/approve", {
+        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            sessionId: currentSessionId,
-            toolCallId,
+            tool_call_id: toolCallId,
             approved: true,
           }),
         });
@@ -426,14 +478,13 @@ export function BudAgentScreen() {
       if (!currentSessionId) return;
 
       try {
-        const response = await fetch("/api/local-agent/approve", {
+        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            sessionId: currentSessionId,
-            toolCallId,
+            tool_call_id: toolCallId,
             approved: false,
           }),
         });
@@ -475,14 +526,13 @@ export function BudAgentScreen() {
       if (!currentSessionId) return;
 
       try {
-        const response = await fetch("/api/local-agent/approve", {
+        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            sessionId: currentSessionId,
-            toolCallId,
+            tool_call_id: toolCallId,
             approved: false,
           }),
         });
@@ -534,7 +584,7 @@ export function BudAgentScreen() {
             <h2 className="text-2xl font-semibold mb-3">Bud Agent</h2>
             <p className="text-base max-w-lg mb-8 text-text-subtle">
               I can work autonomously on complex tasks. Just describe what you
-              need and I'll handle it.
+              need and I&apos;ll handle it.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl w-full">
               {[

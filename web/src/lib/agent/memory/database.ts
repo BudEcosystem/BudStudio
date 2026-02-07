@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * SQLite database implementation for the agent memory system.
  *

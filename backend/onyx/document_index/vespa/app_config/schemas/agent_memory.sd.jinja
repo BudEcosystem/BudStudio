@@ -1,0 +1,54 @@
+schema agent_memory {
+    document agent_memory {
+        field memory_id type string {
+            indexing: summary | attribute
+            attribute: fast-search
+        }
+        field user_id type string {
+            indexing: summary | attribute
+            rank: filter
+            attribute: fast-search
+        }
+        field content type string {
+            indexing: summary | index
+            index: enable-bm25
+        }
+        field embedding type tensor<float>(x[{{ dim }}]) {
+            indexing: attribute | index
+            attribute {
+                distance-metric: angular
+            }
+        }
+        field created_at type long {
+            indexing: summary | attribute
+        }
+    }
+
+    fieldset default {
+        fields: content
+    }
+
+    rank-profile hybrid_memory_search {
+        inputs {
+            query(query_embedding) tensor<float>(x[{{ dim }}])
+            query(alpha) double: 0.7
+        }
+
+        first-phase {
+            expression: closeness(field, embedding)
+        }
+
+        global-phase {
+            expression {
+                query(alpha) * normalize_linear(closeness(field, embedding))
+                + (1 - query(alpha)) * normalize_linear(bm25(content))
+            }
+            rerank-count: 100
+        }
+
+        match-features {
+            bm25(content)
+            closeness(field, embedding)
+        }
+    }
+}

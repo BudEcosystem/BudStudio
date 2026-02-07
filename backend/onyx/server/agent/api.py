@@ -1,5 +1,6 @@
 """API endpoints for agent session management."""
 
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -8,9 +9,11 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from onyx.agents.bud_agent.orchestrator import BudAgentOrchestrator
 from onyx.auth.users import current_user
 from onyx.context.search.utils import get_query_embeddings
 from onyx.db.agent import add_session_message
@@ -19,12 +22,21 @@ from onyx.db.agent import delete_session
 from onyx.db.agent import get_session_for_user
 from onyx.db.agent import get_session_messages
 from onyx.db.agent import get_user_sessions
+from onyx.db.agent import create_memory
+from onyx.db.agent import delete_memory
+from onyx.db.agent import delete_workspace_file
+from onyx.db.agent import get_memories_for_user
+from onyx.db.agent import get_workspace_file
+from onyx.db.agent import list_workspace_files
 from onyx.db.agent import update_session_status
 from onyx.db.agent import update_session_title
+from onyx.db.agent import upsert_workspace_file
 from onyx.db.engine.sql_engine import get_session
+from onyx.db.enums import AgentMemorySource
 from onyx.db.enums import AgentMessageRole
 from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import User
+from onyx.redis.redis_pool import get_redis_client
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -110,6 +122,22 @@ class StatusResponse(BaseModel):
     status: str
 
 
+class CreateMemoryRequest(BaseModel):
+    content: str
+
+
+class MemorySnapshot(BaseModel):
+    id: str
+    content: str
+    source: str
+    created_at: datetime
+    last_accessed_at: datetime | None
+
+
+class MemoryListResponse(BaseModel):
+    memories: list[MemorySnapshot]
+
+
 class EmbedTextsRequest(BaseModel):
     """Request to embed one or more texts."""
 
@@ -120,6 +148,40 @@ class EmbedTextsResponse(BaseModel):
     """Response containing embedding vectors."""
 
     embeddings: list[list[float]]
+
+
+class WorkspaceFileSnapshot(BaseModel):
+    path: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkspaceFileListResponse(BaseModel):
+    files: list[WorkspaceFileSnapshot]
+
+
+class UpsertWorkspaceFileRequest(BaseModel):
+    path: str
+    content: str
+
+
+class ExecuteAgentRequest(BaseModel):
+    message: str
+    workspace_path: str | None = None
+    model: str | None = None
+    timezone: str | None = None
+
+
+class ToolResultRequest(BaseModel):
+    tool_call_id: str
+    output: str | None = None
+    error: str | None = None
+
+
+class ApprovalRequest(BaseModel):
+    tool_call_id: str
+    approved: bool
 
 
 # ==============================================================================
@@ -446,3 +508,348 @@ def delete_agent_session(
     logger.info(f"Deleted agent session {session_id} for user {user_id}")
 
     return DeleteSessionResponse(status="deleted")
+
+
+# ==============================================================================
+# Memory Endpoints
+# ==============================================================================
+
+
+@router.get("/memories")
+def list_memories(
+    limit: int = Query(default=20, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> MemoryListResponse:
+    """List memories for the current user."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    memories = get_memories_for_user(
+        db_session=db_session,
+        user_id=user.id,
+        limit=limit,
+        offset=offset,
+    )
+
+    return MemoryListResponse(
+        memories=[
+            MemorySnapshot(
+                id=str(m.id),
+                content=m.content,
+                source=m.source.value if m.source else "unknown",
+                created_at=m.created_at,
+                last_accessed_at=m.last_accessed_at,
+            )
+            for m in memories
+        ]
+    )
+
+
+@router.post("/memories")
+def create_agent_memory(
+    request: CreateMemoryRequest,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> MemorySnapshot:
+    """Create a new memory for the current user."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if not request.content or not request.content.strip():
+        raise HTTPException(status_code=400, detail="Memory content cannot be empty")
+
+    memory = create_memory(
+        db_session=db_session,
+        user_id=user.id,
+        content=request.content,
+        source=AgentMemorySource.USER_INPUT,
+    )
+
+    return MemorySnapshot(
+        id=str(memory.id),
+        content=memory.content,
+        source=memory.source.value if memory.source else "unknown",
+        created_at=memory.created_at,
+        last_accessed_at=memory.last_accessed_at,
+    )
+
+
+@router.delete("/memories/{memory_id}")
+def delete_agent_memory(
+    memory_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Delete a specific memory."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    deleted = delete_memory(
+        db_session=db_session,
+        memory_id=memory_id,
+        user_id=user.id,
+    )
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory not found")
+
+    return StatusResponse(status="deleted")
+
+
+# ==============================================================================
+# Workspace File Endpoints
+# ==============================================================================
+
+
+@router.get("/workspace-files")
+def list_agent_workspace_files(
+    prefix: str | None = Query(default=None),
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> WorkspaceFileListResponse:
+    """List workspace files for the current user, optionally filtered by prefix."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    files = list_workspace_files(
+        db_session=db_session,
+        user_id=user.id,
+        prefix=prefix,
+    )
+
+    return WorkspaceFileListResponse(
+        files=[
+            WorkspaceFileSnapshot(
+                path=f.path,
+                content=f.content,
+                created_at=f.created_at,
+                updated_at=f.updated_at,
+            )
+            for f in files
+        ]
+    )
+
+
+@router.get("/workspace-files/{path:path}")
+def get_agent_workspace_file(
+    path: str,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> WorkspaceFileSnapshot:
+    """Read a specific workspace file by path."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    workspace_file = get_workspace_file(
+        db_session=db_session,
+        user_id=user.id,
+        path=path,
+    )
+
+    if workspace_file is None:
+        raise HTTPException(status_code=404, detail="Workspace file not found")
+
+    return WorkspaceFileSnapshot(
+        path=workspace_file.path,
+        content=workspace_file.content,
+        created_at=workspace_file.created_at,
+        updated_at=workspace_file.updated_at,
+    )
+
+
+@router.put("/workspace-files")
+def upsert_agent_workspace_file(
+    request: UpsertWorkspaceFileRequest,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> WorkspaceFileSnapshot:
+    """Create or update a workspace file."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if not request.path or not request.path.strip():
+        raise HTTPException(status_code=400, detail="Path cannot be empty")
+
+    workspace_file = upsert_workspace_file(
+        db_session=db_session,
+        user_id=user.id,
+        path=request.path.strip(),
+        content=request.content,
+    )
+
+    return WorkspaceFileSnapshot(
+        path=workspace_file.path,
+        content=workspace_file.content,
+        created_at=workspace_file.created_at,
+        updated_at=workspace_file.updated_at,
+    )
+
+
+@router.delete("/workspace-files/{path:path}")
+def delete_agent_workspace_file(
+    path: str,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Delete a workspace file."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    deleted = delete_workspace_file(
+        db_session=db_session,
+        user_id=user.id,
+        path=path,
+    )
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Workspace file not found")
+
+    return StatusResponse(status="deleted")
+
+
+# ==============================================================================
+# Agent Execution Endpoints
+# ==============================================================================
+
+
+@router.post("/sessions/{session_id}/execute")
+def execute_agent(
+    session_id: UUID,
+    request: ExecuteAgentRequest,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StreamingResponse:
+    """Execute the agent for a session, streaming results via SSE."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session = get_session_for_user(
+        db_session=db_session,
+        session_id=session_id,
+        user_id=user.id,
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    redis_client = get_redis_client()
+
+    orchestrator = BudAgentOrchestrator(
+        session_id=session_id,
+        user=user,
+        db_session=db_session,
+        redis_client=redis_client,
+        workspace_path=request.workspace_path or session.workspace_path,
+        model=request.model,
+        timezone=request.timezone,
+    )
+
+    return StreamingResponse(
+        orchestrator.run(request.message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/sessions/{session_id}/tool-result")
+def submit_tool_result(
+    session_id: UUID,
+    request: ToolResultRequest,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Submit a tool execution result from the desktop."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session = get_session_for_user(
+        db_session=db_session,
+        session_id=session_id,
+        user_id=user.id,
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status.is_terminal():
+        raise HTTPException(
+            status_code=409,
+            detail="Session is no longer active",
+        )
+
+    redis_client = get_redis_client()
+
+    key = f"bud_agent_tool_result:{session_id}:{request.tool_call_id}"
+    payload = json.dumps({
+        "output": request.output,
+        "error": request.error,
+    })
+    redis_client.rpush(key, payload)
+    redis_client.expire(key, 600)  # 10-minute TTL
+
+    return StatusResponse(status="submitted")
+
+
+@router.post("/sessions/{session_id}/approval")
+def submit_approval(
+    session_id: UUID,
+    request: ApprovalRequest,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Submit a tool approval decision from the user."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session = get_session_for_user(
+        db_session=db_session,
+        session_id=session_id,
+        user_id=user.id,
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status.is_terminal():
+        raise HTTPException(
+            status_code=409,
+            detail="Session is no longer active",
+        )
+
+    redis_client = get_redis_client()
+
+    key = f"bud_agent_approval:{session_id}:{request.tool_call_id}"
+    payload = json.dumps({"approved": request.approved})
+    redis_client.rpush(key, payload)
+    redis_client.expire(key, 600)
+
+    return StatusResponse(status="submitted")
+
+
+@router.post("/sessions/{session_id}/stop")
+def stop_agent(
+    session_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Stop a running agent execution."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session = get_session_for_user(
+        db_session=db_session,
+        session_id=session_id,
+        user_id=user.id,
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    redis_client = get_redis_client()
+
+    # Set stop signal that the orchestrator checks periodically
+    redis_client.set(f"bud_agent_stop:{session_id}", "1", ex=300)
+
+    return StatusResponse(status="stopping")

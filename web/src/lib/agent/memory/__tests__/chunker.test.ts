@@ -16,7 +16,6 @@ import {
   computeContentHash,
   MemoryChunker,
 } from "../chunker";
-import type { MemoryChunk } from "../types";
 
 describe("computeContentHash", () => {
   it("should generate a consistent SHA-256 hash for the same content", () => {
@@ -65,10 +64,10 @@ describe("chunkFile", () => {
       const chunks = chunkFile("/path/to/file.md", content);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].filePath).toBe("/path/to/file.md");
-      expect(chunks[0].content).toBe(content);
-      expect(chunks[0].startLine).toBe(1);
-      expect(chunks[0].endLine).toBe(3);
+      expect(chunks[0]!.filePath).toBe("/path/to/file.md");
+      expect(chunks[0]!.content).toBe(content);
+      expect(chunks[0]!.startLine).toBe(1);
+      expect(chunks[0]!.endLine).toBe(3);
     });
 
     it("should extract headers from small file", () => {
@@ -76,15 +75,15 @@ describe("chunkFile", () => {
       const chunks = chunkFile("/path/to/file.md", content);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].headers).toEqual(["Main Title"]);
+      expect(chunks[0]!.headers).toEqual(["Main Title"]);
     });
 
     it("should include content hash in chunk", () => {
       const content = "Some content";
       const chunks = chunkFile("/path/to/file.md", content);
 
-      expect(chunks[0].contentHash).toBeDefined();
-      expect(chunks[0].contentHash).toBe(computeContentHash(content));
+      expect(chunks[0]!.contentHash).toBeDefined();
+      expect(chunks[0]!.contentHash).toBe(computeContentHash(content));
     });
   });
 
@@ -94,8 +93,8 @@ describe("chunkFile", () => {
       const chunks = chunkFile("/path/to/file.md", content);
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0].startLine).toBe(1);
-      expect(chunks[0].endLine).toBe(5);
+      expect(chunks[0]!.startLine).toBe(1);
+      expect(chunks[0]!.endLine).toBe(5);
     });
 
     it("should track correct line numbers across multiple chunks", () => {
@@ -110,13 +109,13 @@ describe("chunkFile", () => {
       // Verify that chunks have sensible line numbers
       expect(chunks.length).toBeGreaterThan(0);
       // First chunk should start within the first few lines
-      expect(chunks[0].startLine).toBeGreaterThanOrEqual(1);
-      expect(chunks[0].startLine).toBeLessThanOrEqual(5);
+      expect(chunks[0]!.startLine).toBeGreaterThanOrEqual(1);
+      expect(chunks[0]!.startLine).toBeLessThanOrEqual(5);
 
       // Each subsequent chunk should start at or after the previous chunk's start
       for (let i = 1; i < chunks.length; i++) {
-        expect(chunks[i].startLine).toBeGreaterThanOrEqual(
-          chunks[i - 1].startLine!
+        expect(chunks[i]!.startLine).toBeGreaterThanOrEqual(
+          chunks[i - 1]!.startLine!
         );
       }
     });
@@ -145,7 +144,7 @@ describe("chunkFile", () => {
 
         expect(chunks).toHaveLength(1);
         // The comment inside code should not be extracted as a header
-        expect(chunks[0].headers).toBeUndefined();
+        expect(chunks[0]!.headers).toBeUndefined();
       });
     });
 
@@ -157,7 +156,7 @@ describe("chunkFile", () => {
 
         expect(chunks.length).toBeGreaterThan(0);
         // Headers should be extracted
-        expect(chunks[0].headers).toBeDefined();
+        expect(chunks[0]!.headers).toBeDefined();
       });
 
       it("should handle multiple header levels", () => {
@@ -167,7 +166,7 @@ describe("chunkFile", () => {
 
         expect(chunks).toHaveLength(1);
         // Should have Main header
-        expect(chunks[0].headers).toContain("Main");
+        expect(chunks[0]!.headers).toContain("Main");
       });
     });
 
@@ -178,8 +177,8 @@ describe("chunkFile", () => {
         const chunks = chunkFile("/path/to/file.md", content);
 
         expect(chunks).toHaveLength(1);
-        expect(chunks[0].content).toContain("- Item 1");
-        expect(chunks[0].content).toContain("- Item 5");
+        expect(chunks[0]!.content).toContain("- Item 1");
+        expect(chunks[0]!.content).toContain("- Item 5");
       });
 
       it("should handle numbered lists", () => {
@@ -188,8 +187,8 @@ describe("chunkFile", () => {
         const chunks = chunkFile("/path/to/file.md", content);
 
         expect(chunks).toHaveLength(1);
-        expect(chunks[0].content).toContain("1. First");
-        expect(chunks[0].content).toContain("3. Third");
+        expect(chunks[0]!.content).toContain("1. First");
+        expect(chunks[0]!.content).toContain("3. Third");
       });
 
       it("should handle nested lists", () => {
@@ -198,8 +197,8 @@ describe("chunkFile", () => {
         const chunks = chunkFile("/path/to/file.md", content);
 
         expect(chunks).toHaveLength(1);
-        expect(chunks[0].content).toContain("- Parent 1");
-        expect(chunks[0].content).toContain("  - Child 1");
+        expect(chunks[0]!.content).toContain("- Parent 1");
+        expect(chunks[0]!.content).toContain("  - Child 1");
       });
     });
   });
@@ -230,8 +229,8 @@ describe("chunkFile", () => {
       if (chunks.length > 1) {
         // The chunker uses overlap, so consecutive chunks may share some context
         // We just verify that the chunks cover the content properly
-        expect(chunks[0].content.length).toBeGreaterThan(0);
-        expect(chunks[chunks.length - 1].content.length).toBeGreaterThan(0);
+        expect(chunks[0]!.content.length).toBeGreaterThan(0);
+        expect(chunks[chunks.length - 1]!.content.length).toBeGreaterThan(0);
       }
     });
   });
@@ -256,7 +255,7 @@ describe("chunkFile", () => {
       const chunks1 = chunkFile("/path/to/file.md", content);
       const chunks2 = chunkFile("/path/to/file.md", content);
 
-      expect(chunks1[0].contentHash).toBe(chunks2[0].contentHash);
+      expect(chunks1[0]!.contentHash).toBe(chunks2[0]!.contentHash);
     });
   });
 });
@@ -271,8 +270,8 @@ describe("chunkFiles", () => {
     const chunks = chunkFiles(files);
 
     expect(chunks.length).toBe(2);
-    expect(chunks[0].filePath).toBe("/path/to/file1.md");
-    expect(chunks[1].filePath).toBe("/path/to/file2.md");
+    expect(chunks[0]!.filePath).toBe("/path/to/file1.md");
+    expect(chunks[1]!.filePath).toBe("/path/to/file2.md");
   });
 
   it("should handle empty files in the list", () => {
@@ -313,7 +312,7 @@ describe("MemoryChunker class", () => {
     const chunks = chunker.chunkFile("/path/to/file.md", "# Title\n\nContent");
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].content).toContain("Title");
+    expect(chunks[0]!.content).toContain("Title");
   });
 
   it("should chunk multiple files using instance method", () => {

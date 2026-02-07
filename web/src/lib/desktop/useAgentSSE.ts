@@ -72,6 +72,9 @@ export function useAgentSSE() {
       const signal = abortControllerRef.current.signal;
 
       try {
+        // Detect the user's timezone from the browser
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
         const response = await fetch("/api/local-agent/execute", {
           method: "POST",
           headers: {
@@ -81,6 +84,7 @@ export function useAgentSSE() {
             sessionId: params.sessionId,
             message: params.message,
             workspacePath: params.workspacePath,
+            timezone,
           }),
           signal,
         });

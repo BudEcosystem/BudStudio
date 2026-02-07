@@ -112,7 +112,11 @@ export class Embedder {
     }
 
     const embeddings = await this.embedBatch([text]);
-    return embeddings[0];
+    const embedding = embeddings[0];
+    if (!embedding) {
+      throw new EmbeddingError("Failed to generate embedding");
+    }
+    return embedding;
   }
 
   /**
@@ -133,8 +137,9 @@ export class Embedder {
     // Filter out empty texts and track their indices
     const validTexts: { text: string; originalIndex: number }[] = [];
     for (let i = 0; i < texts.length; i++) {
-      if (texts[i] && texts[i].trim().length > 0) {
-        validTexts.push({ text: texts[i], originalIndex: i });
+      const text = texts[i];
+      if (text && text.trim().length > 0) {
+        validTexts.push({ text, originalIndex: i });
       }
     }
 
@@ -164,13 +169,21 @@ export class Embedder {
     let embeddingIndex = 0;
 
     for (const { originalIndex } of validTexts) {
-      results[originalIndex] = this.toFloat32Array(flatEmbeddings[embeddingIndex]);
+      const embedding = flatEmbeddings[embeddingIndex];
+      if (!embedding) {
+        throw new EmbeddingError("Missing embedding in response");
+      }
+      results[originalIndex] = this.toFloat32Array(embedding);
       embeddingIndex++;
     }
 
     // Fill empty text positions with zero vectors if any embeddings were generated
     if (flatEmbeddings.length > 0) {
-      const embeddingDimension = flatEmbeddings[0].length;
+      const firstEmbedding = flatEmbeddings[0];
+      if (!firstEmbedding) {
+        throw new EmbeddingError("Missing first embedding in response");
+      }
+      const embeddingDimension = firstEmbedding.length;
       for (let i = 0; i < texts.length; i++) {
         if (!results[i]) {
           results[i] = new Float32Array(embeddingDimension);

@@ -7,6 +7,7 @@ from typing import Optional
 from typing import TypeVar
 
 from agents import Agent
+from agents import RunConfig
 from agents import RunResultStreaming
 from agents import TContext
 from agents.run import Runner
@@ -45,11 +46,13 @@ class SyncAgentStream(Generic[T]):
         context: TContext | None = None,
         max_turns: int = 100,
         queue_maxsize: int = 0,
+        run_config: RunConfig | None = None,
     ) -> None:
         self._agent = agent
         self._input = input
         self._context = context
         self._max_turns = max_turns
+        self._run_config = run_config
 
         self._q: "queue.Queue[object]" = queue.Queue(maxsize=queue_maxsize)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -128,6 +131,7 @@ class SyncAgentStream(Generic[T]):
                     self._input,  # type: ignore[arg-type]
                     context=self._context,
                     max_turns=self._max_turns,
+                    run_config=self._run_config,
                 )
 
                 # If cancel was requested before we created _streamed, honor it now

@@ -76,6 +76,12 @@ IMAGE_FILE_NAME = "image_file_name"
 CONTENT_SUMMARY = "content_summary"
 
 
+# Agent memory schema constants
+AGENT_MEMORY_SCHEMA_NAME = "agent_memory"
+AGENT_MEMORY_DOC_ID_ENDPOINT = (
+    f"{VESPA_APP_CONTAINER_URL}/document/v1/default/{AGENT_MEMORY_SCHEMA_NAME}/docid"
+)
+
 YQL_BASE = (
     f"select "
     f"documentid, "

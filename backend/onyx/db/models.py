@@ -4068,3 +4068,43 @@ class AgentMemory(Base):
 
     def __repr__(self) -> str:
         return f"<AgentMemory(id={self.id!r}, source={self.source!r})>"
+
+
+class AgentWorkspaceFile(Base):
+    """Stores virtual workspace files for the agent.
+
+    These are path-addressed documents (e.g. SOUL.md, USER.md, memory/2025-06-15.md)
+    that the agent reads and writes across sessions. Unlike AgentMemory (granular
+    semantic facts with Vespa search), workspace files are mutable documents
+    addressed by path.
+    """
+
+    __tablename__ = "agent_workspace_file"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    path: Mapped[str] = mapped_column(
+        String(500), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "path", name="uq_agent_workspace_file_user_path"),
+        Index("ix_agent_workspace_file_user_path", "user_id", "path"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentWorkspaceFile(id={self.id!r}, path={self.path!r})>"

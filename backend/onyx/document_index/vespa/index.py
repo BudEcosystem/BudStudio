@@ -186,6 +186,7 @@ def add_ngrams_to_schema(schema_content: str) -> str:
 class VespaIndex(DocumentIndex):
 
     VESPA_SCHEMA_JINJA_FILENAME = "danswer_chunk.sd.jinja"
+    AGENT_MEMORY_SCHEMA_JINJA_FILENAME = "agent_memory.sd.jinja"
 
     def __init__(
         self,
@@ -249,9 +250,16 @@ class VespaIndex(DocumentIndex):
             vespa_schema_path, "validation-overrides.xml.jinja"
         )
 
+        agent_memory_schema_jinja_file = os.path.join(
+            vespa_schema_path,
+            "schemas",
+            VespaIndex.AGENT_MEMORY_SCHEMA_JINJA_FILENAME,
+        )
+
         with open(services_jinja_file, "r") as services_f:
             schema_names = [self.index_name, self.secondary_index_name]
-            doc_lines = _create_document_xml_lines(schema_names)
+            all_doc_names: list[str | None] = list(schema_names) + ["agent_memory"]
+            doc_lines = _create_document_xml_lines(all_doc_names)
 
             services_template_str = services_f.read()
             services_template = jinja_env.from_string(services_template_str)
@@ -315,6 +323,15 @@ class VespaIndex(DocumentIndex):
 
             zip_dict[f"schemas/{schema_names[1]}.sd"] = upcoming_schema.encode("utf-8")
 
+        # Render agent_memory schema using the primary embedding dimension
+        if os.path.exists(agent_memory_schema_jinja_file):
+            with open(agent_memory_schema_jinja_file, "r") as amf:
+                agent_memory_template = jinja_env.from_string(amf.read())
+            agent_memory_schema = agent_memory_template.render(
+                dim=primary_embedding_dim,
+            )
+            zip_dict["schemas/agent_memory.sd"] = agent_memory_schema.encode("utf-8")
+
         zip_file = in_memory_zip_from_file_bytes(zip_dict)
 
         headers = {"Content-Type": "application/zip"}
@@ -350,12 +367,19 @@ class VespaIndex(DocumentIndex):
             vespa_schema_path, "validation-overrides.xml.jinja"
         )
 
+        agent_memory_schema_jinja_file = os.path.join(
+            vespa_schema_path,
+            "schemas",
+            VespaIndex.AGENT_MEMORY_SCHEMA_JINJA_FILENAME,
+        )
+
         jinja_env = jinja2.Environment()
 
         # Generate schema names from index settings
         with open(services_jinja_file, "r") as services_f:
             schema_names = [index_name for index_name in indices]
-            doc_lines = _create_document_xml_lines(schema_names)
+            all_doc_names: list[str] = list(schema_names) + ["agent_memory"]
+            doc_lines = _create_document_xml_lines(all_doc_names)
 
             services_template_str = services_f.read()
             services_template = jinja_env.from_string(services_template_str)
@@ -411,6 +435,15 @@ class VespaIndex(DocumentIndex):
 
             schema = add_ngrams_to_schema(schema) if needs_reindexing else schema
             zip_dict[f"schemas/{index_name}.sd"] = schema.encode("utf-8")
+
+        # Render agent_memory schema using the first available embedding dimension
+        if os.path.exists(agent_memory_schema_jinja_file) and embedding_dims:
+            with open(agent_memory_schema_jinja_file, "r") as amf:
+                agent_memory_template = jinja_env.from_string(amf.read())
+            agent_memory_schema = agent_memory_template.render(
+                dim=embedding_dims[0],
+            )
+            zip_dict["schemas/agent_memory.sd"] = agent_memory_schema.encode("utf-8")
 
         zip_file = in_memory_zip_from_file_bytes(zip_dict)
 

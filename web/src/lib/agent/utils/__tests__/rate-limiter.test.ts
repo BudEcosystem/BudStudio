@@ -550,7 +550,7 @@ describe("createToolRateLimiter", () => {
 
     // bash should have 10 tokens per minute
     expect(limiter.getAvailableTokensForTool("bash")).toBe(
-      DEFAULT_TOOL_RATE_LIMITS.bash.tokensPerInterval
+      DEFAULT_TOOL_RATE_LIMITS.bash!.tokensPerInterval
     );
   });
 
@@ -585,8 +585,8 @@ describe("DEFAULT_TOOL_RATE_LIMITS", () => {
 
   it("should have reasonable default values", () => {
     // bash should be more restrictive
-    expect(DEFAULT_TOOL_RATE_LIMITS.bash.tokensPerInterval).toBeLessThanOrEqual(
-      DEFAULT_TOOL_RATE_LIMITS.read_file.tokensPerInterval
+    expect(DEFAULT_TOOL_RATE_LIMITS.bash!.tokensPerInterval).toBeLessThanOrEqual(
+      DEFAULT_TOOL_RATE_LIMITS.read_file!.tokensPerInterval
     );
 
     // All should have positive values

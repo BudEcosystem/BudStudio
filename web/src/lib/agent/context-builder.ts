@@ -310,6 +310,7 @@ export class ContextBuilder {
 
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
+        if (!result) continue;
         const chunk = result.chunk;
 
         // Build location string

@@ -81,7 +81,7 @@ function parseContentBlocks(
   let inListBlock = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     const lineNumber = baseLineNumber + i;
 
     // Check for code block start/end
@@ -211,7 +211,7 @@ function extractHeaders(
 
   let inCodeBlock = false;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
 
     // Track code blocks to avoid treating code comments as headers
     if (line.trimStart().startsWith("```")) {
@@ -223,7 +223,7 @@ function extractHeaders(
 
     // Match markdown headers (# Header)
     const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
-    if (headerMatch) {
+    if (headerMatch && headerMatch[1] && headerMatch[2]) {
       headers.push({
         level: headerMatch[1].length,
         text: headerMatch[2].trim(),
@@ -257,6 +257,7 @@ function getParentHeaders(
 
   for (let i = precedingHeaders.length - 1; i >= 0; i--) {
     const header = precedingHeaders[i];
+    if (!header) continue;
     if (header.level < currentLevel || currentLevel === 0) {
       hierarchy.unshift(header.text);
       currentLevel = header.level;
@@ -337,6 +338,7 @@ export function chunkFile(filePath: string, content: string): MemoryChunk[] {
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
+    if (!block) continue;
     const blockSize = block.content.length;
 
     // If this single block is larger than target size, we may need to handle it specially
@@ -466,10 +468,11 @@ function getOverlapContent(
   // Take content from the end
   let overlap = "";
   for (let i = content.length - 1; i >= 0 && overlap.length < targetOverlap; i--) {
+    const segment = content[i] ?? "";
     if (overlap.length > 0) {
-      overlap = content[i] + "\n\n" + overlap;
+      overlap = segment + "\n\n" + overlap;
     } else {
-      overlap = content[i];
+      overlap = segment;
     }
   }
 

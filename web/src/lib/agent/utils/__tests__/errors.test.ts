@@ -20,7 +20,6 @@ import {
   isAgentError,
   isRetryableError,
   wrapError,
-  AgentErrorCode,
 } from "../errors";
 
 describe("AgentError", () => {
@@ -441,7 +440,7 @@ describe("SessionError", () => {
 
   describe("fromResponse factory", () => {
     const createMockResponse = (status: number): Response => {
-      return { status, headers: { get: () => null } } as Response;
+      return { status, headers: { get: () => null } } as unknown as Response;
     };
 
     it("should create auth error for 401 response", () => {

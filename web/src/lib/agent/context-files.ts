@@ -129,7 +129,7 @@ export function extractMemoryHeader(content: string): string {
   let foundFirstHeader = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? "";
     // Check for ## header (not # header which is the title)
     if (line.startsWith("## ")) {
       if (foundFirstHeader) {
