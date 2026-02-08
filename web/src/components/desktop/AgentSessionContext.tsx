@@ -56,6 +56,7 @@ interface AgentSessionContextType {
   sessionPreferences: SessionPreferences;
   isLoading: boolean;
   createSession: (idOrTitle?: string) => AgentSession;
+  clearCurrentSession: () => void;
   selectSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   addMessage: (sessionId: string, message: Omit<AgentMessage, "id" | "timestamp">) => AgentMessage;
@@ -287,6 +288,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     return newSession;
   }, []);
 
+  const clearCurrentSession = useCallback(() => {
+    setCurrentSessionId(null);
+    setSessionPreferences(createDefaultPreferences());
+  }, []);
+
   const selectSession = useCallback(
     (sessionId: string) => {
       setCurrentSessionId(sessionId);
@@ -425,6 +431,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         sessionPreferences,
         isLoading,
         createSession,
+        clearCurrentSession,
         selectSession,
         deleteSession,
         addMessage,

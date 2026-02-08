@@ -23,7 +23,15 @@ import {
   updateToolCallApprovalRequired,
 } from "@/lib/desktop";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
-import { FiSquare, FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
+import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
+import { useMarkdownRenderer } from "@/app/chat/message/messageComponents/markdownUtils";
+import { copyAll } from "@/app/chat/message/copyingUtils";
+import AgentIcon from "@/refresh-components/AgentIcon";
+import IconButton from "@/refresh-components/buttons/IconButton";
+import SvgCopy from "@/icons/copy";
+import SvgCheck from "@/icons/check";
+import Text from "@/refresh-components/texts/Text";
+import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 
 /**
  * Interface for a pending tool approval request.
@@ -77,6 +85,18 @@ function getWorkspacePath(): string {
 }
 
 /**
+ * Renders agent message content with full markdown support (code blocks, GFM tables, math, etc.)
+ */
+function AgentMessageContent({ content }: { content: string }) {
+  const { renderedContent } = useMarkdownRenderer(content, undefined, "text-base");
+  return (
+    <div className="overflow-x-visible max-w-content-max break-words">
+      {renderedContent}
+    </div>
+  );
+}
+
+/**
  * BudAgent Screen - Autonomous agent chat interface
  * Uses SSE streaming from the local agent API for real-time updates
  */
@@ -86,8 +106,10 @@ export function BudAgentScreen() {
   const [chatState, setChatState] = useState<ChatState>("input");
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const currentAgentMessageIdRef = useRef<string | null>(null);
   const accumulatedContentRef = useRef<string>("");
   const toolCallsRef = useRef<ToolCallInfo[]>([]);
@@ -604,90 +626,123 @@ export function BudAgentScreen() {
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto py-6 px-4 space-y-6" data-testid="agent-messages-list">
-            {messages.map((msg: AgentMessage) => (
-              <div
-                key={msg.id}
-                data-testid={`agent-message-${msg.role}`}
-                className={cn(
-                  "flex",
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                )}
-              >
+          <div className="mx-auto py-4 px-4 lg:px-5" data-testid="agent-messages-list">
+            {messages.map((msg: AgentMessage) =>
+              msg.role === "user" ? (
                 <div
-                  className={cn(
-                    "max-w-[80%] rounded-2xl px-4 py-3",
-                    msg.role === "user"
-                      ? "bg-purple-600 text-white"
-                      : "bg-background-emphasis"
-                  )}
+                  key={msg.id}
+                  className="pt-5 pb-1 w-full flex"
+                  data-testid="agent-message-user"
                 >
-                  {msg.role === "agent" && (
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-purple-500 text-xs font-medium">
-                        Bud Agent
-                      </span>
-                      {msg.status && msg.status !== "complete" && (
-                        <span
-                          data-testid="agent-message-status"
-                          className={cn(
-                            "text-xs",
-                            msg.status === "error"
-                              ? "text-red-500"
-                              : msg.status === "stopped"
-                                ? "text-yellow-500"
-                                : "text-text-subtle"
-                          )}
-                        >
-                          {msg.status === "thinking" && "thinking..."}
-                          {msg.status === "streaming" && "responding..."}
-                          {msg.status === "error" && "error"}
-                          {msg.status === "stopped" && "stopped"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tool calls display */}
-                  {msg.role === "agent" && msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div className="mb-3 space-y-2" data-testid="agent-tool-calls">
-                      {msg.toolCalls.map((toolCall) => (
-                        <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Message content */}
-                  {msg.content && (
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                  )}
+                  <div className="ml-auto max-w-[25rem] whitespace-break-spaces rounded-t-16 rounded-bl-16 bg-background-tint-02 py-2 px-3">
+                    <Text mainContentBody>{msg.content}</Text>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ) : (
+                <div
+                  key={msg.id}
+                  className="py-5 relative flex"
+                  data-testid="agent-message-agent"
+                >
+                  <div className="w-full max-w-message-max mx-auto">
+                    <div className="flex items-start">
+                      {selectedAssistant && (
+                        <AgentIcon agent={selectedAssistant} />
+                      )}
+                      <div className="w-full ml-4">
+                        <div className="max-w-content-max break-words">
+                          {/* Status indicator - only when not complete */}
+                          {msg.status && msg.status !== "complete" && (
+                            <span
+                              data-testid="agent-message-status"
+                              className={cn(
+                                "text-xs mb-1 block",
+                                msg.status === "error"
+                                  ? "text-red-500"
+                                  : msg.status === "stopped"
+                                    ? "text-yellow-500"
+                                    : "text-text-subtle"
+                              )}
+                            >
+                              {msg.status === "thinking" && "thinking..."}
+                              {msg.status === "streaming" && "responding..."}
+                              {msg.status === "error" && "error"}
+                              {msg.status === "stopped" && "stopped"}
+                            </span>
+                          )}
+
+                          {/* Tool calls display */}
+                          {msg.toolCalls && msg.toolCalls.length > 0 && (
+                            <div
+                              className="mb-3 space-y-2"
+                              data-testid="agent-tool-calls"
+                            >
+                              {msg.toolCalls.map((toolCall) => (
+                                <ToolCallDisplay
+                                  key={toolCall.id}
+                                  toolCall={toolCall}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Markdown content or thinking indicator */}
+                          {msg.content ? (
+                            <AgentMessageContent content={msg.content} />
+                          ) : (
+                            msg.status === "thinking" && (
+                              <BlinkingDot addMargin />
+                            )
+                          )}
+
+                          {/* Copy button when message is complete */}
+                          {msg.status === "complete" && msg.content && (
+                            <div className="flex items-center gap-x-0.5 mt-1">
+                              <IconButton
+                                icon={
+                                  copiedMessageId === msg.id
+                                    ? SvgCheck
+                                    : SvgCopy
+                                }
+                                onClick={() => {
+                                  copyAll(msg.content);
+                                  setCopiedMessageId(msg.id);
+                                  if (copyTimeoutRef.current) {
+                                    clearTimeout(copyTimeoutRef.current);
+                                  }
+                                  copyTimeoutRef.current = setTimeout(() => {
+                                    setCopiedMessageId(null);
+                                  }, 2000);
+                                }}
+                                tertiary
+                                tooltip={
+                                  copiedMessageId === msg.id
+                                    ? "Copied!"
+                                    : "Copy"
+                                }
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
 
             {/* Thinking indicator when processing but no content yet */}
             {isProcessing &&
               (!currentAgentMessageIdRef.current ||
                 !accumulatedContentRef.current) && (
-                <div className="flex justify-start">
-                  <div className="rounded-2xl px-4 py-3 bg-background-emphasis">
-                    <div className="flex items-center gap-2">
-                      <span className="text-purple-500 text-xs font-medium">
-                        Bud Agent
-                      </span>
-                      <div className="flex gap-1">
-                        <span
-                          className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        />
-                        <span
-                          className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        />
-                        <span
-                          className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        />
+                <div className="py-5 relative flex">
+                  <div className="w-full max-w-message-max mx-auto">
+                    <div className="flex items-start">
+                      {selectedAssistant && (
+                        <AgentIcon agent={selectedAssistant} />
+                      )}
+                      <div className="ml-4">
+                        <BlinkingDot addMargin />
                       </div>
                     </div>
                   </div>
@@ -707,7 +762,7 @@ export function BudAgentScreen() {
             data-testid="agent-stop-button"
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
           >
-            <FiSquare className="w-4 h-4" />
+            <span className="w-4 h-4 bg-white rounded-sm" />
             Stop Agent
           </button>
         </div>

@@ -140,7 +140,7 @@ function AppSidebarInner() {
     useProjectsContext();
   const { popup, setPopup } = usePopup();
   const { isDesktop, currentMode } = useDesktopMode();
-  const { sessions: agentSessions, createSession } = useAgentSession();
+  const { sessions: agentSessions, createSession, clearCurrentSession } = useAgentSession();
 
   // State for custom agent modal
   const [pendingMoveChatSession, setPendingMoveChatSession] =
@@ -324,14 +324,24 @@ function AppSidebarInner() {
         <SidebarTab
           leftIcon={SvgEditBig}
           folded={folded}
-          onClick={() => route({})}
-          active={Array.from(searchParams).length === 0}
+          onClick={() => {
+            if (isDesktop && currentMode === "agent") {
+              clearCurrentSession();
+            } else {
+              route({});
+            }
+          }}
+          active={
+            isDesktop && currentMode === "agent"
+              ? false
+              : Array.from(searchParams).length === 0
+          }
         >
           New Session
         </SidebarTab>
       </div>
     ),
-    [folded, route, searchParams]
+    [folded, route, searchParams, isDesktop, currentMode, clearCurrentSession]
   );
 
   const { isAdmin, isCurator } = useUser();
