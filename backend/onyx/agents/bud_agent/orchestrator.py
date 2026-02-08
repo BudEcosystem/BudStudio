@@ -36,12 +36,16 @@ from onyx.agents.bud_agent.streaming_models import BudAgentComplete
 from onyx.agents.bud_agent.streaming_models import BudAgentDone
 from onyx.agents.bud_agent.streaming_models import BudAgentError
 from onyx.agents.bud_agent.streaming_models import BudAgentPacket
+from onyx.agents.bud_agent.streaming_models import BudAgentSessionCompacted
 from onyx.agents.bud_agent.streaming_models import BudAgentStopped
 from onyx.agents.bud_agent.streaming_models import BudAgentText
 from onyx.agents.bud_agent.streaming_models import BudAgentThinking
 from onyx.db.agent import add_session_message
+from onyx.db.agent import create_compacted_session
+from onyx.db.agent import get_session
 from onyx.db.agent import get_session_messages
 from onyx.db.agent import get_workspace_files_as_dict
+from onyx.db.agent import mark_session_compacted
 from onyx.db.agent import update_session_stats
 from onyx.db.agent import update_session_status
 from onyx.db.enums import AgentMessageRole
@@ -59,6 +63,8 @@ MAX_TOOL_CALLS = 50
 KEEPALIVE_INTERVAL_SECONDS = 15
 # History truncation: ~4 chars per token, limit to ~100K tokens
 MAX_HISTORY_CHARS = 400_000
+# Compaction threshold: trigger compaction before the hard truncation limit
+COMPACTION_THRESHOLD_CHARS = 300_000
 
 _SENTINEL = object()
 
@@ -182,14 +188,24 @@ class BudAgentOrchestrator:
                 user_id=self._user.id,
                 paths=[
                     "AGENTS.md", "SOUL.md", "IDENTITY.md",
-                    "USER.md", "TOOLS.md", "MEMORY.md", "HEARTBEAT.md",
+                    "USER.md", "MEMORY.md", "HEARTBEAT.md",
                 ],
+            )
+
+            # Check for a compaction summary on the current session
+            current_session = get_session(
+                db_session=self._db_session,
+                session_id=self._session_id,
+            )
+            compaction_summary = (
+                current_session.compaction_summary if current_session else None
             )
 
             context_builder = BudAgentContextBuilder(
                 workspace_path=self._workspace_path,
                 context_files=db_context,
                 user_timezone=self._timezone,
+                compaction_summary=compaction_summary,
             )
             system_prompt = context_builder.build(
                 db_session=self._db_session,
@@ -229,6 +245,50 @@ class BudAgentOrchestrator:
 
             # 4. Build the message history for the agent
             messages = self._build_messages(system_prompt)
+
+            # 4a. Check if history exceeds compaction threshold
+            history_chars = sum(
+                len(str(m.get("content", "")))
+                for m in messages
+                if m.get("role") != "system"
+            )
+            if history_chars > COMPACTION_THRESHOLD_CHARS:
+                try:
+                    new_session_id = self._compact_session(
+                        user_message=user_message,
+                        llm=llm,
+                    )
+                    if new_session_id is not None:
+                        # Reload context + messages for the new session
+                        new_session = get_session(
+                            db_session=self._db_session,
+                            session_id=new_session_id,
+                        )
+                        context_builder = BudAgentContextBuilder(
+                            workspace_path=self._workspace_path,
+                            context_files=db_context,
+                            user_timezone=self._timezone,
+                            compaction_summary=(
+                                new_session.compaction_summary
+                                if new_session
+                                else None
+                            ),
+                        )
+                        system_prompt = context_builder.build(
+                            db_session=self._db_session,
+                            user_id=self._user.id,
+                            user_message=user_message,
+                        )
+                        messages = self._build_messages(system_prompt)
+
+                        # Update local bridge session ID
+                        local_bridge._session_id = str(new_session_id)
+                except Exception:
+                    logger.warning(
+                        "Compaction failed for session %s, falling back to truncation",
+                        self._session_id,
+                        exc_info=True,
+                    )
 
             # 5. Create the agent
             agent = Agent(
@@ -344,6 +404,103 @@ class BudAgentOrchestrator:
             except Exception:
                 pass
             self._packet_queue.put(_SENTINEL)
+
+    def _compact_session(
+        self,
+        user_message: str,
+        llm: Any,
+    ) -> UUID | None:
+        """Compact the current session by summarizing it and creating a new linked session.
+
+        Returns the new session ID on success, or None if compaction is skipped.
+        """
+        # Load the full message history from the current session
+        previous_messages = get_session_messages(
+            db_session=self._db_session,
+            session_id=self._session_id,
+        )
+
+        if not previous_messages:
+            return None
+
+        # Build a summarization prompt with the conversation history
+        conversation_text = []
+        for msg in previous_messages:
+            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            content = msg.content or ""
+            if content:
+                conversation_text.append(f"[{role}]: {content}")
+
+        conversation_str = "\n".join(conversation_text)
+        # Truncate if extremely long to fit in the summarization call
+        if len(conversation_str) > 100_000:
+            conversation_str = (
+                conversation_str[:70_000]
+                + "\n\n... (middle truncated) ...\n\n"
+                + conversation_str[-25_000:]
+            )
+
+        summarization_prompt = (
+            "You are a concise summarization assistant. Below is a conversation "
+            "between a user and an AI agent. Summarize the key topics discussed, "
+            "decisions made, tasks completed, and any important context that would "
+            "help continue the conversation seamlessly. Be concise but comprehensive. "
+            "Focus on facts, outcomes, and ongoing tasks.\n\n"
+            f"Conversation:\n{conversation_str}\n\n"
+            "Summary:"
+        )
+
+        # Call LLM directly for a single-shot summary
+        summary_response = llm.invoke(summarization_prompt)
+        summary = str(summary_response.content).strip()
+
+        if not summary:
+            logger.warning("Compaction produced empty summary, skipping")
+            return None
+
+        # Mark the old session as compacted
+        mark_session_compacted(
+            db_session=self._db_session,
+            session_id=self._session_id,
+        )
+
+        # Create the new linked session
+        new_session = create_compacted_session(
+            db_session=self._db_session,
+            user_id=self._user.id,
+            parent_session_id=self._session_id,
+            compaction_summary=summary,
+            workspace_path=self._workspace_path,
+        )
+
+        # Persist the current user message in the new session
+        add_session_message(
+            db_session=self._db_session,
+            session_id=new_session.id,
+            role=AgentMessageRole.USER,
+            content=user_message,
+        )
+
+        # Emit the compaction event to the frontend
+        self._packet_queue.put(
+            BudAgentSessionCompacted(
+                new_session_id=str(new_session.id),
+                summary=summary,
+            )
+        )
+
+        # Update internal state
+        old_session_id = self._session_id
+        self._session_id = new_session.id
+        self._stop_redis_key = f"bud_agent_stop:{self._session_id}"
+
+        logger.info(
+            "Compacted session %s -> new session %s",
+            old_session_id,
+            new_session.id,
+        )
+
+        return new_session.id
 
     @staticmethod
     def _build_run_config(

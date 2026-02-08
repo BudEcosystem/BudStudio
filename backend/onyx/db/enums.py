@@ -193,12 +193,14 @@ class AgentSessionStatus(str, PyEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     STOPPED = "stopped"
+    COMPACTED = "compacted"
 
     def is_terminal(self) -> bool:
         terminal_states = {
             AgentSessionStatus.COMPLETED,
             AgentSessionStatus.FAILED,
             AgentSessionStatus.STOPPED,
+            AgentSessionStatus.COMPACTED,
         }
         return self in terminal_states
 

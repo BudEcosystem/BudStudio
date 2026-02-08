@@ -44,6 +44,8 @@ export interface AgentEventCallbacks {
   onStopped?: () => void;
   /** Called when the SSE stream is done (after error, complete, or stopped) */
   onDone?: () => void;
+  /** Called when the session is compacted and a new session is created */
+  onSessionCompacted?: (newSessionId: string, summary: string) => void;
 }
 
 /**
@@ -228,6 +230,9 @@ function handleEvent(event: AgentEvent, callbacks: AgentEventCallbacks): void {
       break;
     case "done":
       callbacks.onDone?.();
+      break;
+    case "session_compacted":
+      callbacks.onSessionCompacted?.(event.newSessionId, event.summary);
       break;
   }
 }

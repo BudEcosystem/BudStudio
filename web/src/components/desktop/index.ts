@@ -1,8 +1,14 @@
 export { ModeSwitcher, type AppMode } from "./ModeSwitcher";
-export { DesktopModeProvider, useDesktopMode } from "./DesktopModeContext";
+export {
+  DesktopModeProvider,
+  useDesktopMode,
+  type AgentView,
+} from "./DesktopModeContext";
 export { DesktopHeader } from "./DesktopHeader";
 export { BudAgentScreen } from "./BudAgentScreen";
 export { ModeRenderer } from "./ModeRenderer";
+export { AgentToolsView } from "./AgentToolsView";
+export { AgentConfigView } from "./AgentConfigView";
 export {
   AgentSessionProvider,
   useAgentSession,

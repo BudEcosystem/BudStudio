@@ -73,6 +73,13 @@ class BudAgentDone(BaseObj):
     type: Literal["bud_agent_done"] = "bud_agent_done"
 
 
+class BudAgentSessionCompacted(BaseObj):
+    type: Literal["bud_agent_session_compacted"] = "bud_agent_session_compacted"
+
+    new_session_id: str
+    summary: str
+
+
 """BudAgent Packet Union"""
 
 BudAgentPacket = Union[
@@ -86,4 +93,5 @@ BudAgentPacket = Union[
     BudAgentError,
     BudAgentStopped,
     BudAgentDone,
+    BudAgentSessionCompacted,
 ]

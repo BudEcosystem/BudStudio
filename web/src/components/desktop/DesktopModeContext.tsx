@@ -11,11 +11,14 @@ import {
 import { useIsDesktop } from "@/lib/desktop";
 
 export type AppMode = "chat" | "agent";
+export type AgentView = "chat" | "tools" | "configuration";
 
 interface DesktopModeContextType {
   isDesktop: boolean;
   currentMode: AppMode;
   setMode: (mode: AppMode) => void;
+  agentView: AgentView;
+  setAgentView: (view: AgentView) => void;
 }
 
 const DesktopModeContext = createContext<DesktopModeContextType | undefined>(
@@ -29,9 +32,11 @@ interface DesktopModeProviderProps {
 export function DesktopModeProvider({ children }: DesktopModeProviderProps) {
   const isDesktop = useIsDesktop();
   const [currentMode, setCurrentMode] = useState<AppMode>("chat");
+  const [agentView, setAgentView] = useState<AgentView>("chat");
 
   const setMode = useCallback((mode: AppMode) => {
     setCurrentMode(mode);
+    setAgentView("chat");
     // Persist to localStorage for desktop app
     if (typeof window !== "undefined") {
       localStorage.setItem("bud-desktop-mode", mode);
@@ -47,7 +52,9 @@ export function DesktopModeProvider({ children }: DesktopModeProviderProps) {
   }, []);
 
   return (
-    <DesktopModeContext.Provider value={{ isDesktop, currentMode, setMode }}>
+    <DesktopModeContext.Provider
+      value={{ isDesktop, currentMode, setMode, agentView, setAgentView }}
+    >
       {children}
     </DesktopModeContext.Provider>
   );
@@ -61,6 +68,8 @@ export function useDesktopMode(): DesktopModeContextType {
       isDesktop: false,
       currentMode: "chat",
       setMode: () => {},
+      agentView: "chat",
+      setAgentView: () => {},
     };
   }
   return context;

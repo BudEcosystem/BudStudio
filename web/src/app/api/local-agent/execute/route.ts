@@ -58,6 +58,8 @@ interface BackendEvent {
   is_local?: boolean;
   requires_approval?: boolean;
   error?: string;
+  new_session_id?: string;
+  summary?: string;
 }
 
 /**
@@ -201,6 +203,12 @@ function translateEvent(backendEvent: BackendEvent): AgentEvent | null {
       return { type: "stopped" };
     case "bud_agent_done":
       return { type: "done" };
+    case "bud_agent_session_compacted":
+      return {
+        type: "session_compacted",
+        newSessionId: backendEvent.new_session_id || "",
+        summary: backendEvent.summary || "",
+      };
     case "bud_agent_local_tool_request":
       // Handled separately — not forwarded directly
       return null;
@@ -332,7 +340,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
-  const { sessionId, message, workspacePath, timezone } = validation.data;
+  let { sessionId } = validation.data;
+  const { message, workspacePath, timezone } = validation.data;
 
   // Get cookie string for backend API calls
   const cookieString = await getCookieString();
@@ -443,6 +452,14 @@ export async function POST(request: NextRequest): Promise<Response> {
             // are translated and forwarded to the browser by the translateEvent()
             // path below, so emitting duplicates here would cause the UI to show
             // each tool call twice.
+            // Handle compaction: update sessionId for subsequent tool results
+            if (backendEvent.type === "bud_agent_session_compacted") {
+              if (backendEvent.new_session_id) {
+                sessionId = backendEvent.new_session_id;
+                debugLog(`Session compacted, new sessionId: ${sessionId}`);
+              }
+            }
+
             if (backendEvent.type === "bud_agent_local_tool_request") {
               const toolName = backendEvent.tool_name || "";
               const toolInput = backendEvent.tool_input || {};

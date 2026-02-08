@@ -117,7 +117,7 @@ export function BudAgentScreen() {
   const {
     currentSession,
     currentSessionId,
-    createSession,
+    switchToSession,
     addMessage,
     updateMessage,
     sessionPreferences,
@@ -171,31 +171,12 @@ export function BudAgentScreen() {
   const handleSubmit = useCallback(async () => {
     if (!message.trim() || isProcessing) return;
 
-    // Ensure we have a backend session. The backend requires a UUID session
-    // created via POST /api/agent/sessions. The local AgentSessionContext
-    // uses its own IDs for UI state tracking, but the execute endpoint
-    // needs the real backend session ID.
-    let sessionId = currentSessionId;
+    // The active session is auto-loaded by the context on mount.
+    // If for some reason it's not available yet, bail out.
+    const sessionId = currentSessionId;
     if (!sessionId) {
-      try {
-        // Create the session on the backend first
-        const resp = await fetch("/api/agent/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: message.trim().slice(0, 50) }),
-        });
-        if (!resp.ok) {
-          console.error("Failed to create backend session");
-          return;
-        }
-        const data = await resp.json();
-        // Create a local session using the backend's UUID as the ID
-        const newSession = createSession(data.session_id);
-        sessionId = newSession.id;
-      } catch (err) {
-        console.error("Failed to create agent session:", err);
-        return;
-      }
+      console.error("No active session available");
+      return;
     }
 
     const userMessage = message.trim();
@@ -385,6 +366,11 @@ export function BudAgentScreen() {
           });
         },
 
+        onSessionCompacted: (newSessionId) => {
+          // Seamlessly switch to the new compacted session
+          switchToSession(newSessionId);
+        },
+
         onDone: () => {
           setIsProcessing(false);
           setChatState("input");
@@ -396,7 +382,7 @@ export function BudAgentScreen() {
     message,
     isProcessing,
     currentSessionId,
-    createSession,
+    switchToSession,
     addMessage,
     updateMessage,
     execute,
@@ -626,7 +612,7 @@ export function BudAgentScreen() {
             </div>
           </div>
         ) : (
-          <div className="mx-auto py-4 px-4 lg:px-5" data-testid="agent-messages-list">
+          <div className="mx-auto py-4 px-4 lg:px-5 w-[90%] max-w-message-max" data-testid="agent-messages-list">
             {messages.map((msg: AgentMessage) =>
               msg.role === "user" ? (
                 <div

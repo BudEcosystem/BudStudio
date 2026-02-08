@@ -36,7 +36,6 @@ WORKSPACE_FILES = [
     "SOUL.md",
     "IDENTITY.md",
     "USER.md",
-    "TOOLS.md",
     "MEMORY.md",
     "HEARTBEAT.md",
 ]
@@ -50,7 +49,6 @@ _DEFAULT_TEMPLATES: dict[str, str] = {
     "SOUL.md": load_prompt("soul"),
     "IDENTITY.md": load_prompt("identity"),
     "USER.md": load_prompt("user"),
-    "TOOLS.md": load_prompt("tools"),
     "MEMORY.md": "",
     "HEARTBEAT.md": "",
 }
@@ -83,10 +81,12 @@ class BudAgentContextBuilder:
         workspace_path: str | None = None,
         context_files: dict[str, str] | None = None,
         user_timezone: str | None = None,
+        compaction_summary: str | None = None,
     ) -> None:
         self._workspace_path = workspace_path
         self._context_files = context_files or {}
         self._user_timezone = user_timezone
+        self._compaction_summary = compaction_summary
 
     def _get_file(self, filename: str) -> str:
         """Get workspace file content, falling back to default template."""
@@ -118,9 +118,6 @@ class BudAgentContextBuilder:
         )
         user_content = _truncate_content(
             self._get_file("USER.md"), per_file_budget
-        )
-        tools_content = _truncate_content(
-            self._get_file("TOOLS.md"), per_file_budget
         )
         memory_md_content = _truncate_content(
             self._get_file("MEMORY.md"), per_file_budget
@@ -159,6 +156,16 @@ class BudAgentContextBuilder:
                 "unless explicitly instructed otherwise."
             )
 
+        # Build compaction summary section if present
+        compaction_summary_section = ""
+        if self._compaction_summary:
+            compaction_summary_section = (
+                "## Previous Conversation Summary\n\n"
+                "The following is a summary of an earlier conversation that was "
+                "compacted to save context space. Use it as background context.\n\n"
+                f"{self._compaction_summary}"
+            )
+
         # Render the single system.md template
         return render_prompt(
             "system",
@@ -168,9 +175,9 @@ class BudAgentContextBuilder:
             soul_content=soul_content or "(not set)",
             identity_content=identity_content or "(not set)",
             user_content=user_content or "(not set)",
-            tools_content=tools_content or "(not set)",
             memory_md_content=memory_md_content or "(not set)",
             heartbeat_content=heartbeat_content or "(not set)",
             memories=memories or "No relevant memories found.",
             workspace_info=workspace_info,
+            compaction_summary=compaction_summary_section,
         )

@@ -58,6 +58,7 @@ interface AgentSessionContextType {
   createSession: (idOrTitle?: string) => AgentSession;
   clearCurrentSession: () => void;
   selectSession: (sessionId: string) => void;
+  switchToSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   addMessage: (sessionId: string, message: Omit<AgentMessage, "id" | "timestamp">) => AgentMessage;
   updateMessage: (
@@ -188,33 +189,36 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Hydrate session list from backend on mount
+  // Hydrate single active session from backend on mount
   // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchSessions(): Promise<void> {
+    async function fetchActiveSession(): Promise<void> {
       try {
-        const resp = await fetch("/api/agent/sessions");
+        const resp = await fetch("/api/agent/active-session");
         if (!resp.ok) {
-          console.error("Failed to fetch agent sessions:", resp.status);
+          console.error("Failed to fetch active session:", resp.status);
           return;
         }
-        const data = (await resp.json()) as { sessions: BackendSessionSnapshot[] };
+        const s = (await resp.json()) as BackendSessionSnapshot;
 
         if (cancelled) return;
 
-        const hydrated: AgentSession[] = data.sessions.map((s) => ({
+        const session: AgentSession = {
           id: s.id,
           title: s.title || "Agent Task",
           createdAt: new Date(s.created_at),
           updatedAt: new Date(s.updated_at),
-          messages: [], // loaded lazily when selected
-        }));
+          messages: [],
+        };
 
-        setSessions(hydrated);
+        setSessions([session]);
+        setCurrentSessionId(session.id);
+        // Load messages for the active session
+        loadSessionMessages(session.id);
       } catch (err) {
-        console.error("Error fetching agent sessions:", err);
+        console.error("Error fetching active session:", err);
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -222,11 +226,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    fetchSessions();
+    fetchActiveSession();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ──────────────────────────────────────────────────────────────────────────
   // Lazy-load message history when a session is selected
@@ -302,6 +306,31 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       loadSessionMessages(sessionId);
     },
     [loadSessionMessages]
+  );
+
+  /**
+   * Switch to a new session (e.g., after compaction).
+   * Adds a placeholder session entry if it doesn't already exist and selects it.
+   */
+  const switchToSession = useCallback(
+    (sessionId: string) => {
+      setSessions((prev) => {
+        const exists = prev.some((s) => s.id === sessionId);
+        if (exists) return prev;
+        const placeholder: AgentSession = {
+          id: sessionId,
+          title: "Agent Task",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          messages: [],
+        };
+        // Mark as loaded so we don't fetch (it's brand new)
+        loadedSessionsRef.current.add(sessionId);
+        return [placeholder, ...prev];
+      });
+      setCurrentSessionId(sessionId);
+    },
+    []
   );
 
   const deleteSession = useCallback(
@@ -433,6 +462,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         createSession,
         clearCurrentSession,
         selectSession,
+        switchToSession,
         deleteSession,
         addMessage,
         updateMessage,

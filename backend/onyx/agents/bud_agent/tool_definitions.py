@@ -222,7 +222,7 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "name": "workspace_read",
         "description": (
             "Read a workspace file by path. Workspace files are persistent documents "
-            "like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, TOOLS.md, MEMORY.md, "
+            "like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, MEMORY.md, "
             "and HEARTBEAT.md that persist across sessions."
         ),
         "parameters": {
@@ -245,7 +245,7 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "Create or update a workspace file. Use this to persist documents like "
             "SOUL.md (your personality), USER.md (user preferences), IDENTITY.md "
             "(your name/identity), AGENTS.md (workspace rules), MEMORY.md "
-            "(curated long-term memory), TOOLS.md, or HEARTBEAT.md."
+            "(curated long-term memory), or HEARTBEAT.md."
         ),
         "parameters": {
             "type": "object",

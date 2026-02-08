@@ -19,6 +19,7 @@ from onyx.context.search.utils import get_query_embeddings
 from onyx.db.agent import add_session_message
 from onyx.db.agent import create_session
 from onyx.db.agent import delete_session
+from onyx.db.agent import get_or_create_active_session
 from onyx.db.agent import get_session_for_user
 from onyx.db.agent import get_session_messages
 from onyx.db.agent import get_user_sessions
@@ -104,6 +105,8 @@ class AgentSessionSnapshot(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+    parent_session_id: str | None = None
+    compaction_summary: str | None = None
 
 
 class SessionListResponse(BaseModel):
@@ -250,6 +253,41 @@ def create_agent_session(
     return CreateSessionResponse(session_id=str(session.id))
 
 
+def _session_to_snapshot(s: Any) -> AgentSessionSnapshot:
+    """Convert an AgentSession ORM object to an AgentSessionSnapshot."""
+    return AgentSessionSnapshot(
+        id=str(s.id),
+        user_id=str(s.user_id) if s.user_id else None,
+        title=s.title,
+        description=s.description,
+        status=s.status.value,
+        workspace_path=s.workspace_path,
+        total_tokens_used=s.total_tokens_used,
+        total_tool_calls=s.total_tool_calls,
+        created_at=s.created_at,
+        updated_at=s.updated_at,
+        completed_at=s.completed_at,
+        parent_session_id=str(s.parent_session_id) if s.parent_session_id else None,
+        compaction_summary=s.compaction_summary,
+    )
+
+
+@router.get("/active-session")
+def get_active_session(
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> AgentSessionSnapshot:
+    """Return the single active session for the current user, auto-creating if needed."""
+    user_id = user.id if user is not None else None
+
+    session = get_or_create_active_session(
+        db_session=db_session,
+        user_id=user_id,
+    )
+
+    return _session_to_snapshot(session)
+
+
 @router.get("/sessions")
 def list_agent_sessions(
     include_completed: bool = Query(default=True),
@@ -268,22 +306,7 @@ def list_agent_sessions(
     )
 
     return SessionListResponse(
-        sessions=[
-            AgentSessionSnapshot(
-                id=str(s.id),
-                user_id=str(s.user_id) if s.user_id else None,
-                title=s.title,
-                description=s.description,
-                status=s.status.value,
-                workspace_path=s.workspace_path,
-                total_tokens_used=s.total_tokens_used,
-                total_tool_calls=s.total_tool_calls,
-                created_at=s.created_at,
-                updated_at=s.updated_at,
-                completed_at=s.completed_at,
-            )
-            for s in sessions
-        ]
+        sessions=[_session_to_snapshot(s) for s in sessions]
     )
 
 
@@ -305,19 +328,7 @@ def get_agent_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return AgentSessionSnapshot(
-        id=str(session.id),
-        user_id=str(session.user_id) if session.user_id else None,
-        title=session.title,
-        description=session.description,
-        status=session.status.value,
-        workspace_path=session.workspace_path,
-        total_tokens_used=session.total_tokens_used,
-        total_tool_calls=session.total_tool_calls,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
-        completed_at=session.completed_at,
-    )
+    return _session_to_snapshot(session)
 
 
 @router.get("/sessions/{session_id}/history")

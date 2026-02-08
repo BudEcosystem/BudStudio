@@ -49,7 +49,7 @@ When a reminder is done or past due, mark it `[x]` or remove it. Keep HEARTBEAT.
 - When someone says "remember this" → `memory_store` immediately
 - When the user sets a **deadline or reminder** → write it to HEARTBEAT.md (+ `memory_store` the fact)
 - When you learn a preference about the user → `memory_store` + update USER.md
-- When you learn a lesson → `memory_store` + update AGENTS.md or TOOLS.md
+- When you learn a lesson → `memory_store` + update AGENTS.md
 - When you make a mistake → document it so future-you doesn't repeat it
 - Periodically distill important patterns into MEMORY.md
 

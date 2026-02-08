@@ -3941,6 +3941,11 @@ class AgentSession(Base):
     # Usage statistics
     total_tokens_used: Mapped[int] = mapped_column(Integer, default=0)
     total_tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    # Compaction: linked session chain
+    parent_session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_session.id", ondelete="SET NULL"), nullable=True
+    )
+    compaction_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Timestamps
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -3964,6 +3969,7 @@ class AgentSession(Base):
     __table_args__ = (
         Index("ix_agent_session_user_status", "user_id", "status"),
         Index("ix_agent_session_created_at", "created_at"),
+        Index("ix_agent_session_parent_id", "parent_session_id"),
     )
 
     def __repr__(self) -> str:

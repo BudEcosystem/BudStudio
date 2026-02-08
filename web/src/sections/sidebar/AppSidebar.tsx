@@ -66,8 +66,8 @@ import { useUser } from "@/components/user/UserProvider";
 import SvgSettings from "@/icons/settings";
 import { useDesktopMode } from "@/components/desktop/DesktopModeContext";
 import { useAgentSession } from "@/components/desktop/AgentSessionContext";
-import AgentSessionButton from "@/sections/sidebar/AgentSessionButton";
 import SvgSparkle from "@/icons/sparkle";
+import SvgDevKit from "@/icons/dev-kit";
 
 // Visible-agents = pinned-agents + current-agent (if current-agent not in pinned-agents)
 // OR Visible-agents = pinned-agents (if current-agent in pinned-agents)
@@ -139,8 +139,9 @@ function AppSidebarInner() {
   const { refreshCurrentProjectDetails, fetchProjects, currentProjectId } =
     useProjectsContext();
   const { popup, setPopup } = usePopup();
-  const { isDesktop, currentMode } = useDesktopMode();
-  const { sessions: agentSessions, createSession, clearCurrentSession } = useAgentSession();
+  const { isDesktop, currentMode, agentView, setAgentView } =
+    useDesktopMode();
+  const { clearCurrentSession } = useAgentSession();
 
   // State for custom agent modal
   const [pendingMoveChatSession, setPendingMoveChatSession] =
@@ -411,61 +412,93 @@ function AppSidebarInner() {
         {folded ? (
           <div className="flex flex-col h-full justify-between">
             <div className="px-2">
-              {newSessionButton}
-              <SidebarTab
-                leftIcon={SvgOnyxOctagon}
-                onClick={() => toggleModal(ModalIds.AgentsModal, true)}
-                active={isOpen(ModalIds.AgentsModal)}
-                folded
-              >
-                Agents
-              </SidebarTab>
-              <SidebarTab
-                leftIcon={SvgFolderPlus}
-                onClick={() => toggleModal(ModalIds.CreateProjectModal, true)}
-                active={isOpen(ModalIds.CreateProjectModal)}
-                folded
-              >
-                New Project
-              </SidebarTab>
+              {isDesktop && currentMode === "agent" ? (
+                <>
+                  <SidebarTab
+                    leftIcon={SvgSparkle}
+                    onClick={() => setAgentView("chat")}
+                    active={agentView === "chat"}
+                    folded
+                  >
+                    Chat
+                  </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgDevKit}
+                    onClick={() => setAgentView("tools")}
+                    active={agentView === "tools"}
+                    folded
+                  >
+                    Tools
+                  </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgSettings}
+                    onClick={() => setAgentView("configuration")}
+                    active={agentView === "configuration"}
+                    folded
+                  >
+                    Configuration
+                  </SidebarTab>
+                </>
+              ) : (
+                <>
+                  {newSessionButton}
+                  <SidebarTab
+                    leftIcon={SvgOnyxOctagon}
+                    onClick={() => toggleModal(ModalIds.AgentsModal, true)}
+                    active={isOpen(ModalIds.AgentsModal)}
+                    folded
+                  >
+                    Agents
+                  </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgFolderPlus}
+                    onClick={() =>
+                      toggleModal(ModalIds.CreateProjectModal, true)
+                    }
+                    active={isOpen(ModalIds.CreateProjectModal)}
+                    folded
+                  >
+                    New Project
+                  </SidebarTab>
+                </>
+              )}
             </div>
             {settingsButton}
           </div>
         ) : (
           <>
             <SidebarBody
-              actionButton={newSessionButton}
+              actionButton={
+                isDesktop && currentMode === "agent"
+                  ? undefined
+                  : newSessionButton
+              }
               footer={settingsButton}
             >
               <>
-                {/* Agent mode: show only agent sessions */}
+                {/* Agent mode: show a single "Chat" link */}
                 {isDesktop && currentMode === "agent" ? (
-                  <SidebarSection
-                    title="Agent Tasks"
-                    action={
-                      <IconButton
-                        icon={SvgSparkle}
-                        internal
-                        tooltip="New Agent Task"
-                        onClick={() => createSession()}
-                      />
-                    }
-                  >
-                    {agentSessions.length === 0 ? (
-                      <Text text01 className="px-3">
-                        Start a new agent task to see it here.
-                      </Text>
-                    ) : (
-                      agentSessions.map((session) => (
-                        <AgentSessionButton key={session.id} session={session} />
-                      ))
-                    )}
+                  <SidebarSection title="Bud Agent">
                     <SidebarTab
                       leftIcon={SvgSparkle}
-                      onClick={() => createSession()}
-                      lowlight
+                      onClick={() => setAgentView("chat")}
+                      active={agentView === "chat"}
                     >
-                      New Agent Task
+                      Chat
+                    </SidebarTab>
+                    <SidebarTab
+                      leftIcon={SvgDevKit}
+                      onClick={() => setAgentView("tools")}
+                      active={agentView === "tools"}
+                    >
+                      Tools
+                    </SidebarTab>
+                    <SidebarTab
+                      leftIcon={SvgSettings}
+                      onClick={() => setAgentView("configuration")}
+                      active={agentView === "configuration"}
+                    >
+                      Configuration
                     </SidebarTab>
                   </SidebarSection>
                 ) : (

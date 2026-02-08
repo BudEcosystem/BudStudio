@@ -203,6 +203,66 @@ def delete_session(
     return True
 
 
+def get_or_create_active_session(
+    db_session: Session,
+    user_id: UUID | None,
+    workspace_path: str | None = None,
+) -> AgentSession:
+    """Return the most recent ACTIVE session for the user, creating one if none exists."""
+    stmt = (
+        select(AgentSession)
+        .where(
+            AgentSession.user_id == user_id,
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+        )
+        .order_by(desc(AgentSession.updated_at))
+        .limit(1)
+    )
+    session = db_session.execute(stmt).scalar_one_or_none()
+    if session is not None:
+        return session
+
+    return create_session(
+        db_session=db_session,
+        user_id=user_id,
+        workspace_path=workspace_path,
+    )
+
+
+def create_compacted_session(
+    db_session: Session,
+    user_id: UUID | None,
+    parent_session_id: UUID,
+    compaction_summary: str,
+    workspace_path: str | None = None,
+) -> AgentSession:
+    """Create a new ACTIVE session linked to a compacted parent session."""
+    session = AgentSession(
+        user_id=user_id,
+        parent_session_id=parent_session_id,
+        compaction_summary=compaction_summary,
+        workspace_path=workspace_path,
+        status=AgentSessionStatus.ACTIVE,
+    )
+    db_session.add(session)
+    db_session.commit()
+    db_session.refresh(session)
+    return session
+
+
+def mark_session_compacted(
+    db_session: Session,
+    session_id: UUID,
+) -> None:
+    """Mark a session as COMPACTED and set its completed_at timestamp."""
+    stmt = select(AgentSession).where(AgentSession.id == session_id)
+    session = db_session.execute(stmt).scalar_one_or_none()
+    if session is not None:
+        session.status = AgentSessionStatus.COMPACTED
+        session.completed_at = datetime.utcnow()
+        db_session.commit()
+
+
 def update_session_title(
     db_session: Session,
     session_id: UUID,

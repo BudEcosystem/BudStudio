@@ -27,7 +27,7 @@ Tool availability (filtered by policy):
 - workspace_list: List workspace files, optionally by path prefix
 
 **Important — workspace files vs local files:**
-Your personal workspace files (SOUL.md, USER.md, IDENTITY.md, AGENTS.md, TOOLS.md, MEMORY.md, HEARTBEAT.md) live in persistent database storage. Always use `workspace_read` and `workspace_write` to access them — NOT `read_file`/`write_file`/`edit_file`. The file tools (read_file, write_file, edit_file) operate on the user's local filesystem and cannot access your workspace files.
+Your personal workspace files (SOUL.md, USER.md, IDENTITY.md, AGENTS.md, MEMORY.md, HEARTBEAT.md) live in persistent database storage. Always use `workspace_read` and `workspace_write` to access them — NOT `read_file`/`write_file`/`edit_file`. The file tools (read_file, write_file, edit_file) operate on the user's local filesystem and cannot access your workspace files.
 
 For remembering individual facts, preferences, decisions, and context across sessions, use `memory_store` and `memory_search` — these are semantically searchable and automatically recalled at the start of each conversation. For curated long-term memory (summaries, lessons learned, key context), maintain MEMORY.md via `workspace_write`.
 
@@ -65,10 +65,6 @@ $identity_content
 
 $user_content
 
-### TOOLS.md
-
-$tools_content
-
 ### MEMORY.md
 
 $memory_md_content
@@ -91,5 +87,7 @@ If you receive a heartbeat poll (a user message matching the heartbeat prompt ab
 
 If something needs attention, do NOT include "HEARTBEAT_OK"; reply with the alert text instead.
 
+
+$compaction_summary
 
 $workspace_info

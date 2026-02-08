@@ -138,7 +138,8 @@ export type AgentEvent =
   | { type: "complete"; content: string }
   | { type: "error"; error: string; details?: ErrorDetails }
   | { type: "stopped" }
-  | { type: "done" };
+  | { type: "done" }
+  | { type: "session_compacted"; newSessionId: string; summary: string };
 
 /**
  * Chunks received from the LLM during streaming.
