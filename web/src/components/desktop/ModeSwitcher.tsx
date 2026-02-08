@@ -50,7 +50,7 @@ export function ModeSwitcher({
     >
       {/* Sliding indicator */}
       <div
-        className="absolute h-[calc(100%-8px)] rounded-full transition-all duration-300 ease-out"
+        className="absolute h-[calc(100%-8px)] transition-all duration-300 ease-out"
         style={{
           background: styles.indicator.background,
           left: currentMode === "chat" ? "6px" : "72px",
