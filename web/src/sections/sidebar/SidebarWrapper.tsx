@@ -54,12 +54,14 @@ export interface SidebarWrapperProps {
   folded?: boolean;
   setFolded?: Dispatch<SetStateAction<boolean>>;
   children?: React.ReactNode;
+  hideLogo?: boolean;
 }
 
 export default function SidebarWrapper({
   folded,
   setFolded,
   children,
+  hideLogo,
 }: SidebarWrapperProps) {
   return (
     // This extra `div` wrapping needs to be present (for some reason).
@@ -71,7 +73,12 @@ export default function SidebarWrapper({
           folded ? "w-[3.5rem]" : "w-[15rem]"
         )}
       >
-        <LogoSection folded={folded} setFolded={setFolded} />
+        {hideLogo ? (
+          // Keep the spacing but hide the logo content
+          <div className="flex-shrink-0 h-[2rem] min-h-[2rem]" />
+        ) : (
+          <LogoSection folded={folded} setFolded={setFolded} />
+        )}
         {children}
       </div>
     </div>

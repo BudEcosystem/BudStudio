@@ -408,7 +408,7 @@ function AppSidebarInner() {
         />
       )}
 
-      <SidebarWrapper folded={folded} setFolded={setFolded}>
+      <SidebarWrapper folded={folded} setFolded={setFolded} hideLogo={isDesktop}>
         {folded ? (
           <div className="flex flex-col h-full justify-between">
             <div className="px-2">
