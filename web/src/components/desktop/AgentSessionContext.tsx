@@ -215,8 +215,8 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
         setSessions([session]);
         setCurrentSessionId(session.id);
-        // Load messages for the active session
-        loadSessionMessages(session.id);
+        // Load messages for the active session and wait for completion
+        await loadSessionMessages(session.id);
       } catch (err) {
         console.error("Error fetching active session:", err);
       } finally {

@@ -389,14 +389,9 @@ class BudAgentOrchestrator:
             )
             self._packet_queue.put(BudAgentError(error=str(e)))
             self._packet_queue.put(BudAgentDone())
-            try:
-                update_session_status(
-                    self._db_session,
-                    self._session_id,
-                    AgentSessionStatus.FAILED,
-                )
-            except Exception:
-                logger.exception("Failed to update session status to FAILED")
+            # Keep the session ACTIVE so the user can retry after transient
+            # errors (e.g. 401 invalid API key, network timeouts).  The error
+            # is already surfaced to the frontend via the BudAgentError packet.
         finally:
             # Clean up Redis stop key
             try:

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import desc
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from onyx.db.enums import AgentMemorySource
@@ -17,13 +18,37 @@ from onyx.db.models import AgentSession
 from onyx.db.models import AgentWorkspaceFile
 
 
+def _deactivate_user_sessions(
+    db_session: Session,
+    user_id: UUID | None,
+) -> None:
+    """Mark all ACTIVE sessions for a user as COMPLETED so only one remains active."""
+    stmt = (
+        update(AgentSession)
+        .where(
+            AgentSession.user_id == user_id,
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+        )
+        .values(
+            status=AgentSessionStatus.COMPLETED,
+            completed_at=datetime.utcnow(),
+        )
+    )
+    db_session.execute(stmt)
+
+
 def create_session(
     db_session: Session,
     user_id: UUID | None,
     title: str | None = None,
     workspace_path: str | None = None,
 ) -> AgentSession:
-    """Create a new agent session for the user."""
+    """Create a new agent session for the user.
+
+    Deactivates any existing ACTIVE sessions first so only one is active at a time.
+    """
+    _deactivate_user_sessions(db_session, user_id)
+
     session = AgentSession(
         user_id=user_id,
         title=title,

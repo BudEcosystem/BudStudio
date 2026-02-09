@@ -117,6 +117,7 @@ export function BudAgentScreen() {
   const {
     currentSession,
     currentSessionId,
+    isLoading: isSessionLoading,
     switchToSession,
     addMessage,
     updateMessage,
@@ -588,7 +589,11 @@ export function BudAgentScreen() {
     <div className="flex-1 flex flex-col h-full" data-testid="bud-agent-screen">
       {/* Messages Area */}
       <div className="flex-1 overflow-auto" data-testid="agent-messages-container">
-        {messages.length === 0 ? (
+        {isSessionLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-text-subtle text-sm">Loading session...</div>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4" data-testid="agent-intro">
             <div className="mb-6">
               <Logo size="large" />
