@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bud Studio - Setup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d0d;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        /* Background Panel */
+        
+        .setup-panel {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #0d0d0d;
+            overflow: hidden;
+        }
+        /* Purple gradient background */
+        
+        .bg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        .bg-overlay::after {
+            content: "";
+            position: absolute;
+            bottom: -400px;
+            left: -150px;
+            width: 500px;
+            height: 500px;
+            background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
+            filter: blur(48.8px);
+            transform: rotate(0deg);
+            animation: moveDown 8s ease-in-out infinite alternate;
+        }
+        
+        .bg-overlay::before {
+            content: "";
+            position: absolute;
+            top: -270px;
+            right: -50px;
+            width: 500px;
+            height: 500px;
+            background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
+            mix-blend-mode: screen;
+            filter: blur(48.8px);
+            transform: rotate(45deg);
+            animation: moveUp 8s ease-in-out infinite alternate;
+            border-radius: 30%;
+            opacity: 0.6;
+        }
+        
+        @keyframes moveUp {
+            0% {
+                transform: rotate(45deg) translateY(0);
+            }
+            100% {
+                transform: rotate(45deg) translateY(-100px);
+            }
+        }
+        
+        @keyframes moveDown {
+            0% {
+                transform: rotate(0deg) translateX(0);
+            }
+            100% {
+                transform: rotate(0deg) translateX(100px);
+            }
+        }
+        /* Content */
+        
+        .content {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+        /* Logo */
+        
+        .logo {
+            width: 80px;
+            height: auto;
+            margin-bottom: 32px;
+        }
+        /* Setup Card */
+        
+        .setup-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 480px;
+        }
+        
+        .setup-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        
+        .setup-subtitle {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 32px;
+            text-align: center;
+        }
+        /* Form */
+        
+        .form-group {
+            margin-bottom: 24px;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 8px;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .form-input:focus {
+            border-color: #7c3aed;
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+        }
+        
+        .form-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        
+        .form-hint {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 6px;
+        }
+        /* Button */
+        
+        .submit-btn {
+            width: 100%;
+            padding: 14px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 8px;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+        }
+        
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+        
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        /* Error message */
+        
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .error-message p {
+            font-size: 13px;
+            color: #f87171;
+            margin: 0;
+        }
+        /* Loading state */
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="setup-panel">
+            <div class="bg-overlay"></div>
+
+            <div class="content">
+                <img src="logo.png" alt="Bud Logo" class="logo">
+
+                <div class="setup-card">
+                    <h1 class="setup-title">Welcome to Bud Studio</h1>
+                    <p class="setup-subtitle">Let's get you set up. Configure your backend connection to get started.</p>
+
+                    <div class="error-message" id="error-message">
+                        <p id="error-text"></p>
+                    </div>
+
+                    <form id="setup-form">
+                        <div class="form-group">
+                            <label class="form-label" for="backend-url">Backend URL</label>
+                            <input type="url" id="backend-url" class="form-input" placeholder="https://chat.example.com" required>
+                            <p class="form-hint">The URL of your Bud backend server</p>
+                        </div>
+
+                        <button type="submit" class="submit-btn" id="submit-btn">
+                            Continue
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const {
+            invoke
+        } = window.__TAURI__.core;
+
+        const form = document.getElementById('setup-form');
+        const backendUrlInput = document.getElementById('backend-url');
+        const submitBtn = document.getElementById('submit-btn');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+
+        // Load existing config if any
+        async function loadConfig() {
+            try {
+                const config = await invoke('get_config');
+                if (config.backend_url && config.backend_url !== 'http://localhost:8080') {
+                    backendUrlInput.value = config.backend_url;
+                }
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.add('show');
+        }
+
+        function hideError() {
+            errorMessage.classList.remove('show');
+        }
+
+        function setLoading(loading) {
+            if (loading) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="loading-spinner"></span>Connecting...';
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Continue';
+            }
+        }
+
+        function normalizeUrl(url) {
+            // Remove trailing slash
+            return url.replace(/\/+$/, '');
+        }
+
+        async function validateBackendUrl(url) {
+            // Skip validation for now - just check URL format
+            // TODO: Add proper backend validation later
+            try {
+                new URL(url);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        form.addEventListener('submit', async(e) => {
+            e.preventDefault();
+            hideError();
+
+            let backendUrl = backendUrlInput.value.trim();
+
+            if (!backendUrl) {
+                showError('Please enter a backend URL');
+                return;
+            }
+
+            // Validate URL format
+            try {
+                new URL(backendUrl);
+            } catch (e) {
+                showError('Please enter a valid URL');
+                return;
+            }
+
+            // Normalize the URL (remove trailing slash)
+            backendUrl = normalizeUrl(backendUrl);
+
+            setLoading(true);
+
+            try {
+                console.log('Step 1: Validating backend URL...');
+                // Validate the backend is reachable
+                const isReachable = await validateBackendUrl(backendUrl);
+                console.log('Step 1 complete:', isReachable);
+                if (!isReachable) {
+                    showError('Could not connect to the backend. Please check the URL and try again.');
+                    setLoading(false);
+                    return;
+                }
+
+                console.log('Step 2: Saving backend URL...');
+                // Save the normalized backend URL
+                await invoke('set_backend_url', {
+                    url: backendUrl
+                });
+                console.log('Step 2 complete');
+
+                console.log('Step 3: Completing setup...');
+                // Mark setup as complete
+                await invoke('complete_setup');
+                console.log('Step 3 complete');
+
+                console.log('Step 4: Starting app...');
+                // Start the app (starts Next.js server in background)
+                await invoke('start_app');
+                console.log('Step 4 complete');
+
+                // Navigate to loading page
+                console.log('Step 5: Navigating to loading page...');
+                window.location.href = 'index.html';
+
+            } catch (e) {
+                console.error('Setup failed:', e);
+                showError(`Setup failed: ${e}`);
+                setLoading(false);
+            }
+        });
+
+        // Initialize
+        loadConfig();
+    </script>
+</body>
+
+</html>

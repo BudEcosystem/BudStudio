@@ -8,6 +8,8 @@ pub struct AppConfig {
     pub backend_url: String,
     pub window_title: String,
     pub next_port: u16,
+    #[serde(default)]
+    pub is_configured: bool,
 }
 
 impl Default for AppConfig {
@@ -16,6 +18,7 @@ impl Default for AppConfig {
             backend_url: String::from("http://localhost:8080"),
             window_title: String::from("Bud Studio"),
             next_port: 3030,
+            is_configured: false,
         }
     }
 }
@@ -64,6 +67,15 @@ impl AppConfig {
 
     pub fn update_backend_url(&mut self, url: String) -> Result<()> {
         self.backend_url = url;
+        self.save()
+    }
+
+    pub fn needs_setup(&self) -> bool {
+        !self.is_configured
+    }
+
+    pub fn mark_configured(&mut self) -> Result<()> {
+        self.is_configured = true;
         self.save()
     }
 }

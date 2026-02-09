@@ -11,11 +11,15 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.43", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
+futures = "0.3"
+regex = "1.10"
 anyhow = "1.0"
 thiserror = "2.0"
+command-group = "5.0"
 log = "0.4"
 env_logger = "0.11"
 dirs = "5.0"
+ctrlc = { version = "3.4", features = ["termination"] }
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

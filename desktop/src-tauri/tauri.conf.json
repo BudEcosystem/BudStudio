@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.bud.studio",
   "build": {
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "sh scripts/prepare-nextjs.sh",
     "beforeDevCommand": "",
     "frontendDist": "../src"
   },
