@@ -399,6 +399,10 @@ export function BudAgentScreen() {
         method: "POST",
       }).catch((err) => console.error("Failed to stop agent:", err));
     }
+
+    // Explicitly reset state to ensure chat is ready for new input
+    setIsProcessing(false);
+    setChatState("input");
   }, [abort, currentSessionId]);
 
   /**
@@ -739,20 +743,6 @@ export function BudAgentScreen() {
           </div>
         )}
       </div>
-
-      {/* Stop button - shown when processing */}
-      {isProcessing && (
-        <div className="flex justify-center py-2">
-          <button
-            onClick={stopProcessing}
-            data-testid="agent-stop-button"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-          >
-            <span className="w-4 h-4 bg-white rounded-sm" />
-            Stop Agent
-          </button>
-        </div>
-      )}
 
       {/* Input Area - using the same ChatInputBar component */}
       <div className="p-4 flex justify-center">

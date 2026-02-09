@@ -90,13 +90,15 @@ impl NextServer {
 
             log::info!("Starting Next.js dev server in {:?}", web_dir);
 
-            // Let Next.js auto-select port if preferred is busy
             // Construct the internal API URL from backend_url
             let internal_url = format!("{}/api", backend_url.trim_end_matches('/'));
+            // Set WEB_DOMAIN to match the local server URL
+            let web_domain = format!("http://127.0.0.1:{}", self.preferred_port);
 
             Command::new("npm")
                 .args(["run", "dev", "--", "--port", &self.preferred_port.to_string()])
                 .env("INTERNAL_URL", &internal_url)
+                .env("WEB_DOMAIN", &web_domain)
                 .current_dir(web_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -113,12 +115,16 @@ impl NextServer {
             let node_path = find_node_executable();
             // Construct the internal API URL from backend_url
             let internal_url = format!("{}/api", backend_url.trim_end_matches('/'));
+            // Set WEB_DOMAIN to match the local server URL
+            let web_domain = format!("http://127.0.0.1:{}", self.preferred_port);
 
             Command::new(&node_path)
                 .arg(&server_js)
                 .env("PORT", self.preferred_port.to_string())
                 .env("HOSTNAME", "127.0.0.1")
                 .env("INTERNAL_URL", &internal_url)
+                .env("WEB_DOMAIN", &web_domain)
+                .env("OVERRIDE_API_PRODUCTION", "true")
                 .current_dir(&server_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

@@ -725,7 +725,7 @@ export function useChatController({
         };
 
         await delay(50);
-        while (!stack.isComplete || !stack.isEmpty()) {
+        while ((!stack.isComplete || !stack.isEmpty()) && !controller.signal.aborted && !stack.error) {
           if (stack.isEmpty()) {
             await delay(0.5);
           }
@@ -864,6 +864,11 @@ export function useChatController({
             });
             currentMessageTreeLocal = newMessageDetails.messageTree;
           }
+        }
+
+        // Check if the stream ended due to an error
+        if (stack.error) {
+          throw new Error(stack.error);
         }
       } catch (e: any) {
         console.log("Error:", e);

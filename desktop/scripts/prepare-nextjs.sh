@@ -1,6 +1,6 @@
 #!/bin/bash
 # Prepare Next.js standalone build for Tauri bundling
-# This script normalizes the directory structure so it works on any machine
+# This script builds Next.js and normalizes the directory structure
 
 set -e
 
@@ -9,14 +9,20 @@ DESKTOP_DIR="$(dirname "$SCRIPT_DIR")"
 WEB_DIR="$(dirname "$DESKTOP_DIR")/web"
 STANDALONE_DIR="$WEB_DIR/.next/standalone"
 
-echo "=== Preparing Next.js for Tauri bundle ==="
+echo "=== Building Next.js for Tauri bundle ==="
 echo "Web directory: $WEB_DIR"
+
+# Build Next.js
+echo "Running npm run build..."
+cd "$WEB_DIR"
+npm run build
+
 echo "Standalone directory: $STANDALONE_DIR"
 
 # Check if standalone build exists
 if [ ! -d "$STANDALONE_DIR" ]; then
     echo "Error: Standalone build not found at $STANDALONE_DIR"
-    echo "Please run 'npm run build' in the web directory first"
+    echo "Build may have failed"
     exit 1
 fi
 
