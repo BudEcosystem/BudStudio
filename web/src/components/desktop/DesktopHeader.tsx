@@ -7,9 +7,9 @@ import { useAppSidebarContext } from "@/refresh-components/contexts/AppSidebarCo
 /**
  * Desktop-only header that appears at the top of the app
  * Contains the mode switcher (Chat / BudAgent)
- * Styled like an iPhone Dynamic Island / notch
+ * Full-width bar design similar to Playground header
  * Only renders when running in Tauri desktop environment
- * Centers within the content area (accounting for sidebar width)
+ * Spans the content area (accounting for sidebar width)
  */
 export function DesktopHeader() {
   const { isDesktop, currentMode, setMode } = useDesktopMode();
@@ -21,15 +21,15 @@ export function DesktopHeader() {
   }
 
   // Sidebar widths from SidebarWrapper: folded = 3.5rem, unfolded = 15rem
-  // Center the mode switcher within the content area (to the right of sidebar)
+  // Position the mode switcher bar to span the content area (to the right of sidebar)
   const sidebarWidth = folded ? "3.5rem" : "15rem";
 
   return (
     <div
-      className="fixed top-4 z-[9999]"
+      className="fixed top-0 z-[9999]"
       style={{
-        left: `calc(${sidebarWidth} + (100% - ${sidebarWidth}) / 2)`,
-        transform: "translateX(-50%)",
+        left: sidebarWidth,
+        right: 0,
       }}
     >
       <ModeSwitcher currentMode={currentMode} onModeChange={setMode} />

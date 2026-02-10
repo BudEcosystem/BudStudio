@@ -47,6 +47,8 @@ export interface SessionPreferences {
   alwaysAllowTools: Set<string>;
   /** Whether to always allow memory file updates */
   alwaysAllowMemoryUpdates: boolean;
+  /** Specific operations (tool+params hash) that user has chosen to always allow */
+  approvedOperations: Set<string>;
 }
 
 interface AgentSessionContextType {
@@ -70,6 +72,9 @@ interface AgentSessionContextType {
   setAlwaysAllowTool: (toolName: string) => void;
   setAlwaysAllowMemoryUpdates: (allow: boolean) => void;
   isToolAlwaysAllowed: (toolName: string) => boolean;
+  setAlwaysAllowOperation: (operationHash: string) => void;
+  isOperationAllowed: (operationHash: string) => boolean;
+  createOperationHash: (toolName: string, toolInput: Record<string, unknown>) => string;
 }
 
 const AgentSessionContext = createContext<AgentSessionContextType | undefined>(undefined);
@@ -97,12 +102,36 @@ interface BackendMessageSnapshot {
 }
 
 /**
+ * Create a stable hash for an operation (tool + params).
+ * Used to track operation-specific approvals.
+ */
+function createOperationHashFn(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): string {
+  // Create deterministic string representation of the input
+  const stableStringify = (obj: unknown): string => {
+    if (obj === null) return "null";
+    if (typeof obj !== "object") return String(obj);
+    if (Array.isArray(obj)) {
+      return `[${obj.map(stableStringify).join(",")}]`;
+    }
+    const keys = Object.keys(obj as Record<string, unknown>).sort();
+    const pairs = keys.map((k) => `${k}:${stableStringify((obj as Record<string, unknown>)[k])}`);
+    return `{${pairs.join(",")}}`;
+  };
+
+  return `${toolName}::${stableStringify(toolInput)}`;
+}
+
+/**
  * Default session preferences.
  */
 function createDefaultPreferences(): SessionPreferences {
   return {
     alwaysAllowTools: new Set<string>(),
     alwaysAllowMemoryUpdates: false,
+    approvedOperations: new Set<string>(),
   };
 }
 
@@ -451,6 +480,31 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     [sessionPreferences.alwaysAllowTools]
   );
 
+  const setAlwaysAllowOperation = useCallback((operationHash: string) => {
+    setSessionPreferences((prev) => {
+      const newSet = new Set(prev.approvedOperations);
+      newSet.add(operationHash);
+      return {
+        ...prev,
+        approvedOperations: newSet,
+      };
+    });
+  }, []);
+
+  const isOperationAllowed = useCallback(
+    (operationHash: string) => {
+      return sessionPreferences.approvedOperations.has(operationHash);
+    },
+    [sessionPreferences.approvedOperations]
+  );
+
+  const createOperationHash = useCallback(
+    (toolName: string, toolInput: Record<string, unknown>) => {
+      return createOperationHashFn(toolName, toolInput);
+    },
+    []
+  );
+
   return (
     <AgentSessionContext.Provider
       value={{
@@ -470,6 +524,9 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         setAlwaysAllowTool,
         setAlwaysAllowMemoryUpdates,
         isToolAlwaysAllowed,
+        setAlwaysAllowOperation,
+        isOperationAllowed,
+        createOperationHash,
       }}
     >
       {children}

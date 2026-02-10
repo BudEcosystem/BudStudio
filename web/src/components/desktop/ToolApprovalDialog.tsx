@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import Button from "@/refresh-components/buttons/Button";
 import { FiAlertTriangle, FiFile, FiEdit, FiTerminal, FiCpu } from "react-icons/fi";
@@ -26,7 +25,8 @@ export interface ToolApprovalDialogProps {
   toolName: string;
   toolInput: Record<string, unknown>;
   toolCallId: string;
-  onApprove: (toolCallId: string, alwaysAllow: boolean) => void;
+  operationHash: string;
+  onApprove: (toolCallId: string, alwaysAllow: boolean, operationHash?: string) => void;
   onDeny: (toolCallId: string) => void;
   onClose: () => void;
 }
@@ -97,12 +97,11 @@ export function ToolApprovalDialog({
   toolName,
   toolInput,
   toolCallId,
+  operationHash,
   onApprove,
   onDeny,
   onClose,
 }: ToolApprovalDialogProps) {
-  const [alwaysAllow, setAlwaysAllow] = useState(false);
-
   // Check if this is a memory file operation
   const { isMemory, filePath: memoryFilePath } = useMemo(
     () => checkIsMemoryFileOperation(toolName, toolInput),
@@ -114,8 +113,13 @@ export function ToolApprovalDialog({
     [memoryFilePath]
   );
 
-  const handleApprove = () => {
-    onApprove(toolCallId, alwaysAllow);
+  const handleApproveOnce = () => {
+    onApprove(toolCallId, false);
+    onClose();
+  };
+
+  const handleApproveAlways = () => {
+    onApprove(toolCallId, true, operationHash);
     onClose();
   };
 
@@ -123,6 +127,37 @@ export function ToolApprovalDialog({
     onDeny(toolCallId);
     onClose();
   };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape = Deny
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleDeny();
+        return;
+      }
+
+      // Enter = Allow once
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        handleApproveOnce();
+        return;
+      }
+
+      // Cmd+Enter (Mac) or Ctrl+Enter (Win/Linux) = Always allow
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleApproveAlways();
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Determine dialog styling based on whether this is a memory operation
   const iconBgClass = isMemory
@@ -200,41 +235,39 @@ export function ToolApprovalDialog({
             </pre>
           </div>
 
-          {/* Always allow checkbox */}
-          <div className="flex items-center space-x-2 pt-2">
-            <Checkbox
-              id="always-allow"
-              checked={alwaysAllow}
-              onCheckedChange={(checked) => setAlwaysAllow(checked === true)}
-            />
-            <Label
-              htmlFor="always-allow"
-              className="text-sm cursor-pointer text-text-subtle"
-            >
-              {isMemory
-                ? "Always allow memory updates (for this session)"
-                : "Always allow this tool (for this session)"}
-            </Label>
+          {/* Keyboard shortcuts hint */}
+          <div className="text-xs text-text-subtle pt-2 space-y-1">
+            <div>Press <kbd className="px-1.5 py-0.5 bg-background-emphasis rounded border border-border font-mono">Esc</kbd> to deny</div>
+            <div>Press <kbd className="px-1.5 py-0.5 bg-background-emphasis rounded border border-border font-mono">Enter</kbd> to allow once</div>
+            <div>Press <kbd className="px-1.5 py-0.5 bg-background-emphasis rounded border border-border font-mono">{typeof navigator !== 'undefined' && navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter</kbd> to always allow for this session</div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
           <Button
             danger
             secondary
             onClick={handleDeny}
-            className="min-w-[100px]"
+            className="min-w-[120px]"
             data-testid="tool-approval-deny"
           >
             Deny
           </Button>
           <Button
-            action
-            onClick={handleApprove}
-            className="min-w-[100px]"
-            data-testid="tool-approval-approve"
+            secondary
+            onClick={handleApproveOnce}
+            className="min-w-[120px]"
+            data-testid="tool-approval-allow-once"
           >
-            Approve
+            Allow once
+          </Button>
+          <Button
+            action
+            onClick={handleApproveAlways}
+            className="min-w-[120px]"
+            data-testid="tool-approval-always-allow"
+          >
+            Always allow
           </Button>
         </DialogFooter>
       </DialogContent>

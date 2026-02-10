@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { AgentConfigSkeleton } from "./AgentConfigSkeleton";
 
 interface WorkspaceFile {
   path: string;
@@ -98,11 +99,7 @@ export function AgentConfigView() {
   }, [selectedPath, editorContent]);
 
   if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center text-text-02">
-        Loading workspace files...
-      </div>
-    );
+    return <AgentConfigSkeleton />;
   }
 
   if (error) {

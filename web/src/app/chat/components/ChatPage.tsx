@@ -21,6 +21,7 @@ import { useFederatedConnectors, useFilters, useLlmManager } from "@/lib/hooks";
 import { useFederatedOAuthStatus } from "@/lib/hooks/useFederatedOAuthStatus";
 import { FeedbackType } from "@/app/chat/interfaces";
 import { OnyxInitializingLoader } from "@/components/OnyxInitializingLoader";
+import { ChatSkeleton } from "@/components/chat/ChatSkeleton";
 import { FeedbackModal } from "@/app/chat/components/modal/FeedbackModal";
 import { FiArrowDown } from "react-icons/fi";
 import { OnyxDocument, MinimalOnyxDocument } from "@/lib/search/interfaces";
@@ -734,7 +735,7 @@ export function ChatPage({
     );
   }
 
-  if (!isReady) return <OnyxInitializingLoader />;
+  if (!isReady) return <ChatSkeleton />;
 
   return (
     <>

@@ -478,7 +478,7 @@ function AppSidebarInner() {
               <>
                 {/* Agent mode: show a single "Chat" link */}
                 {isDesktop && currentMode === "agent" ? (
-                  <SidebarSection title="Bud Agent">
+                  <SidebarSection title="">
                     <SidebarTab
                       leftIcon={SvgSparkle}
                       onClick={() => setAgentView("chat")}

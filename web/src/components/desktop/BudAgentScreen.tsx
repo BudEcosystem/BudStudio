@@ -8,8 +8,8 @@ import {
   AgentMessage,
   ToolCallInfo,
 } from "./AgentSessionContext";
-import { ToolApprovalDialog } from "./ToolApprovalDialog";
 import { MemoryUpdateDialog } from "./MemoryUpdateDialog";
+import { InlineToolApproval } from "./InlineToolApproval";
 import ChatInputBar from "@/app/chat/components/input/ChatInputBar";
 import { useChatContext } from "@/refresh-components/contexts/ChatContext";
 import { useAgentsContext } from "@/refresh-components/contexts/AgentsContext";
@@ -32,15 +32,9 @@ import SvgCopy from "@/icons/copy";
 import SvgCheck from "@/icons/check";
 import Text from "@/refresh-components/texts/Text";
 import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
-
-/**
- * Interface for a pending tool approval request.
- */
-interface PendingApproval {
-  toolCallId: string;
-  toolName: string;
-  toolInput: Record<string, unknown>;
-}
+import { BudAgentSkeleton } from "./BudAgentSkeleton";
+import { ThinkingIndicator } from "./ThinkingIndicator";
+import { useTheme } from "next-themes";
 
 /**
  * Interface for a pending memory update request.
@@ -101,12 +95,20 @@ function AgentMessageContent({ content }: { content: string }) {
  * Uses SSE streaming from the local agent API for real-time updates
  */
 export function BudAgentScreen() {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
   const [message, setMessage] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [chatState, setChatState] = useState<ChatState>("input");
-  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [bottomApproval, setBottomApproval] = useState<{
+    toolCallId: string;
+    toolName: string;
+    toolInput: Record<string, unknown>;
+    operationHash: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -125,6 +127,9 @@ export function BudAgentScreen() {
     setAlwaysAllowTool,
     setAlwaysAllowMemoryUpdates,
     isToolAlwaysAllowed,
+    createOperationHash,
+    setAlwaysAllowOperation,
+    isOperationAllowed,
   } = useAgentSession();
 
   // SSE streaming hook
@@ -269,15 +274,24 @@ export function BudAgentScreen() {
           const filePath = toolInput.path as string | undefined;
           const isMemory = filePath && isMemoryFile(filePath);
 
+          // Create operation hash for this specific operation
+          const operationHash = createOperationHash(toolName, toolInput);
+
           // Check if we should auto-approve based on preferences
-          if (isMemory && sessionPreferences.alwaysAllowMemoryUpdates) {
-            // Auto-approve memory updates
+          // Priority 1: Check if this specific operation was approved
+          if (isOperationAllowed(operationHash)) {
             handleToolApprove(toolCallId, false);
             return;
           }
 
+          // Priority 2: Check if memory updates are always allowed
+          if (isMemory && sessionPreferences.alwaysAllowMemoryUpdates) {
+            handleToolApprove(toolCallId, false);
+            return;
+          }
+
+          // Priority 3: Check if this tool type is always allowed (legacy)
           if (!isMemory && isToolAlwaysAllowed(toolName)) {
-            // Auto-approve this tool
             handleToolApprove(toolCallId, false);
             return;
           }
@@ -312,8 +326,7 @@ export function BudAgentScreen() {
                 if (oldText && oldContent.includes(oldText)) {
                   newContent = oldContent.replace(oldText, newText || "");
                 } else {
-                  // Can't preview the edit, fall back to regular approval
-                  setPendingApproval({ toolCallId, toolName, toolInput });
+                  // Can't preview the edit, inline approval will show automatically
                   return;
                 }
               }
@@ -329,15 +342,16 @@ export function BudAgentScreen() {
               return;
             } catch (error) {
               console.error("Failed to read file for memory update preview:", error);
-              // Fall back to regular approval dialog
+              // Fall back to inline approval (will show automatically)
             }
           }
 
-          // Show the regular approval dialog
-          setPendingApproval({
+          // Show bottom approval UI
+          setBottomApproval({
             toolCallId,
             toolName,
             toolInput,
+            operationHash,
           });
         },
 
@@ -390,6 +404,8 @@ export function BudAgentScreen() {
     sessionPreferences,
     isToolAlwaysAllowed,
     setAlwaysAllowMemoryUpdates,
+    createOperationHash,
+    isOperationAllowed,
   ]);
 
   const stopProcessing = useCallback(() => {
@@ -410,19 +426,13 @@ export function BudAgentScreen() {
    * Handle tool approval - send approval to the backend and continue execution.
    */
   const handleToolApprove = useCallback(
-    async (toolCallId: string, alwaysAllow: boolean) => {
+    async (toolCallId: string, alwaysAllow: boolean, operationHash?: string) => {
       if (!currentSessionId) return;
 
-      // Find the pending approval to check if it's for a specific tool
-      const approval = pendingApproval;
-      if (approval && alwaysAllow) {
-        // Check if this is a memory file
-        const filePath = approval.toolInput.path as string | undefined;
-        if (filePath && isMemoryFile(filePath)) {
-          setAlwaysAllowMemoryUpdates(true);
-        } else {
-          setAlwaysAllowTool(approval.toolName);
-        }
+      // Store approval preference if requested
+      if (alwaysAllow && operationHash) {
+        // Store this specific operation as approved
+        setAlwaysAllowOperation(operationHash);
       }
 
       try {
@@ -443,8 +453,11 @@ export function BudAgentScreen() {
       } catch (error) {
         console.error("Error approving tool:", error);
       }
+
+      // Clear bottom approval UI
+      setBottomApproval(null);
     },
-    [currentSessionId, pendingApproval, setAlwaysAllowTool, setAlwaysAllowMemoryUpdates]
+    [currentSessionId, setAlwaysAllowOperation]
   );
 
   /**
@@ -566,16 +579,12 @@ export function BudAgentScreen() {
       } catch (error) {
         console.error("Error denying tool:", error);
       }
+
+      // Clear bottom approval UI
+      setBottomApproval(null);
     },
     [currentSessionId, updateCurrentAgentMessage]
   );
-
-  /**
-   * Close the approval dialog without taking action.
-   */
-  const handleApprovalDialogClose = useCallback(() => {
-    setPendingApproval(null);
-  }, []);
 
   const handleFileUpload = useCallback((files: File[]) => {
     // TODO: Implement file upload for agent
@@ -586,13 +595,35 @@ export function BudAgentScreen() {
   const noOp = useCallback(() => {}, []);
 
   return (
-    <div className="flex-1 flex flex-col h-full" data-testid="bud-agent-screen">
+    <div className="flex-1 flex flex-col h-full relative" data-testid="bud-agent-screen">
+      {/* Grid Background */}
+      <div
+        className="absolute inset-0 pointer-events-none z-0"
+        style={{
+          backgroundImage: `
+            linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px'
+        }}
+      />
+
+      {/* Backdrop overlay when approval is required */}
+      {bottomApproval && (
+        <div className="absolute inset-0 bg-black/50 z-40" />
+      )}
+
       {/* Messages Area */}
-      <div className="flex-1 overflow-auto" data-testid="agent-messages-container">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden default-scrollbar relative z-10" data-testid="agent-messages-container">
+        {/* Top shadow fadeout */}
+        <div
+          className="sticky left-0 right-0 h-8 pointer-events-none z-20 bg-gradient-to-b from-background via-background/70 to-transparent"
+          style={{
+            top: '60px',
+          }}
+        />
         {isSessionLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-text-subtle text-sm">Loading session...</div>
-          </div>
+          <BudAgentSkeleton />
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4" data-testid="agent-intro">
             <div className="mb-6">
@@ -629,7 +660,12 @@ export function BudAgentScreen() {
                   className="pt-5 pb-1 w-full flex"
                   data-testid="agent-message-user"
                 >
-                  <div className="ml-auto max-w-[25rem] whitespace-break-spaces rounded-t-16 rounded-bl-16 bg-background-tint-02 py-2 px-3">
+                  <div
+                    className="ml-auto max-w-[25rem] whitespace-break-spaces rounded-t-16 rounded-bl-16 py-2 px-3"
+                    style={{
+                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
                     <Text mainContentBody>{msg.content}</Text>
                   </div>
                 </div>
@@ -646,8 +682,13 @@ export function BudAgentScreen() {
                       )}
                       <div className="w-full ml-4">
                         <div className="max-w-content-max break-words">
-                          {/* Status indicator - only when not complete */}
-                          {msg.status && msg.status !== "complete" && (
+                          {/* Thinking indicator */}
+                          {msg.status === "thinking" && !msg.content && (
+                            <ThinkingIndicator />
+                          )}
+
+                          {/* Status indicator - only for error/stopped states */}
+                          {msg.status && msg.status !== "complete" && msg.status !== "thinking" && msg.status !== "streaming" && (
                             <span
                               data-testid="agent-message-status"
                               className={cn(
@@ -659,8 +700,6 @@ export function BudAgentScreen() {
                                     : "text-text-subtle"
                               )}
                             >
-                              {msg.status === "thinking" && "thinking..."}
-                              {msg.status === "streaming" && "responding..."}
                               {msg.status === "error" && "error"}
                               {msg.status === "stopped" && "stopped"}
                             </span>
@@ -681,13 +720,9 @@ export function BudAgentScreen() {
                             </div>
                           )}
 
-                          {/* Markdown content or thinking indicator */}
-                          {msg.content ? (
+                          {/* Markdown content */}
+                          {msg.content && (
                             <AgentMessageContent content={msg.content} />
-                          ) : (
-                            msg.status === "thinking" && (
-                              <BlinkingDot addMargin />
-                            )
                           )}
 
                           {/* Copy button when message is complete */}
@@ -750,47 +785,51 @@ export function BudAgentScreen() {
       </div>
 
       {/* Input Area - using the same ChatInputBar component */}
-      <div className="p-4 flex justify-center">
-        {selectedAssistant ? (
-          <ChatInputBar
-            message={message}
-            setMessage={setMessage}
-            onSubmit={handleSubmit}
-            stopGenerating={stopProcessing}
-            chatState={chatState}
-            llmManager={llmManager}
-            filterManager={filterManager}
-            selectedAssistant={selectedAssistant}
-            selectedDocuments={[]}
-            removeDocs={noOp}
-            toggleDocumentSidebar={noOp}
-            handleFileUpload={handleFileUpload}
-            textAreaRef={textAreaRef}
-            retrievalEnabled={false}
-            deepResearchEnabled={false}
-            toggleDeepResearch={noOp}
-            currentSessionFileTokenCount={0}
-            availableContextTokens={120000}
-          />
-        ) : (
-          <div className="text-sm text-text-subtle">
-            Loading assistants...
-          </div>
-        )}
-      </div>
+      <div className="p-4 flex justify-center relative z-50">
+        <div className="w-full max-w-searchbar-max relative">
+          {/* Approval UI - Positioned just above the chat input */}
+          {bottomApproval && (
+            <div className="absolute z-50 bottom-0 left-0 right-0 mb-2 border border-border rounded-lg shadow-lg p-5" style={{ backgroundColor: '#101010' }}>
+              <InlineToolApproval
+                toolName={bottomApproval.toolName}
+                toolInput={bottomApproval.toolInput}
+                toolCallId={bottomApproval.toolCallId}
+                operationHash={bottomApproval.operationHash}
+                onApprove={handleToolApprove}
+                onDeny={handleToolDeny}
+              />
+            </div>
+          )}
 
-      {/* Tool Approval Dialog */}
-      {pendingApproval && (
-        <ToolApprovalDialog
-          isOpen={true}
-          toolName={pendingApproval.toolName}
-          toolInput={pendingApproval.toolInput}
-          toolCallId={pendingApproval.toolCallId}
-          onApprove={handleToolApprove}
-          onDeny={handleToolDeny}
-          onClose={handleApprovalDialogClose}
-        />
-      )}
+          {/* Chat Input */}
+          {selectedAssistant ? (
+            <ChatInputBar
+              message={message}
+              setMessage={setMessage}
+              onSubmit={handleSubmit}
+              stopGenerating={stopProcessing}
+              chatState={chatState}
+              llmManager={llmManager}
+              filterManager={filterManager}
+              selectedAssistant={selectedAssistant}
+              selectedDocuments={[]}
+              removeDocs={noOp}
+              toggleDocumentSidebar={noOp}
+              handleFileUpload={handleFileUpload}
+              textAreaRef={textAreaRef}
+              retrievalEnabled={false}
+              deepResearchEnabled={false}
+              toggleDeepResearch={noOp}
+              currentSessionFileTokenCount={0}
+              availableContextTokens={120000}
+            />
+          ) : (
+            <div className="text-sm text-text-subtle">
+              Loading assistants...
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Memory Update Dialog */}
       {pendingMemoryUpdate && (

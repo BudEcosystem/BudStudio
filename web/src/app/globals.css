@@ -1,486 +1,619 @@
 @import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&display=swap");
-
 @import "figma/colors.css";
+
+/* Source Serif 4 - Local font files */
+
+@font-face {
+    font-family: 'Source Serif 4';
+    src: url('/fonts/SourceSerif4-VariableFont_opsz,wght.ttf') format('truetype-variations');
+    font-weight: 200 900;
+    font-stretch: 8% 60%;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Source Serif 4';
+    src: url('/fonts/SourceSerif4-Italic-VariableFont_opsz,wght.ttf') format('truetype-variations');
+    font-weight: 200 900;
+    font-stretch: 8% 60%;
+    font-style: italic;
+    font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
 @layer base {
-  /* BORDER RADII */
-  :root {
-    --border-radius-02: 0.125rem;
-    --border-radius-04: 0.25rem;
-    --border-radius-08: 0.5rem;
-    --border-radius-12: 0.75rem;
-    --border-radius-16: 1rem;
-    --border-radius-full: 64rem;
-  }
-
-  /* BACKDROP BLUR */
-  :root {
-    --backdrop-blur-01: 2px;
-    --backdrop-blur-02: 1px;
-    --backdrop-blur-03: 1px;
-  }
-
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground;
-    overscroll-behavior-y: none;
-    overflow-anchor: none;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.2rem;
-    align-items: start;
-  }
-
-  ol > li > p,
-  ul > li > p {
-    margin-top: 0;
-    margin-bottom: 0;
-    display: inline;
-    /* Make paragraphs inline to reduce vertical space */
-  }
-
-  /* Reduce spacing for markdown elements in chat */
-  .prose h1,
-  .prose h2,
-  .prose h3,
-  .prose h4,
-  .prose h5,
-  .prose h6 {
-    margin-top: 0.75em;
-    margin-bottom: 0.5em;
-  }
-
-  .prose ul,
-  .prose ol {
-    margin-top: 0.5em;
-    margin-bottom: 0.5em;
-  }
-
-  .prose li {
-    margin-top: 0.25em;
-    margin-bottom: 0.25em;
-  }
-
-  .prose hr {
-    margin-top: 1.25em;
-    margin-bottom: 1em;
-  }
-
-  .prose p {
-    margin-top: 0.5em;
-    margin-bottom: 0.5em;
-  }
-
-  /* Remove top margin from first child to align with icon */
-  .prose > :first-child {
-    margin-top: 0;
-  }
+    /* BORDER RADII */
+     :root {
+        --border-radius-02: 0.125rem;
+        --border-radius-04: 0.25rem;
+        --border-radius-08: 0.5rem;
+        --border-radius-12: 0.75rem;
+        --border-radius-16: 1rem;
+        --border-radius-full: 64rem;
+    }
+    /* BACKDROP BLUR */
+     :root {
+        --backdrop-blur-01: 2px;
+        --backdrop-blur-02: 1px;
+        --backdrop-blur-03: 1px;
+    }
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+        overscroll-behavior-y: none;
+        overflow-anchor: none;
+    }
+    form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        align-items: start;
+    }
+    ol>li>p,
+    ul>li>p {
+        margin-top: 0;
+        margin-bottom: 0;
+        display: inline;
+        /* Make paragraphs inline to reduce vertical space */
+    }
+    /* Reduce spacing for markdown elements in chat */
+    .prose h1,
+    .prose h2,
+    .prose h3,
+    .prose h4,
+    .prose h5,
+    .prose h6 {
+        margin-top: 0.75em;
+        margin-bottom: 0.5em;
+    }
+    .prose ul,
+    .prose ol {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+    }
+    .prose li {
+        margin-top: 0.25em;
+        margin-bottom: 0.25em;
+    }
+    .prose hr {
+        margin-top: 1.25em;
+        margin-bottom: 1em;
+    }
+    .prose p {
+        margin-top: 0.5em;
+        margin-bottom: 0.5em;
+    }
+    /* Remove top margin from first child to align with icon */
+    .prose> :first-child {
+        margin-top: 0;
+    }
 }
 
 @layer utilities {
-  /* Hide scrollbar for Chrome, Safari and Opera */
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Hide scrollbar for IE, Edge and Firefox */
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    /* IE and Edge */
-    scrollbar-width: none;
-    /* Firefox */
-  }
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        /* IE and Edge */
+        scrollbar-width: none;
+        /* Firefox */
+    }
 }
+
 
 /* TYPOGRAPHY SYSTEM - Imported from Figma Design System */
 
+
 /* Font Imports */
 
+
 /* Font Family Variables */
+
 :root {
-  --font-hanken-grotesk: "Hanken Grotesk", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, sans-serif;
-  --font-dm-mono: "DM Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono",
-    Consolas, "Courier New", monospace;
+    --font-hanken-grotesk: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-dm-mono: "DM Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+    --font-source-serif-4: "Source Serif 4", Georgia, Cambria, "Times New Roman", Times, serif;
 }
+
 
 /* HEADING STYLES */
 
 .font-heading-h1 {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 48px;
-  font-weight: 600;
-  line-height: 64px;
-  letter-spacing: -0.48px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 48px;
+    font-weight: 600;
+    line-height: 64px;
+    letter-spacing: -0.48px;
 }
 
 .font-heading-h2 {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 36px;
-  letter-spacing: -0.24px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 36px;
+    letter-spacing: -0.24px;
 }
 
 .font-heading-h3 {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 28px;
-  letter-spacing: -0.18px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 28px;
+    letter-spacing: -0.18px;
 }
 
 .font-heading-h3-muted {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 28px;
-  letter-spacing: -0.18px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 28px;
+    letter-spacing: -0.18px;
 }
+
 
 /* MAIN CONTENT STYLES */
 
 .font-main-content-body {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 16px;
-  font-weight: 450;
-  line-height: 24px;
-  letter-spacing: 0px;
+    font-family: var(--font-source-serif-4);
+    font-size: 16px;
+    line-height: 32px;
+    font-weight: 200;
+    letter-spacing: 0px;
+    text-rendering: optimizelegibility;
+}
+
+/* Increase font weight for light theme */
+.light .font-main-content-body {
+    font-weight: 400;
+}
+
+
+/* MARKDOWN TYPOGRAPHY - Source Serif 4 for readable content */
+
+
+/* Apply Source Serif 4 to all prose content (both chat and agent) */
+
+
+/* Use :not() to avoid overriding explicit font classes */
+
+.prose {
+    font-family: var(--font-source-serif-4);
+    font-size: 16px;
+    line-height: 32px;
+    font-weight: 200;
+    letter-spacing: 0.5px;
+    text-rendering: optimizelegibility;
+}
+
+.prose h1:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 24px;
+    line-height: 36px;
+    font-weight: 600;
+    /* letter-spacing: -0.24px; */
+}
+
+.prose h2:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 20px;
+    line-height: 32px;
+    font-weight: 600;
+    /* letter-spacing: -0.2px; */
+}
+
+.prose h3:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 18px;
+    line-height: 28px;
+    font-weight: 600;
+    /* letter-spacing: -0.18px; */
+}
+
+.prose h4:not([class*="font-"]),
+.prose h5:not([class*="font-"]),
+.prose h6:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 16px;
+    line-height: 28px;
+    font-weight: 600;
+    /* letter-spacing: -0.16px; */
+}
+
+.prose p:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 16px;
+    line-height: 32px;
+    font-weight: 200;
+    /* letter-spacing: -0.06px; */
+}
+
+.prose ul:not([class*="font-"]),
+.prose ol:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 16px;
+    line-height: 32px;
+    font-weight: 200;
+    /* letter-spacing: -0.06px; */
+}
+
+.prose li:not([class*="font-"]) {
+    font-family: var(--font-source-serif-4);
+    font-size: 16px;
+    line-height: 32px;
+    font-weight: 200;
+    /* letter-spacing: -0.06px; */
+}
+
+.prose strong {
+    font-weight: 500;
+}
+
+/* Light theme font weight overrides */
+.light .prose,
+.light .prose p:not([class*="font-"]),
+.light .prose ul:not([class*="font-"]),
+.light .prose ol:not([class*="font-"]),
+.light .prose li:not([class*="font-"]) {
+    font-weight: 400;
+}
+
+/* Inline code - Use monospace */
+
+.prose code:not(pre code) {
+    font-family: var(--font-dm-mono);
+    font-size: 14px;
+    font-weight: 200;
+    line-height: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+
+/* Code blocks - Use monospace */
+
+.prose pre {
+    font-family: var(--font-dm-mono);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+}
+
+.prose pre code {
+    font-family: var(--font-dm-mono);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
 }
 
 .font-main-content-emphasis {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 24px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 24px;
+    letter-spacing: 0px;
 }
 
 .font-main-content-muted {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 16px;
-  font-weight: 400;
-  line-height: 24px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
+    letter-spacing: 0px;
 }
 
 .font-main-content-mono {
-  font-family: var(--font-dm-mono);
-  font-size: 16px;
-  font-weight: 400;
-  line-height: 23px;
-  letter-spacing: 0px;
+    font-family: var(--font-dm-mono);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 23px;
+    letter-spacing: 0px;
 }
+
 
 /* MAIN UI STYLES */
 
 .font-main-ui-body {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: 0px;
 }
 
 .font-main-ui-muted {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    letter-spacing: 0px;
 }
 
 .font-main-ui-action {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    letter-spacing: 0px;
 }
 
 .font-main-ui-mono {
-  font-family: var(--font-dm-mono);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  letter-spacing: 0px;
+    font-family: var(--font-dm-mono);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    letter-spacing: 0px;
 }
+
 
 /* SECONDARY STYLES */
 
 .font-secondary-body {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    letter-spacing: 0px;
 }
 
 .font-secondary-action {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    letter-spacing: 0px;
 }
 
 .font-secondary-mono {
-  font-family: var(--font-dm-mono);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  letter-spacing: 0px;
+    font-family: var(--font-dm-mono);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    letter-spacing: 0px;
 }
+
 
 /* FIGURE STYLES */
 
 .font-figure-small-label {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 12px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 12px;
+    letter-spacing: 0px;
 }
 
 .font-figure-small-value {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 10px;
-  font-weight: 400;
-  line-height: 12px;
-  letter-spacing: 0px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 12px;
+    letter-spacing: 0px;
 }
 
 .font-figure-keystroke {
-  font-family: var(--font-hanken-grotesk);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  letter-spacing: -0.6px;
+    font-family: var(--font-hanken-grotesk);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    letter-spacing: -0.6px;
 }
+
 
 /* SCROLL BAR */
 
 .default-scrollbar::-webkit-scrollbar {
-  width: 6px;
+    width: 6px;
 }
 
 .default-scrollbar::-webkit-scrollbar-track {
-  background: #f1f1f1;
+    background: #f1f1f1;
 }
 
 .default-scrollbar::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+    background: #888;
+    border-radius: 4px;
 }
 
 .default-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #555;
+    background: #555;
 }
 
 .default-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #888 transparent;
-  overflow: overlay;
-  overflow-y: scroll;
-  overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #888 transparent;
+    overflow: overlay;
+    overflow-y: scroll;
+    overflow-x: hidden;
 }
 
 .scrollbar {
-  width: 100%;
-  height: 100%;
+    width: 100%;
+    height: 100%;
 }
 
 .inputscroll::-webkit-scrollbar-track {
-  background: #e5e7eb;
-  scrollbar-width: none;
+    background: #e5e7eb;
+    scrollbar-width: none;
 }
 
 ::-webkit-scrollbar {
-  width: 0px;
-  /* Vertical scrollbar width */
-  height: 8px;
-  /* Horizontal scrollbar height */
+    width: 0px;
+    /* Vertical scrollbar width */
+    height: 8px;
+    /* Horizontal scrollbar height */
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
-  /* background: theme("colors.scrollbar.track"); */
-  /* Track background color */
+    background: transparent;
+    /* background: theme("colors.scrollbar.track"); */
+    /* Track background color */
 }
+
 
 /* Style the scrollbar handle */
+
 ::-webkit-scrollbar-thumb {
-  background: transparent;
-  /* background: theme("colors.scrollbar.thumb"); */
-  /* Handle color */
-  border-radius: 10px;
+    background: transparent;
+    /* background: theme("colors.scrollbar.thumb"); */
+    /* Handle color */
+    border-radius: 10px;
 }
 
+
 /* Handle on hover */
+
 ::-webkit-scrollbar-thumb:hover {
-  background: transparent;
-  /* background: theme("colors.scrollbar.thumb-hover"); */
-  /* Handle color on hover */
+    background: transparent;
+    /* background: theme("colors.scrollbar.thumb-hover"); */
+    /* Handle color on hover */
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb {
-  background: transparent;
-  /* background: theme("colors.scrollbar.dark.thumb"); */
-  /* Handle color */
-  border-radius: 10px;
+    background: transparent;
+    /* background: theme("colors.scrollbar.dark.thumb"); */
+    /* Handle color */
+    border-radius: 10px;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: transparent;
-  /* background: theme("colors.scrollbar.dark.thumb-hover"); */
-  /* Handle color on hover */
+    background: transparent;
+    /* background: theme("colors.scrollbar.dark.thumb-hover"); */
+    /* Handle color on hover */
 }
+
 
 /* TEXTAREA */
 
 textarea::-webkit-scrollbar {
-  width: 8px;
+    width: 8px;
 }
 
 textarea::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-  border-radius: 4px;
+    background: var(--scrollbar-track);
+    border-radius: 4px;
 }
 
 textarea::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
+    background: var(--scrollbar-thumb);
+    border-radius: 4px;
 }
 
 textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
+    background: var(--scrollbar-thumb-hover);
 }
 
 textarea {
-  resize: vertical;
+    resize: vertical;
 }
+
 
 /* For Firefox */
+
 textarea {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 .nextjs-portal {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  width: 0 !important;
-  height: 0 !important;
-  overflow: hidden !important;
-  position: absolute !important;
-  pointer-events: none !important;
-  clip: rect(0, 0, 0, 0) !important;
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    pointer-events: none !important;
+    clip: rect(0, 0, 0, 0) !important;
 }
 
 .nextjs-portal * {
-  display: none !important;
+    display: none !important;
 }
 
+
 /* Used to create alternatie to React Markdown */
+
 .preserve-lines {
-  white-space: pre-wrap;
-  /* Preserves whitespace and wraps text */
+    white-space: pre-wrap;
+    /* Preserves whitespace and wraps text */
 }
 
 .loading-text {
-  color: #e5e5e5;
-
-  background: linear-gradient(
-    -90deg,
-    #a3a3a3 0%,
-    #000000 5%,
-    #a3a3a3 10%,
-    #a3a3a3 100%
-  );
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmerTransition 2.5s ease-out infinite;
+    color: #e5e5e5;
+    background: linear-gradient( -90deg, #a3a3a3 0%, #000000 5%, #a3a3a3 10%, #a3a3a3 100%);
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmerTransition 2.5s ease-out infinite;
 }
 
 .dark .loading-text {
-  color: #1a1a1a;
-
-  background: linear-gradient(
-    -90deg,
-    #5c5c5c 0%,
-    #ffffff 5%,
-    #5c5c5c 10%,
-    #5c5c5c 100%
-  );
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+    color: #1a1a1a;
+    background: linear-gradient( -90deg, #5c5c5c 0%, #ffffff 5%, #5c5c5c 10%, #5c5c5c 100%);
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 @keyframes shimmerTransition {
-  0% {
-    background-position: 100% 0;
-  }
-
-  100% {
-    background-position: -100% 0;
-  }
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: -100% 0;
+    }
 }
 
 .collapsible {
-  max-height: 300px;
-  transition:
-    max-height 0.5s ease-in-out,
-    opacity 0.5s ease-in-out;
-  opacity: 1;
+    max-height: 300px;
+    transition: max-height 0.5s ease-in-out, opacity 0.5s ease-in-out;
+    opacity: 1;
 }
 
 .collapsible-closed {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
 }
 
 .prevent-scroll {
-  overscroll-behavior-y: none;
+    overscroll-behavior-y: none;
 }
+
 
 /* CUSTOM ANIMATIONS */
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.2s ease-out forwards;
+    animation: fadeIn 0.2s ease-out forwards;
 }
 
 .container {
-  margin-bottom: 1rem;
+    margin-bottom: 1rem;
 }
+
 
 /* DEBUGGING UTILITIES
 
@@ -489,95 +622,96 @@ This helps with placing things properly on the screen and seeing how they look d
 */
 
 .dbg-red {
-  border: 1px solid red;
+    border: 1px solid red;
 }
 
 .dbg-blue {
-  border: 1px solid blue;
+    border: 1px solid blue;
 }
 
 .dbg-green {
-  border: 1px solid green;
+    border: 1px solid green;
 }
+
 
 /* BUD AUTH LAYOUT - Game of Life Background */
 
 .login-left-panel {
-  background: #0d0d0d;
+    background: #0d0d0d;
 }
 
 .gol-bg::after {
-  content: "";
-  position: absolute;
-  bottom: -400px;
-  left: -250px;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
-  filter: blur(48.8px);
-  transform: rotate(318deg);
-  z-index: 1;
-  animation: golMoveDown 8s ease-in-out infinite alternate;
+    content: "";
+    position: absolute;
+    bottom: -400px;
+    left: -250px;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
+    filter: blur(48.8px);
+    transform: rotate(318deg);
+    z-index: 1;
+    animation: golMoveDown 8s ease-in-out infinite alternate;
 }
 
 .gol-bg::before {
-  content: "";
-  position: absolute;
-  bottom: -470px;
-  right: -200px;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
-  mix-blend-mode: screen;
-  filter: blur(48.8px);
-  transform: rotate(145deg);
-  z-index: 2;
-  animation: golMoveUp 8s ease-in-out infinite alternate;
-  border-radius: 30%;
+    content: "";
+    position: absolute;
+    bottom: -470px;
+    right: -200px;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
+    mix-blend-mode: screen;
+    filter: blur(48.8px);
+    transform: rotate(145deg);
+    z-index: 2;
+    animation: golMoveUp 8s ease-in-out infinite alternate;
+    border-radius: 30%;
 }
 
 .gol-overlay::after {
-  content: "";
-  position: absolute;
-  bottom: -400px;
-  left: -250px;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
-  filter: blur(48.8px);
-  transform: rotate(318deg);
-  animation: golMoveDown 8s ease-in-out infinite alternate;
+    content: "";
+    position: absolute;
+    bottom: -400px;
+    left: -250px;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #51169a 0%, #0a0411 100%);
+    filter: blur(48.8px);
+    transform: rotate(318deg);
+    animation: golMoveDown 8s ease-in-out infinite alternate;
 }
 
 .gol-overlay::before {
-  content: "";
-  position: absolute;
-  bottom: -470px;
-  right: -200px;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
-  mix-blend-mode: screen;
-  filter: blur(48.8px);
-  transform: rotate(145deg);
-  animation: golMoveUp 8s ease-in-out infinite alternate;
-  border-radius: 30%;
+    content: "";
+    position: absolute;
+    bottom: -470px;
+    right: -200px;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, #2011cb 0%, #472a9b 100%);
+    mix-blend-mode: screen;
+    filter: blur(48.8px);
+    transform: rotate(145deg);
+    animation: golMoveUp 8s ease-in-out infinite alternate;
+    border-radius: 30%;
 }
 
 @keyframes golMoveUp {
-  0% {
-    transform: rotate(145deg) translateY(0);
-  }
-  100% {
-    transform: rotate(145deg) translateY(-200px);
-  }
+    0% {
+        transform: rotate(145deg) translateY(0);
+    }
+    100% {
+        transform: rotate(145deg) translateY(-200px);
+    }
 }
 
 @keyframes golMoveDown {
-  0% {
-    transform: rotate(318deg) translateX(500px);
-  }
-  100% {
-    transform: rotate(318deg) translateX(200px);
-  }
+    0% {
+        transform: rotate(318deg) translateX(500px);
+    }
+    100% {
+        transform: rotate(318deg) translateX(200px);
+    }
 }

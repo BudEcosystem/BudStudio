@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   TOOL_CATALOG,
   ToolCatalogEntry,
 } from "@/lib/agent/tools/tool-catalog";
+import { AgentToolsSkeleton } from "./AgentToolsSkeleton";
 
 function ToolCard({ tool }: { tool: ToolCatalogEntry }) {
   const [expanded, setExpanded] = useState(false);
@@ -54,12 +55,23 @@ function ToolCard({ tool }: { tool: ToolCatalogEntry }) {
 }
 
 export function AgentToolsView() {
+  const [isLoading, setIsLoading] = useState(true);
   const localTools = TOOL_CATALOG.filter((t) => t.category === "local");
   const remoteTools = TOOL_CATALOG.filter((t) => t.category === "remote");
 
+  useEffect(() => {
+    // Simulate loading time for tool catalog
+    const timer = setTimeout(() => setIsLoading(false), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading) {
+    return <AgentToolsSkeleton />;
+  }
+
   return (
     <div className="flex-1 h-full overflow-y-auto">
-      <div className="px-4 md:px-12 pt-10 pb-4">
+      <div className="px-4 md:px-12 pt-24 pb-4">
         <h1 className="text-2xl font-bold text-text-04 mb-1">
           Available Tools
         </h1>

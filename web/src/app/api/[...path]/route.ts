@@ -74,17 +74,21 @@ function processSetCookieHeaders(headers: Headers): Headers {
   });
 
   // Process set-cookie headers if running in desktop/override mode
-  const setCookieHeader = headers.get("set-cookie");
-  if (setCookieHeader && process.env.OVERRIDE_API_PRODUCTION === "true") {
-    // Strip the Secure flag from cookies for localhost/desktop compatibility
+  // Use getSetCookie() to get ALL Set-Cookie headers (not just the first one)
+  const setCookieHeaders = (headers as any).getSetCookie ? (headers as any).getSetCookie() : [];
+
+  if (setCookieHeaders.length > 0 && process.env.OVERRIDE_API_PRODUCTION === "true") {
+    // Strip the Secure flag from ALL cookies for localhost/desktop compatibility
     // This is safe because we're running locally, not over the internet
-    const modifiedCookie = setCookieHeader
-      .split(",")
-      .map(cookie => cookie.replace(/;\s*Secure/gi, ""))
-      .join(",");
-    newHeaders.set("set-cookie", modifiedCookie);
-  } else if (setCookieHeader) {
-    newHeaders.set("set-cookie", setCookieHeader);
+    setCookieHeaders.forEach((cookie: string) => {
+      const modifiedCookie = cookie.replace(/;\s*Secure/gi, "");
+      newHeaders.append("set-cookie", modifiedCookie);
+    });
+  } else if (setCookieHeaders.length > 0) {
+    // In production mode, keep cookies as-is
+    setCookieHeaders.forEach((cookie: string) => {
+      newHeaders.append("set-cookie", cookie);
+    });
   }
 
   return newHeaders;

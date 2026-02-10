@@ -13,7 +13,7 @@ interface ModeSwitcherProps {
 
 /**
  * Desktop-only mode switcher between Chat and BudAgent modes
- * Styled as an iPhone Dynamic Island / notch-like floating pill
+ * Styled as a top bar similar to Playground header
  * Supports both light and dark themes
  */
 export function ModeSwitcher({
@@ -25,56 +25,51 @@ export function ModeSwitcher({
   const isDark = resolvedTheme === "dark";
 
   const containerStyle = {
-    background: isDark ? "#1c1c1e" : "#ffffff",
-    boxShadow: isDark
-      ? "0 0px 20px rgba(147, 51, 234, 0.5)"
-      : "0 0px 20px rgba(147, 51, 234, 0.3), 0 2px 8px rgba(0,0,0,0.1)",
-    border: isDark
-      ? "1px solid rgba(192, 132, 252, 0.6)"
-      : "1px solid rgba(147, 51, 234, 0.4)",
+    background: isDark ? "rgba(28, 28, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+    backdropFilter: "blur(10px)",
   };
 
-  const activeText = isDark ? "#ffffff" : "#1c1c1e";
-  const inactiveText = isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.4)";
-  const activeBg = isDark
-    ? "rgba(255,255,255,0.12)"
-    : "rgba(147, 51, 234, 0.15)";
-  const separator = isDark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.15)";
+  const tabGroupBg = isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)";
+  const tabGroupBorder = isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)";
+  const activeText = isDark ? "#ffffff" : "#ffffff";
+  const inactiveText = isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)";
+  const activeBg = isDark ? "#7c3aed" : "#7c3aed";
 
   return (
     <div
       className={cn(
-        "relative flex items-center rounded-full px-1 py-1 gap-0.5",
+        "relative flex items-center justify-center p-3",
         className
       )}
       style={containerStyle}
       data-testid="mode-switcher"
     >
-      <ModeButton
-        label="Chat"
-        isActive={currentMode === "chat"}
-        activeColor={activeText}
-        inactiveColor={inactiveText}
-        activeBg={activeBg}
-        onClick={() => onModeChange("chat")}
-        testId="mode-switch-chat"
-      />
-
-      {/* Vertical separator */}
       <div
-        className="w-px h-3.5 shrink-0"
-        style={{ background: separator }}
-      />
+        className="flex items-center rounded-lg p-1 border"
+        style={{ background: tabGroupBg, borderColor: tabGroupBorder }}
+      >
+        <ModeButton
+          label="Chat"
+          isActive={currentMode === "chat"}
+          activeColor={activeText}
+          inactiveColor={inactiveText}
+          activeBg={activeBg}
+          isDark={isDark}
+          onClick={() => onModeChange("chat")}
+          testId="mode-switch-chat"
+        />
 
-      <ModeButton
-        label="Bud"
-        isActive={currentMode === "agent"}
-        activeColor={activeText}
-        inactiveColor={inactiveText}
-        activeBg={activeBg}
-        onClick={() => onModeChange("agent")}
-        testId="mode-switch-agent"
-      />
+        <ModeButton
+          label="Bud"
+          isActive={currentMode === "agent"}
+          activeColor={activeText}
+          inactiveColor={inactiveText}
+          activeBg={activeBg}
+          isDark={isDark}
+          onClick={() => onModeChange("agent")}
+          testId="mode-switch-agent"
+        />
+      </div>
     </div>
   );
 }
@@ -85,6 +80,7 @@ function ModeButton({
   activeColor,
   inactiveColor,
   activeBg,
+  isDark,
   onClick,
   testId,
 }: {
@@ -93,6 +89,7 @@ function ModeButton({
   activeColor: string;
   inactiveColor: string;
   activeBg: string;
+  isDark: boolean;
   onClick: () => void;
   testId: string;
 }) {
@@ -100,24 +97,12 @@ function ModeButton({
     <button
       onClick={onClick}
       className={cn(
-        "px-4 py-1 rounded-full text-[13px] font-medium transition-colors duration-200",
-        !isActive && "hover:opacity-80"
+        "relative px-4 py-1 text-sm font-medium transition-all duration-200 rounded-md",
+        !isActive && "hover:opacity-70"
       )}
       style={{
         color: isActive ? activeColor : inactiveColor,
         background: isActive ? activeBg : "transparent",
-      }}
-      onMouseEnter={(e) => {
-        if (!isActive) {
-          e.currentTarget.style.background = activeBg;
-          e.currentTarget.style.color = activeColor;
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) {
-          e.currentTarget.style.background = "transparent";
-          e.currentTarget.style.color = inactiveColor;
-        }
       }}
       data-testid={testId}
     >
