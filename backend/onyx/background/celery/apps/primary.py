@@ -94,6 +94,27 @@ def on_worker_init(sender: Worker, **kwargs: Any) -> None:
     app_base.wait_for_db(sender, **kwargs)
     app_base.wait_for_vespa_or_shutdown(sender, **kwargs)
 
+    # Auto-provision Keycloak OAuth client if needed (same as main.py).
+    # This ensures celery workers have OAuth credentials for token refresh
+    # in cron jobs and other background tasks that call the LLM.
+    from onyx.configs.app_configs import AUTH_TYPE
+    from onyx.configs.app_configs import OAUTH_CLIENT_ID
+    from onyx.configs.constants import AuthType
+
+    if AUTH_TYPE == AuthType.OIDC and not OAUTH_CLIENT_ID:
+        from onyx.auth.keycloak_provisioning import provision_keycloak_client
+
+        provisioned = provision_keycloak_client()
+        if provisioned:
+            import onyx.configs.app_configs as app_configs
+
+            client_id, client_secret = provisioned
+            app_configs.OAUTH_CLIENT_ID = client_id
+            app_configs.OAUTH_CLIENT_SECRET = client_secret
+            os.environ["OAUTH_CLIENT_ID"] = client_id
+            os.environ["OAUTH_CLIENT_SECRET"] = client_secret
+            logger.info("Provisioned Keycloak OAuth client credentials for celery worker.")
+
     logger.info(f"Running as the primary celery worker: pid={os.getpid()}")
 
     # Less startup checks in multi-tenant case
@@ -325,5 +346,6 @@ celery_app.autodiscover_tasks(
         "onyx.background.celery.tasks.llm_model_update",
         "onyx.background.celery.tasks.kg_processing",
         "onyx.background.celery.tasks.user_file_processing",
+        "onyx.background.celery.tasks.agent_cron",
     ]
 )

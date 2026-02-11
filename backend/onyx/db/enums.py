@@ -194,6 +194,7 @@ class AgentSessionStatus(str, PyEnum):
     FAILED = "failed"
     STOPPED = "stopped"
     COMPACTED = "compacted"
+    SUSPENDED = "suspended"
 
     def is_terminal(self) -> bool:
         terminal_states = {
@@ -220,3 +221,30 @@ class AgentMemorySource(str, PyEnum):
     SESSION = "session"
     USER_INPUT = "user_input"
     AUTO = "auto"
+
+
+class AgentCronScheduleType(str, PyEnum):
+    """Schedule type for agent cron jobs"""
+
+    CRON = "cron"
+    INTERVAL = "interval"
+    ONE_SHOT = "one_shot"
+
+
+class AgentCronExecutionStatus(str, PyEnum):
+    """Status of an agent cron job execution"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUSPENDED = "suspended"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+    def is_terminal(self) -> bool:
+        terminal_states = {
+            AgentCronExecutionStatus.COMPLETED,
+            AgentCronExecutionStatus.FAILED,
+            AgentCronExecutionStatus.SKIPPED,
+        }
+        return self in terminal_states

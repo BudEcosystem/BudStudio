@@ -402,6 +402,8 @@ def get_llms_for_persona(
     is_bud_foundry = llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
     if is_bud_foundry and user and llm_provider.api_base:
         _ensure_bud_foundry_initialized(user)
+        # Re-fetch token — initialization may have refreshed it on 401
+        user_oauth_token = _get_fresh_oauth_token(user)
 
     def _create_llm(model: str) -> LLM:
         # For Bud Foundry, use OAuth token as api_key since litellm requires it
@@ -667,6 +669,8 @@ def get_default_llms(
     is_bud_foundry = llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
     if is_bud_foundry and user and llm_provider.api_base:
         _ensure_bud_foundry_initialized(user)
+        # Re-fetch token — initialization may have refreshed it on 401
+        user_oauth_token = _get_fresh_oauth_token(user)
 
     def _create_llm(model: str) -> LLM:
         return llm_from_provider(

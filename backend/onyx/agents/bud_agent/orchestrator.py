@@ -101,6 +101,8 @@ class BudAgentOrchestrator:
         self._tool_call_count = 0
         self._full_response_text = ""
         self._stop_redis_key = f"bud_agent_stop:{self._session_id}"
+        self._running_redis_key = f"bud_agent_running:{self._session_id}"
+        self._running_redis_ttl = 600  # matches soft_time_limit
 
     def run(self, user_message: str) -> Generator[str, None, None]:
         """Run the agent loop and yield JSON-line packets for SSE streaming."""
@@ -174,6 +176,16 @@ class BudAgentOrchestrator:
         queue so the SSE generator never raises unexpectedly.
         """
         try:
+            # Set the "session is busy" flag so cron tasks skip this session
+            try:
+                self._redis_client.set(
+                    self._running_redis_key, "1", ex=self._running_redis_ttl
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to set Redis running key", exc_info=True
+                )
+
             # 1. Build the system prompt with memory + context
             # Seed default workspace files if this is the user's first run
             ensure_default_workspace_files(
@@ -393,9 +405,11 @@ class BudAgentOrchestrator:
             # errors (e.g. 401 invalid API key, network timeouts).  The error
             # is already surfaced to the frontend via the BudAgentError packet.
         finally:
-            # Clean up Redis stop key
+            # Clean up Redis keys (stop key + running flag)
             try:
-                self._redis_client.delete(self._stop_redis_key)
+                self._redis_client.delete(
+                    self._stop_redis_key, self._running_redis_key
+                )
             except Exception:
                 pass
             self._packet_queue.put(_SENTINEL)

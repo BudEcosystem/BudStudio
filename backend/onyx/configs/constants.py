@@ -369,6 +369,9 @@ class OnyxCeleryQueues:
     # Monitoring queue
     MONITORING = "monitoring"
 
+    # Agent cron queue
+    AGENT_CRON = "agent_cron"
+
     # KG processing queue
     KG_PROCESSING = "kg_processing"
 
@@ -405,6 +408,9 @@ class OnyxRedisLocks:
 
     CLOUD_BEAT_TASK_GENERATOR_LOCK = "da_lock:cloud_beat_task_generator"
     CLOUD_CHECK_ALEMBIC_BEAT_LOCK = "da_lock:cloud_check_alembic"
+
+    # Agent cron
+    CHECK_AGENT_CRON_BEAT_LOCK = "da_lock:check_agent_cron_beat"
 
     # KG processing
     KG_PROCESSING_LOCK = "da_lock:kg_processing"
@@ -542,6 +548,11 @@ class OnyxCeleryTask:
     KG_CLUSTERING_ONLY = "kg_clustering_only"
     CHECK_KG_PROCESSING_CLUSTERING_ONLY = "check_kg_processing_clustering_only"
     KG_RESET_SOURCE_INDEX = "kg_reset_source_index"
+
+    # Agent cron jobs
+    CHECK_FOR_AGENT_CRON_JOBS = "check_for_agent_cron_jobs"
+    EXECUTE_AGENT_CRON_JOB = "execute_agent_cron_job"
+    RESUME_AGENT_CRON_EXECUTION = "resume_agent_cron_execution"
 
 
 # this needs to correspond to the matching entry in supervisord

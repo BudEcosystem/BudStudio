@@ -63,6 +63,7 @@ export interface SidebarTabProps {
   leftIcon?: React.FunctionComponent<SvgProps>;
   rightChildren?: React.ReactNode;
   children?: React.ReactNode;
+  testId?: string;
 }
 
 export default function SidebarTab({
@@ -77,6 +78,7 @@ export default function SidebarTab({
   leftIcon: LeftIcon,
   rightChildren,
   children,
+  testId,
 }: SidebarTabProps) {
   const variant = lowlight ? "lowlight" : focused ? "focused" : "defaulted";
 
@@ -89,6 +91,7 @@ export default function SidebarTab({
         className
       )}
       onClick={onClick}
+      data-testid={testId}
     >
       <div
         className={cn(

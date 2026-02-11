@@ -161,6 +161,59 @@ export interface ToolExecutionResult {
 }
 
 /**
+ * Cron job types for scheduled agent execution.
+ */
+
+export interface CronJob {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  schedule_type: "cron" | "interval" | "one_shot";
+  cron_expression: string | null;
+  interval_seconds: number | null;
+  one_shot_at: string | null;
+  payload_message: string;
+  workspace_path: string | null;
+  model: string | null;
+  is_heartbeat: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  run_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CronNotification {
+  id: string;
+  cron_job_id: string;
+  cron_job_name: string;
+  status: string;
+  result_summary: string | null;
+  error_message: string | null;
+  skip_reason: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface CronToolRequest {
+  id: string;
+  cron_job_id: string;
+  cron_job_name: string;
+  session_id: string | null;
+  tool_name: string | null;
+  tool_input: Record<string, unknown> | null;
+  tool_call_id: string | null;
+  created_at: string;
+}
+
+export interface PendingCronData {
+  notifications: CronNotification[];
+  tool_requests: CronToolRequest[];
+}
+
+/**
  * Options for the agent run.
  */
 export interface RunOptions {

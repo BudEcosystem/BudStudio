@@ -4,6 +4,7 @@ import { useDesktopMode } from "./DesktopModeContext";
 import { BudAgentScreen } from "./BudAgentScreen";
 import { AgentToolsView } from "./AgentToolsView";
 import { AgentConfigView } from "./AgentConfigView";
+import { CronJobsView } from "./CronJobsView";
 
 interface ModeRendererProps {
   children: React.ReactNode;
@@ -28,6 +29,8 @@ export function ModeRenderer({ children }: ModeRendererProps) {
       return <AgentToolsView />;
     case "configuration":
       return <AgentConfigView />;
+    case "cron":
+      return <CronJobsView />;
     case "chat":
     default:
       return <BudAgentScreen />;

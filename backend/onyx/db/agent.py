@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+import redis
 from sqlalchemy import desc
 from sqlalchemy import select
 from sqlalchemy import update
@@ -49,6 +50,30 @@ def create_session(
     """
     _deactivate_user_sessions(db_session, user_id)
 
+    session = AgentSession(
+        user_id=user_id,
+        title=title,
+        workspace_path=workspace_path,
+        status=AgentSessionStatus.ACTIVE,
+    )
+    db_session.add(session)
+    db_session.commit()
+    db_session.refresh(session)
+    return session
+
+
+def create_cron_session(
+    db_session: Session,
+    user_id: UUID | None,
+    title: str | None = None,
+    workspace_path: str | None = None,
+) -> AgentSession:
+    """Create an agent session for a cron job execution.
+
+    Unlike create_session(), this does NOT deactivate existing ACTIVE
+    sessions for the user. Cron sessions are isolated and must not
+    interfere with interactive sessions.
+    """
     session = AgentSession(
         user_id=user_id,
         title=title,
@@ -252,6 +277,39 @@ def get_or_create_active_session(
         user_id=user_id,
         workspace_path=workspace_path,
     )
+
+
+def get_active_session_for_user(
+    db_session: Session,
+    user_id: UUID | None,
+) -> AgentSession | None:
+    """Return the most recent ACTIVE session for the user, or None if none exists.
+
+    Unlike get_or_create_active_session(), this never creates a new session.
+    """
+    stmt = (
+        select(AgentSession)
+        .where(
+            AgentSession.user_id == user_id,
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+        )
+        .order_by(desc(AgentSession.updated_at))
+        .limit(1)
+    )
+    return db_session.execute(stmt).scalar_one_or_none()
+
+
+def is_session_busy(
+    redis_client: redis.Redis,  # type: ignore[type-arg]
+    session_id: UUID,
+) -> bool:
+    """Check if a session is currently executing an interactive request.
+
+    Returns True if the ``bud_agent_running:{session_id}`` key exists in Redis,
+    meaning the interactive orchestrator is mid-execution.
+    """
+    key = f"bud_agent_running:{session_id}"
+    return redis_client.exists(key) > 0
 
 
 def create_compacted_session(

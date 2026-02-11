@@ -8,6 +8,7 @@ boto3==1.39.11
 celery==5.5.1
 chardet==5.2.0
 chonkie==1.0.10
+croniter==6.0.0
 dask==2023.8.1
 ddtrace==3.10.0
 discord.py==2.4.0

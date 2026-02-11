@@ -64,6 +64,15 @@ beat_task_templates: list[dict] = [
         },
     },
     {
+        "name": "check-for-agent-cron-jobs",
+        "task": OnyxCeleryTask.CHECK_FOR_AGENT_CRON_JOBS,
+        "schedule": timedelta(seconds=30),
+        "options": {
+            "priority": OnyxCeleryPriority.MEDIUM,
+            "expires": BEAT_EXPIRES_DEFAULT,
+        },
+    },
+    {
         "name": "check-for-kg-processing",
         "task": OnyxCeleryTask.CHECK_KG_PROCESSING,
         "schedule": timedelta(seconds=60),

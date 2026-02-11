@@ -21,6 +21,7 @@ import {
   GrepTool,
 } from "@/lib/agent/tools";
 import type { AgentEvent } from "@/lib/agent/types";
+import { syncWorkspaceFileToBackend } from "@/lib/agent/tools/local-execution";
 import { INTERNAL_URL } from "@/lib/constants";
 
 // Debug logging to file
@@ -252,6 +253,20 @@ async function executeLocalTool(
     );
     const output = await tool.execute(toolInput);
     debugLog(`Tool ${toolName} completed successfully`);
+
+    // Sync workspace file to backend DB after write/edit operations
+    if (toolName === "write_file" || toolName === "edit_file") {
+      const filePath = toolInput.path as string;
+      if (filePath) {
+        syncWorkspaceFileToBackend(
+          registry.getWorkspacePath(),
+          filePath,
+          apiBaseUrl,
+          cookieString
+        ).catch(() => {});
+      }
+    }
+
     // Submit result to backend
     await submitToolResult(
       sessionId,

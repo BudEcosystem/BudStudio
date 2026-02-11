@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, memo, useMemo, useState } from "react";
+import Image from "next/image";
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
 import { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
 import Text from "@/refresh-components/texts/Text";
@@ -68,6 +69,9 @@ import { useDesktopMode } from "@/components/desktop/DesktopModeContext";
 import { useAgentSession } from "@/components/desktop/AgentSessionContext";
 import SvgSparkle from "@/icons/sparkle";
 import SvgDevKit from "@/icons/dev-kit";
+import SvgClock from "@/icons/clock";
+import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
+import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
 
 // Visible-agents = pinned-agents + current-agent (if current-agent not in pinned-agents)
 // OR Visible-agents = pinned-agents (if current-agent in pinned-agents)
@@ -142,6 +146,8 @@ function AppSidebarInner() {
   const { isDesktop, currentMode, agentView, setAgentView } =
     useDesktopMode();
   const { clearCurrentSession } = useAgentSession();
+  const { unreadCount } = useCronNotifications();
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // State for custom agent modal
   const [pendingMoveChatSession, setPendingMoveChatSession] =
@@ -374,6 +380,10 @@ function AppSidebarInner() {
       {popup}
       <AgentsModal />
       <CreateProjectModal />
+      <CronNotificationPanel
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+      />
 
       {showMoveCustomAgentModal && (
         <MoveCustomAgentChatModal
@@ -414,6 +424,32 @@ function AppSidebarInner() {
             <div className="px-2">
               {isDesktop && currentMode === "agent" ? (
                 <>
+                  {/* Notification button above agent nav — Bud admin style */}
+                  <div className="mb-[3%]">
+                    <button
+                      onClick={() => setShowNotifications(true)}
+                      data-testid="sidebar-notifications-tab"
+                      className="flex justify-start items-center rounded-[6.4px] bg-black/[0.03] dark:bg-white/[0.03] cursor-pointer w-full hover:bg-black/[0.08] dark:hover:bg-white/[0.1] hover:shadow-md p-[0.35rem] transition-all"
+                    >
+                      <div className="h-[1.5rem] flex justify-center items-center pl-[0.15rem]">
+                        <Image
+                          src="/images/BudIcon.png"
+                          alt="info"
+                          width={24}
+                          height={24}
+                          style={{ height: "auto", width: "1.5rem" }}
+                        />
+                      </div>
+                      <div className="flex flex-row items-center justify-between w-full">
+                        <span className="text-[0.625rem] font-normal text-muted-foreground pl-[1rem] whitespace-nowrap max-w-[70%] overflow-hidden text-ellipsis">
+                          {unreadCount > 0
+                            ? `${unreadCount} Notification${unreadCount > 1 ? "s" : ""}`
+                            : "Notifications"}
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+
                   <SidebarTab
                     leftIcon={SvgSparkle}
                     onClick={() => setAgentView("chat")}
@@ -437,6 +473,15 @@ function AppSidebarInner() {
                     folded
                   >
                     Configuration
+                  </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgClock}
+                    onClick={() => setAgentView("cron")}
+                    active={agentView === "cron"}
+                    folded
+                    testId="sidebar-cron-tab"
+                  >
+                    Scheduled
                   </SidebarTab>
                 </>
               ) : (
@@ -478,29 +523,65 @@ function AppSidebarInner() {
               <>
                 {/* Agent mode: show a single "Chat" link */}
                 {isDesktop && currentMode === "agent" ? (
-                  <SidebarSection title="">
-                    <SidebarTab
-                      leftIcon={SvgSparkle}
-                      onClick={() => setAgentView("chat")}
-                      active={agentView === "chat"}
-                    >
-                      Chat
-                    </SidebarTab>
-                    <SidebarTab
-                      leftIcon={SvgDevKit}
-                      onClick={() => setAgentView("tools")}
-                      active={agentView === "tools"}
-                    >
-                      Tools
-                    </SidebarTab>
-                    <SidebarTab
-                      leftIcon={SvgSettings}
-                      onClick={() => setAgentView("configuration")}
-                      active={agentView === "configuration"}
-                    >
-                      Configuration
-                    </SidebarTab>
-                  </SidebarSection>
+                  <>
+                    {/* Notification button above Bud Agent section — Bud admin style */}
+                    <div className="mb-[3%]">
+                      <button
+                        onClick={() => setShowNotifications(true)}
+                        data-testid="sidebar-notifications-tab"
+                        className="flex justify-start items-center rounded-[6.4px] bg-black/[0.03] dark:bg-white/[0.03] cursor-pointer w-full hover:bg-black/[0.08] dark:hover:bg-white/[0.1] hover:shadow-md p-[0.35rem] transition-all"
+                      >
+                        <div className="h-[1.5rem] flex justify-center items-center pl-[0.15rem]">
+                          <Image
+                            src="/images/BudIcon.png"
+                            alt="info"
+                            width={24}
+                            height={24}
+                            style={{ height: "auto", width: "1.5rem" }}
+                          />
+                        </div>
+                        <div className="flex flex-row items-center justify-between w-full">
+                          <span className="text-[0.625rem] font-normal text-muted-foreground pl-[1rem] whitespace-nowrap max-w-[70%] overflow-hidden text-ellipsis">
+                            {unreadCount > 0
+                              ? `${unreadCount} Notification${unreadCount > 1 ? "s" : ""}`
+                              : "Notifications"}
+                          </span>
+                        </div>
+                      </button>
+                    </div>
+
+                    <SidebarSection title="Bud Agent">
+                      <SidebarTab
+                        leftIcon={SvgSparkle}
+                        onClick={() => setAgentView("chat")}
+                        active={agentView === "chat"}
+                      >
+                        Chat
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgDevKit}
+                        onClick={() => setAgentView("tools")}
+                        active={agentView === "tools"}
+                      >
+                        Tools
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgSettings}
+                        onClick={() => setAgentView("configuration")}
+                        active={agentView === "configuration"}
+                      >
+                        Configuration
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgClock}
+                        onClick={() => setAgentView("cron")}
+                        active={agentView === "cron"}
+                        testId="sidebar-cron-tab"
+                      >
+                        Scheduled Tasks
+                      </SidebarTab>
+                    </SidebarSection>
+                  </>
                 ) : (
                   <>
                     {/* Chat mode: show agents, projects, and recents */}

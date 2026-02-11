@@ -57,6 +57,8 @@ from onyx.configs.constants import FileOrigin
 from onyx.configs.constants import MessageType
 from onyx.db.enums import (
     AccessType,
+    AgentCronExecutionStatus,
+    AgentCronScheduleType,
     AgentMemorySource,
     AgentMessageRole,
     AgentSessionStatus,
@@ -4114,3 +4116,187 @@ class AgentWorkspaceFile(Base):
 
     def __repr__(self) -> str:
         return f"<AgentWorkspaceFile(id={self.id!r}, path={self.path!r})>"
+
+
+class AgentCronJob(Base):
+    """Defines a scheduled agent cron job.
+
+    Supports three schedule types: CRON expressions, fixed intervals,
+    and one-shot (run once) executions. Each job belongs to a user and
+    contains the configuration needed to run the agent autonomously.
+    """
+
+    __tablename__ = "agent_cron_job"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Schedule configuration
+    schedule_type: Mapped["AgentCronScheduleType"] = mapped_column(
+        Enum(AgentCronScheduleType, native_enum=False), nullable=False
+    )
+    cron_expression: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    one_shot_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Agent configuration
+    payload_message: Mapped[str] = mapped_column(Text, nullable=False)
+    workspace_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_heartbeat: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
+    # Dedup fields
+    last_response_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    last_response_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Scheduling fields
+    next_run_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_run_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    run_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    executions: Mapped[list["AgentCronExecution"]] = relationship(
+        "AgentCronExecution",
+        back_populates="cron_job",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_agent_cron_job_user_enabled", "user_id", "enabled"),
+        Index("ix_agent_cron_job_next_run", "next_run_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentCronJob(id={self.id!r}, name={self.name!r})>"
+
+
+class AgentCronExecution(Base):
+    """Tracks individual executions of an agent cron job.
+
+    Each execution records its status, result, timing, and any suspend
+    state for local tool requests that require desktop interaction.
+    """
+
+    __tablename__ = "agent_cron_execution"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    cron_job_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent_cron_job.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent_session.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # Status
+    status: Mapped["AgentCronExecutionStatus"] = mapped_column(
+        Enum(AgentCronExecutionStatus, native_enum=False),
+        default=AgentCronExecutionStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+
+    # Result
+    result_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    skip_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_notification_read: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+
+    # Suspend state (for local tool requests)
+    suspended_tool_name: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    suspended_tool_input: Mapped[dict[str, Any] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
+    suspended_tool_call_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+    suspended_messages: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
+
+    # Stats
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tool_calls_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+
+    # Timestamps
+    scheduled_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    cron_job: Mapped["AgentCronJob"] = relationship(
+        "AgentCronJob", back_populates="executions"
+    )
+    session: Mapped["AgentSession | None"] = relationship("AgentSession")
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index("ix_agent_cron_execution_status", "status"),
+        Index(
+            "ix_agent_cron_execution_user_notif",
+            "user_id",
+            "is_notification_read",
+        ),
+        Index(
+            "ix_agent_cron_execution_job_created",
+            "cron_job_id",
+            "created_at",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentCronExecution(id={self.id!r}, status={self.status!r})>"
+        )

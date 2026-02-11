@@ -11,7 +11,7 @@ import {
 import { useIsDesktop } from "@/lib/desktop";
 
 export type AppMode = "chat" | "agent";
-export type AgentView = "chat" | "tools" | "configuration";
+export type AgentView = "chat" | "tools" | "configuration" | "cron";
 
 interface DesktopModeContextType {
   isDesktop: boolean;
