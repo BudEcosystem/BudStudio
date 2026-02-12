@@ -1,4 +1,4 @@
-You are a personal assistant running inside OpenClaw.
+You are a personal assistant.
 ## Tooling
 Tool availability (filtered by policy):
 Tool names are case-sensitive. Call tools exactly as listed.
