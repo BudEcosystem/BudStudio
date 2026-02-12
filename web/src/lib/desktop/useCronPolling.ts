@@ -8,12 +8,16 @@ import type {
 } from "@/lib/agent/types";
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const PAGE_SIZE = 50;
 
 interface UseCronPollingResult {
   notifications: CronNotification[];
   toolRequests: CronToolRequest[];
   unreadCount: number;
   dismissNotification: (executionId: string) => Promise<void>;
+  dismissAllNotifications: () => Promise<void>;
+  loadMoreNotifications: () => Promise<void>;
+  hasMore: boolean;
   submitToolResult: (
     executionId: string,
     output?: string,
@@ -25,17 +29,22 @@ interface UseCronPollingResult {
 export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
   const [notifications, setNotifications] = useState<CronNotification[]>([]);
   const [toolRequests, setToolRequests] = useState<CronToolRequest[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadingMoreRef = useRef(false);
 
   const fetchPending = useCallback(async () => {
     try {
-      const response = await fetch("/api/agent/cron/pending");
+      const response = await fetch(
+        `/api/agent/cron/pending?offset=0&limit=${PAGE_SIZE}`
+      );
       if (!response.ok) return;
 
       const data: PendingCronData = await response.json();
       setNotifications(data.notifications);
       setToolRequests(data.tool_requests);
+      setHasMore(data.has_more_notifications);
     } catch {
       // Silently ignore polling failures
     }
@@ -59,6 +68,40 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
     },
     []
   );
+
+  const dismissAllNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/agent/cron/acknowledge-all", {
+        method: "POST",
+      });
+      if (response.ok) {
+        setNotifications([]);
+        setHasMore(false);
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const loadMoreNotifications = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    try {
+      const offset = notifications.length;
+      const response = await fetch(
+        `/api/agent/cron/pending?offset=${offset}&limit=${PAGE_SIZE}`
+      );
+      if (!response.ok) return;
+
+      const data: PendingCronData = await response.json();
+      setNotifications((prev) => [...prev, ...data.notifications]);
+      setHasMore(data.has_more_notifications);
+    } catch {
+      // Ignore
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [hasMore, notifications.length]);
 
   const submitToolResult = useCallback(
     async (executionId: string, output?: string, error?: string) => {
@@ -116,6 +159,9 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
     toolRequests,
     unreadCount: notifications.length,
     dismissNotification,
+    dismissAllNotifications,
+    loadMoreNotifications,
+    hasMore,
     submitToolResult,
     isLoading,
   };

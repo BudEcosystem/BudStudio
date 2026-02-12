@@ -10,6 +10,7 @@ from uuid import UUID
 from croniter import croniter
 from sqlalchemy import and_
 from sqlalchemy import desc
+from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import update
@@ -428,27 +429,40 @@ def get_last_non_heartbeat_skip_time(
 def get_pending_notifications(
     db_session: Session,
     user_id: UUID,
-) -> list[AgentCronExecution]:
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[AgentCronExecution], int]:
     """Get unread terminal executions for a user (notifications).
 
     Includes COMPLETED, FAILED, and SKIPPED executions so users
     get feedback on all cron job runs, including skipped heartbeats.
+
+    Returns a tuple of (executions, total_count).
     """
+    base_filter = [
+        AgentCronExecution.user_id == user_id,
+        AgentCronExecution.is_notification_read.is_(False),
+        AgentCronExecution.status.in_([
+            AgentCronExecutionStatus.COMPLETED,
+            AgentCronExecutionStatus.FAILED,
+            AgentCronExecutionStatus.SKIPPED,
+        ]),
+    ]
+
+    count_stmt = select(func.count()).select_from(
+        select(AgentCronExecution).where(*base_filter).subquery()
+    )
+    total_count: int = db_session.execute(count_stmt).scalar_one()
+
     stmt = (
         select(AgentCronExecution)
-        .where(
-            AgentCronExecution.user_id == user_id,
-            AgentCronExecution.is_notification_read.is_(False),
-            AgentCronExecution.status.in_([
-                AgentCronExecutionStatus.COMPLETED,
-                AgentCronExecutionStatus.FAILED,
-                AgentCronExecutionStatus.SKIPPED,
-            ]),
-        )
+        .where(*base_filter)
         .order_by(desc(AgentCronExecution.completed_at))
-        .limit(50)
+        .limit(limit)
+        .offset(offset)
     )
-    return list(db_session.execute(stmt).scalars().all())
+    executions = list(db_session.execute(stmt).scalars().all())
+    return executions, total_count
 
 
 def get_pending_tool_requests(
@@ -484,6 +498,32 @@ def acknowledge_notification(
     result = db_session.execute(stmt)
     db_session.commit()
     return result.rowcount > 0  # type: ignore[union-attr]
+
+
+def acknowledge_all_notifications(
+    db_session: Session,
+    user_id: UUID,
+) -> int:
+    """Mark all unread terminal notifications as read for a user.
+
+    Returns the number of rows updated.
+    """
+    stmt = (
+        update(AgentCronExecution)
+        .where(
+            AgentCronExecution.user_id == user_id,
+            AgentCronExecution.is_notification_read.is_(False),
+            AgentCronExecution.status.in_([
+                AgentCronExecutionStatus.COMPLETED,
+                AgentCronExecutionStatus.FAILED,
+                AgentCronExecutionStatus.SKIPPED,
+            ]),
+        )
+        .values(is_notification_read=True)
+    )
+    result = db_session.execute(stmt)
+    db_session.commit()
+    return result.rowcount  # type: ignore[return-value]
 
 
 def is_heartbeat_content_empty(content: str) -> bool:

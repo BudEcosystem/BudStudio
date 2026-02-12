@@ -90,6 +90,7 @@ class AgentMessageSnapshot(BaseModel):
     tool_input: dict[str, Any] | None
     tool_output: dict[str, Any] | None
     tool_error: str | None
+    ui_spec: dict[str, Any] | None = None
     created_at: datetime
 
 
@@ -370,6 +371,7 @@ def get_session_history(
                 tool_input=m.tool_input,
                 tool_output=m.tool_output,
                 tool_error=m.tool_error,
+                ui_spec=m.ui_spec,
                 created_at=m.created_at,
             )
             for m in messages

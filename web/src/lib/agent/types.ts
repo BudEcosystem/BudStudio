@@ -211,6 +211,7 @@ export interface CronToolRequest {
 export interface PendingCronData {
   notifications: CronNotification[];
   tool_requests: CronToolRequest[];
+  has_more_notifications: boolean;
 }
 
 /**

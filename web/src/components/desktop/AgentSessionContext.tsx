@@ -29,6 +29,7 @@ export interface AgentMessage {
   timestamp: Date;
   status?: "thinking" | "streaming" | "complete" | "error" | "stopped";
   toolCalls?: ToolCallInfo[];
+  uiSpec?: Record<string, unknown> | null;
 }
 
 export interface AgentSession {
@@ -98,6 +99,7 @@ interface BackendMessageSnapshot {
   tool_input: Record<string, unknown> | null;
   tool_output: Record<string, unknown> | null;
   tool_error: string | null;
+  ui_spec: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -173,6 +175,7 @@ function convertBackendMessages(
         timestamp: new Date(msg.created_at),
         status: "complete",
         toolCalls: [],
+        uiSpec: msg.ui_spec || undefined,
       };
     } else if (msg.role === "tool") {
       // Attach to current agent message as a tool call

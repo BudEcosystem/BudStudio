@@ -4013,6 +4013,10 @@ class AgentMessage(Base):
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Extended thinking content (for Claude models with extended thinking)
     thinking_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Rich UI spec (json-render format) for structured rendering
+    ui_spec: Mapped[dict[str, Any] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
     # Timestamps
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

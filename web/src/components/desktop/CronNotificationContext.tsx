@@ -17,6 +17,9 @@ interface CronNotificationContextType {
   toolRequests: CronToolRequest[];
   unreadCount: number;
   dismissNotification: (executionId: string) => Promise<void>;
+  dismissAllNotifications: () => Promise<void>;
+  loadMoreNotifications: () => Promise<void>;
+  hasMore: boolean;
   submitToolResult: (
     executionId: string,
     output?: string,
@@ -54,6 +57,9 @@ export function useCronNotifications(): CronNotificationContextType {
       toolRequests: [],
       unreadCount: 0,
       dismissNotification: async () => {},
+      dismissAllNotifications: async () => {},
+      loadMoreNotifications: async () => {},
+      hasMore: false,
       submitToolResult: async () => {},
       isLoading: false,
     };

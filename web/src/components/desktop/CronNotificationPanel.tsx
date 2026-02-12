@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useCallback } from "react";
 import { useCronNotifications } from "./CronNotificationContext";
 import type { CronNotification, CronToolRequest } from "@/lib/agent/types";
 
@@ -235,24 +236,52 @@ export function CronNotificationPanel({
     notifications,
     toolRequests,
     dismissNotification,
+    dismissAllNotifications,
+    loadMoreNotifications,
+    hasMore,
     submitToolResult,
   } = useCronNotifications();
 
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleApprove = useCallback(
+    (executionId: string) => {
+      submitToolResult(executionId, "approved", undefined);
+    },
+    [submitToolResult]
+  );
+
+  const handleDeny = useCallback(
+    (executionId: string) => {
+      submitToolResult(executionId, undefined, "User denied tool execution");
+    },
+    [submitToolResult]
+  );
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const sentinel = sentinelRef.current;
+    const scrollContainer = scrollContainerRef.current;
+    if (!sentinel || !scrollContainer) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting && hasMore) {
+          loadMoreNotifications();
+        }
+      },
+      { root: scrollContainer, threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [isOpen, hasMore, loadMoreNotifications]);
+
   if (!isOpen) return null;
-
-  const dismissAll = async () => {
-    for (const n of notifications) {
-      await dismissNotification(n.id);
-    }
-  };
-
-  const handleApprove = (executionId: string) => {
-    submitToolResult(executionId, "approved", undefined);
-  };
-
-  const handleDeny = (executionId: string) => {
-    submitToolResult(executionId, undefined, "User denied tool execution");
-  };
 
   const totalCount = notifications.length + toolRequests.length;
 
@@ -301,6 +330,7 @@ export function CronNotificationPanel({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-[1rem] gap-y-[1rem]">
             {/* Notification list panel */}
             <div
+              ref={scrollContainerRef}
               className="rounded-[16px] py-[1.25rem] border border-[#1F1F1F] bg-[#0A0A0B] max-h-[90vh] overflow-y-auto"
               style={{ gridRow: "1 / span 100" }}
             >
@@ -312,7 +342,7 @@ export function CronNotificationPanel({
                 <div className="flex justify-end items-center gap-3">
                   {notifications.length > 0 && (
                     <button
-                      onClick={dismissAll}
+                      onClick={dismissAllNotifications}
                       className="text-[0.75rem] text-[#A4A4A9] hover:text-[#EEEEEE] transition-colors cursor-pointer"
                     >
                       Clear all
@@ -364,6 +394,33 @@ export function CronNotificationPanel({
                         onDismiss={dismissNotification}
                       />
                     ))}
+                    {/* Infinite scroll sentinel */}
+                    {hasMore && (
+                      <div
+                        ref={sentinelRef}
+                        className="flex justify-center py-4"
+                      >
+                        <svg
+                          className="w-5 h-5 text-[#757575] animate-spin"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                          />
+                        </svg>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

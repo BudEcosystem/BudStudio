@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
+from onyx.agents.bud_agent.ui_spec_converter import convert_text_to_ui_spec
 from onyx.agents.bud_agent.memory_service import create_memory_tools
 from onyx.agents.bud_agent.workspace_service import create_workspace_tools
 from onyx.agents.bud_agent.workspace_service import ensure_default_workspace_files
@@ -77,6 +78,7 @@ class CronRunResult:
         self.skip_reason: str | None = None
         self.error: str | None = None
         self.new_session_id: UUID | None = None
+        self.ui_spec: dict[str, Any] | None = None
 
 
 class CronAgentOrchestrator:
@@ -167,7 +169,7 @@ class CronAgentOrchestrator:
             )
 
             # 3. Build RunConfig
-            llm, _ = get_default_llms(user=self._user)
+            llm, fast_llm = get_default_llms(user=self._user)
             model_name: str = self._model or llm.config.model_name
             run_config = _build_run_config(llm, model_name)
 
@@ -233,13 +235,31 @@ class CronAgentOrchestrator:
             if not result.suspended and not result.error:
                 self._apply_post_llm_skip_checks(result)
 
-            # 7. Persist response
-            if result.response_text and not result.suspended:
+            # 7. Convert response to UI spec and persist
+            if (
+                result.response_text
+                and not result.suspended
+                and not result.skipped
+            ):
+                try:
+                    result.ui_spec = convert_text_to_ui_spec(
+                        result.response_text, fast_llm
+                    )
+                except Exception:
+                    logger.warning(
+                        "UI spec conversion failed for execution %s",
+                        self._execution.id,
+                        exc_info=True,
+                    )
+                    result.ui_spec = None
+
+                # 8. Persist response
                 add_session_message(
                     db_session=self._db_session,
                     session_id=self._session_id,
                     role=AgentMessageRole.ASSISTANT,
                     content=result.response_text,
+                    ui_spec=result.ui_spec,
                 )
 
             update_session_stats(
@@ -317,7 +337,7 @@ class CronAgentOrchestrator:
                 local_tools + memory_tools + workspace_tools
             )
 
-            llm, _ = get_default_llms(user=self._user)
+            llm, fast_llm = get_default_llms(user=self._user)
             model_name: str = self._model or llm.config.model_name
             run_config = _build_run_config(llm, model_name)
 
@@ -334,13 +354,31 @@ class CronAgentOrchestrator:
             if not result.suspended and not result.error:
                 self._apply_post_llm_skip_checks(result)
 
-            # Persist response
-            if result.response_text and not result.suspended:
+            # Convert response to UI spec and persist
+            if (
+                result.response_text
+                and not result.suspended
+                and not result.skipped
+            ):
+                try:
+                    result.ui_spec = convert_text_to_ui_spec(
+                        result.response_text, fast_llm
+                    )
+                except Exception:
+                    logger.warning(
+                        "UI spec conversion failed for resume execution %s",
+                        self._execution.id,
+                        exc_info=True,
+                    )
+                    result.ui_spec = None
+
+                # Persist response
                 add_session_message(
                     db_session=self._db_session,
                     session_id=self._session_id,
                     role=AgentMessageRole.ASSISTANT,
                     content=result.response_text,
+                    ui_spec=result.ui_spec,
                 )
 
             update_session_stats(

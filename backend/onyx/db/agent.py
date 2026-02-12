@@ -161,6 +161,7 @@ def add_session_message(
     tool_input: dict[str, Any] | None = None,
     tool_output: dict[str, Any] | None = None,
     tool_error: str | None = None,
+    ui_spec: dict[str, Any] | None = None,
 ) -> AgentMessage:
     """Add a new message to an agent session."""
     message = AgentMessage(
@@ -171,6 +172,7 @@ def add_session_message(
         tool_input=tool_input,
         tool_output=tool_output,
         tool_error=tool_error,
+        ui_spec=ui_spec,
     )
     db_session.add(message)
 

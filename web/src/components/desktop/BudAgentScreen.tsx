@@ -32,6 +32,7 @@ import SvgCopy from "@/icons/copy";
 import SvgCheck from "@/icons/check";
 import Text from "@/refresh-components/texts/Text";
 import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
+import { RichContent } from "@/lib/agent/ui-spec";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useTheme } from "next-themes";
@@ -79,9 +80,42 @@ function getWorkspacePath(): string {
 }
 
 /**
- * Renders agent message content with full markdown support (code blocks, GFM tables, math, etc.)
+ * Renders agent message content as rich UI (via json-render spec) or markdown fallback.
  */
-function AgentMessageContent({ content }: { content: string }) {
+function AgentMessageContent({
+  content,
+  uiSpec,
+}: {
+  content: string;
+  uiSpec?: Record<string, unknown> | null;
+}) {
+  if (uiSpec) {
+    return <RichMessageContent spec={uiSpec} fallbackContent={content} />;
+  }
+  return <MarkdownMessageContent content={content} />;
+}
+
+/**
+ * Renders a json-render UI spec with markdown fallback on error.
+ */
+function RichMessageContent({
+  spec,
+  fallbackContent,
+}: {
+  spec: Record<string, unknown>;
+  fallbackContent: string;
+}) {
+  return (
+    <div className="overflow-x-visible max-w-content-max break-words">
+      <RichContent spec={spec} fallbackContent={fallbackContent} />
+    </div>
+  );
+}
+
+/**
+ * Renders content as markdown (code blocks, GFM tables, math, etc.)
+ */
+function MarkdownMessageContent({ content }: { content: string }) {
   const { renderedContent } = useMarkdownRenderer(content, undefined, "text-base");
   return (
     <div className="overflow-x-visible max-w-content-max break-words">
@@ -720,9 +754,9 @@ export function BudAgentScreen() {
                             </div>
                           )}
 
-                          {/* Markdown content */}
+                          {/* Message content (rich UI or markdown) */}
                           {msg.content && (
-                            <AgentMessageContent content={msg.content} />
+                            <AgentMessageContent content={msg.content} uiSpec={msg.uiSpec} />
                           )}
 
                           {/* Copy button when message is complete */}

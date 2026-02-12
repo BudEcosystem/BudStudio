@@ -14,6 +14,7 @@ from onyx.auth.users import current_user
 from onyx.configs.constants import OnyxCeleryPriority
 from onyx.configs.constants import OnyxCeleryQueues
 from onyx.configs.constants import OnyxCeleryTask
+from onyx.db.agent_cron import acknowledge_all_notifications
 from onyx.db.agent_cron import acknowledge_notification
 from onyx.db.agent_cron import create_cron_execution
 from onyx.db.agent_cron import create_cron_job
@@ -119,6 +120,7 @@ class CronToolRequestSnapshot(BaseModel):
 class PendingCronDataResponse(BaseModel):
     notifications: list[CronNotificationSnapshot]
     tool_requests: list[CronToolRequestSnapshot]
+    has_more_notifications: bool
 
 
 class ToolResultSubmission(BaseModel):
@@ -329,6 +331,8 @@ def run_now(
 
 @router.get("/pending")
 def get_pending(
+    offset: int = 0,
+    limit: int = 50,
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> PendingCronDataResponse:
@@ -339,7 +343,9 @@ def get_pending(
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    notifications = get_pending_notifications(db_session, user.id)
+    notifications, total_count = get_pending_notifications(
+        db_session, user.id, limit=limit, offset=offset
+    )
     tool_requests = get_pending_tool_requests(db_session, user.id)
 
     notif_snapshots: list[CronNotificationSnapshot] = []
@@ -378,6 +384,7 @@ def get_pending(
     return PendingCronDataResponse(
         notifications=notif_snapshots,
         tool_requests=tool_snapshots,
+        has_more_notifications=total_count > offset + limit,
     )
 
 
@@ -424,6 +431,19 @@ def submit_tool_result(
     )
 
     return StatusResponse(status="resume-dispatched")
+
+
+@router.post("/acknowledge-all")
+def acknowledge_all(
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Mark all cron notifications as read for the current user."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    acknowledge_all_notifications(db_session, user.id)
+    return StatusResponse(status="all-acknowledged")
 
 
 @router.post("/executions/{execution_id}/acknowledge")
