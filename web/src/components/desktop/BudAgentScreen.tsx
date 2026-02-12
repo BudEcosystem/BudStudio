@@ -23,7 +23,7 @@ import {
   updateToolCallApprovalRequired,
 } from "@/lib/desktop";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
-import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
+import { FiTool, FiCheck, FiX, FiAlertCircle, FiCode } from "react-icons/fi";
 import { useMarkdownRenderer } from "@/app/chat/message/messageComponents/markdownUtils";
 import { copyAll } from "@/app/chat/message/copyingUtils";
 import AgentIcon from "@/refresh-components/AgentIcon";
@@ -35,6 +35,7 @@ import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import { RichContent } from "@/lib/agent/ui-spec";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+import { UISpecTestPanel } from "./UISpecTestPanel";
 import { useTheme } from "next-themes";
 
 /**
@@ -137,6 +138,7 @@ export function BudAgentScreen() {
   const [chatState, setChatState] = useState<ChatState>("input");
   const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [showUISpecTestPanel, setShowUISpecTestPanel] = useState(false);
   const [bottomApproval, setBottomApproval] = useState<{
     toolCallId: string;
     toolName: string;
@@ -642,6 +644,20 @@ export function BudAgentScreen() {
         }}
       />
 
+      {/* UI Spec Test Panel Toggle */}
+      <button
+        onClick={() => setShowUISpecTestPanel((v) => !v)}
+        className={cn(
+          "absolute top-16 right-3 z-30 p-2 rounded-lg border border-border transition-colors",
+          showUISpecTestPanel
+            ? "bg-purple-600 text-white border-purple-600"
+            : "bg-background hover:bg-background-emphasis text-text-subtle"
+        )}
+        title="UI Spec Test Panel"
+      >
+        <FiCode className="w-4 h-4" />
+      </button>
+
       {/* Backdrop overlay when approval is required */}
       {bottomApproval && (
         <div className="absolute inset-0 bg-black/50 z-40" />
@@ -877,6 +893,11 @@ export function BudAgentScreen() {
           onDeny={handleMemoryUpdateDeny}
           onClose={handleMemoryUpdateDialogClose}
         />
+      )}
+
+      {/* UI Spec Test Panel */}
+      {showUISpecTestPanel && (
+        <UISpecTestPanel onClose={() => setShowUISpecTestPanel(false)} />
       )}
     </div>
   );

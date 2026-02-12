@@ -170,6 +170,20 @@ class UpsertWorkspaceFileRequest(BaseModel):
     content: str
 
 
+class UISpecConvertRequest(BaseModel):
+    text: str
+    custom_prompt: str | None = None
+
+
+class UISpecConvertResponse(BaseModel):
+    spec: dict[str, Any] | None
+    raw_llm_output: str
+
+
+class CatalogPromptResponse(BaseModel):
+    prompt: str
+
+
 class ExecuteAgentRequest(BaseModel):
     message: str
     workspace_path: str | None = None
@@ -231,6 +245,82 @@ def embed_texts(
             status_code=500,
             detail=f"Failed to generate embeddings: {str(e)}",
         )
+
+
+# ==============================================================================
+# UI Spec Test Endpoints
+# ==============================================================================
+
+
+@router.get("/ui-spec/catalog-prompt")
+def get_ui_spec_catalog_prompt(
+    user: User | None = Depends(current_user),
+) -> CatalogPromptResponse:
+    """Return the current catalog prompt text used for UI spec conversion."""
+    from onyx.agents.bud_agent.ui_spec_catalog import get_catalog_prompt
+
+    return CatalogPromptResponse(prompt=get_catalog_prompt())
+
+
+@router.post("/ui-spec/convert")
+def convert_text_to_ui_spec_endpoint(
+    request: UISpecConvertRequest,
+    user: User | None = Depends(current_user),
+) -> UISpecConvertResponse:
+    """Convert text to a UI spec using the LLM with a custom or default prompt."""
+    import json as json_module
+
+    from onyx.agents.bud_agent.ui_spec_catalog import get_catalog_prompt
+    from onyx.agents.bud_agent.ui_spec_converter import _validate_spec
+    from onyx.llm.factory import get_default_llms
+
+    if not request.text or not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    try:
+        _llm, fast_llm = get_default_llms(user=user)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to initialize LLM: {str(e)}"
+        )
+
+    catalog_prompt = request.custom_prompt or get_catalog_prompt()
+    prompt = (
+        f"{catalog_prompt}\n\n"
+        f"CONTENT TO CONVERT:\n\n{request.text}\n\n"
+        f"JSON UI SPEC:"
+    )
+
+    try:
+        response = fast_llm.invoke(prompt)
+        raw = str(response.content).strip()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"LLM invocation failed: {str(e)}"
+        )
+
+    # Strip markdown fences if present
+    cleaned = raw
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    # Handle explicit null response
+    if cleaned.lower() in ("null", "none", ""):
+        return UISpecConvertResponse(spec=None, raw_llm_output=raw)
+
+    try:
+        spec = json_module.loads(cleaned)
+    except json_module.JSONDecodeError:
+        return UISpecConvertResponse(spec=None, raw_llm_output=raw)
+
+    if not isinstance(spec, dict) or not _validate_spec(spec):
+        return UISpecConvertResponse(spec=None, raw_llm_output=raw)
+
+    return UISpecConvertResponse(spec=spec, raw_llm_output=raw)
 
 
 @router.post("/sessions")
