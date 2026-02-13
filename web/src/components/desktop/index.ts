@@ -31,3 +31,6 @@ export {
 export { CronNotificationPanel } from "./CronNotificationPanel";
 export { CronToolApprovalDialog } from "./CronToolApprovalDialog";
 export { CronJobsView } from "./CronJobsView";
+export { ConnectorsView } from "./ConnectorsView";
+export { ConnectorDetailDrawer } from "./ConnectorDetailDrawer";
+export { AgentConnectorsSkeleton } from "./AgentConnectorsSkeleton";

@@ -214,6 +214,63 @@ export interface PendingCronData {
 }
 
 /**
+ * BudGateway types for MCP gateway connectors.
+ */
+
+export interface BudGateway {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+  transport: "SSE" | "STREAMABLEHTTP";
+  capabilities: string[];
+  enabled: boolean;
+  reachable: boolean;
+  lastSeen: string | null;
+  authType: string | null;
+  tags: string[];
+  team: string;
+  ownerEmail: string;
+  visibility: string;
+  slug: string;
+}
+
+export interface BudGatewaysResponse {
+  success: boolean;
+  message: string;
+  gateways: BudGateway[];
+  total_record: number;
+  page: number;
+  limit: number;
+}
+
+/**
+ * A connector merged with the user's preference from the backend.
+ */
+export interface ConnectorWithPreference {
+  [key: string]: unknown;
+  id: string;
+  name?: string;
+  description?: string;
+  authType?: string | null;
+  transport?: string;
+  icon?: string | null;
+  user_enabled: boolean;
+  oauth_completed: boolean;
+  default_permission?: "always_allow" | "need_approval" | "blocked";
+}
+
+/**
+ * A connector tool with permission info.
+ */
+export interface ConnectorTool {
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  permission: "always_allow" | "need_approval" | "blocked";
+}
+
+/**
  * Options for the agent run.
  */
 export interface RunOptions {

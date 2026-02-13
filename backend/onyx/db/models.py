@@ -62,6 +62,7 @@ from onyx.db.enums import (
     AgentMemorySource,
     AgentMessageRole,
     AgentSessionStatus,
+    AgentToolPermissionLevel,
     EmbeddingPrecision,
     IndexingMode,
     SyncType,
@@ -4013,6 +4014,10 @@ class AgentMessage(Base):
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Extended thinking content (for Claude models with extended thinking)
     thinking_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # UI spec for rendering (e.g. tool cards, status indicators)
+    ui_spec: Mapped[dict[str, Any] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
     # Timestamps
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -4299,4 +4304,102 @@ class AgentCronExecution(Base):
     def __repr__(self) -> str:
         return (
             f"<AgentCronExecution(id={self.id!r}, status={self.status!r})>"
+        )
+
+
+class AgentConnectorPreference(Base):
+    """Per-user preference for a BudApp connector/gateway.
+
+    Tracks whether the user has enabled the connector and whether
+    OAuth authorization has been completed.
+    """
+
+    __tablename__ = "agent_connector_preference"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    gateway_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    gateway_name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    oauth_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    default_permission: Mapped[AgentToolPermissionLevel | None] = mapped_column(
+        Enum(AgentToolPermissionLevel, native_enum=False),
+        nullable=True,
+        default=None,
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "gateway_id", name="uq_agent_connector_pref_user_gateway"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentConnectorPreference(id={self.id!r}, "
+            f"gateway_id={self.gateway_id!r}, enabled={self.enabled!r})>"
+        )
+
+
+class AgentToolPermission(Base):
+    """Per-user permission for a specific tool within a connector.
+
+    Controls whether a connector tool is always allowed, needs approval,
+    or is blocked for the user.
+    """
+
+    __tablename__ = "agent_tool_permission"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    gateway_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    permission_level: Mapped[AgentToolPermissionLevel] = mapped_column(
+        Enum(AgentToolPermissionLevel, native_enum=False),
+        default=AgentToolPermissionLevel.NEED_APPROVAL,
+        nullable=False,
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "gateway_id",
+            "tool_name",
+            name="uq_agent_tool_perm_user_gateway_tool",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentToolPermission(id={self.id!r}, "
+            f"tool_name={self.tool_name!r}, "
+            f"permission={self.permission_level!r})>"
         )

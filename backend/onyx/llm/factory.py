@@ -35,11 +35,15 @@ logger = setup_logger()
 
 
 def _get_fresh_oauth_token(user: User) -> str | None:
-    """Fetch fresh OAuth access token from database.
+    """Fetch fresh OAuth access token from database, refreshing if expired.
 
     The user object loaded from session may have stale oauth_accounts data.
-    This ensures we get the current token from the database.
+    This ensures we get the current token from the database and refreshes
+    it via the OIDC token endpoint if it has expired.
     """
+    import time
+
+    from onyx.auth.oauth_refresher import refresh_oauth_token_sync
     from onyx.db.models import OAuthAccount
 
     with get_session_with_current_tenant() as db_session:
@@ -47,9 +51,37 @@ def _get_fresh_oauth_token(user: User) -> str | None:
             OAuthAccount.user_id == user.id
         ).first()
 
-        if oauth_account and oauth_account.access_token:
+        if not oauth_account or not oauth_account.access_token:
+            return None
+
+        # Check if the token is expired or about to expire (60s buffer)
+        now = int(time.time())
+        token_expired = (
+            oauth_account.expires_at is not None
+            and oauth_account.expires_at <= now + 60
+        )
+
+        if not token_expired:
             return oauth_account.access_token
-    return None
+
+        # Token is expired — attempt refresh
+        if not oauth_account.refresh_token:
+            logger.warning("OAuth token expired and no refresh token available")
+            return oauth_account.access_token  # return stale token as fallback
+
+        logger.info("OAuth token expired, attempting refresh for user %s", user.email)
+        new_token = refresh_oauth_token_sync(user, oauth_account)
+
+        if new_token:
+            # Persist the refreshed token
+            oauth_account.access_token = new_token
+            # Update expires_at — Keycloak access tokens are typically 5 min
+            oauth_account.expires_at = now + 300
+            db_session.commit()
+            return new_token
+
+        logger.warning("OAuth token refresh failed, returning stale token")
+        return oauth_account.access_token
 
 
 def _get_fresh_oauth_account(user: User) -> "OAuthAccount | None":

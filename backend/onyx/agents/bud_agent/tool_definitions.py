@@ -35,9 +35,21 @@ def is_local_tool(tool_name: str) -> bool:
     return tool_name in LOCAL_TOOLS
 
 
+def is_connector_tool(tool_name: str) -> bool:
+    """Check if a tool is a BudApp connector tool.
+
+    Connector tools are not in the LOCAL_TOOLS or REMOTE_TOOLS sets — they
+    are dynamically discovered from BudApp MCP and executed on the backend.
+    """
+    return not is_local_tool(tool_name) and tool_name not in REMOTE_TOOLS
+
+
 def is_remote_tool(tool_name: str) -> bool:
-    """Check if a tool should be executed on the backend."""
-    return tool_name in REMOTE_TOOLS
+    """Check if a tool should be executed on the backend.
+
+    This includes both statically-defined remote tools and dynamic connector tools.
+    """
+    return tool_name in REMOTE_TOOLS or is_connector_tool(tool_name)
 
 
 def requires_approval(tool_name: str) -> bool:

@@ -100,6 +100,7 @@ class BudAgentContextBuilder:
         db_session: Session,
         user_id: UUID,
         user_message: str,
+        connector_tool_names: list[str] | None = None,
     ) -> str:
         """Build the complete system prompt by rendering system.md."""
 
@@ -166,6 +167,18 @@ class BudAgentContextBuilder:
                 f"{self._compaction_summary}"
             )
 
+        # Build connector tools section for the system prompt
+        connector_tools_section = ""
+        if connector_tool_names:
+            lines = [
+                "\n### Connector Tools (via MCP gateway)",
+                "These tools interact with external services. "
+                "Use them when the user asks about connected services.",
+            ]
+            for name in connector_tool_names:
+                lines.append(f"- {name}")
+            connector_tools_section = "\n".join(lines)
+
         # Render the single system.md template
         return render_prompt(
             "system",
@@ -180,4 +193,5 @@ class BudAgentContextBuilder:
             memories=memories or "No relevant memories found.",
             workspace_info=workspace_info,
             compaction_summary=compaction_summary_section,
+            connector_tools_section=connector_tools_section,
         )

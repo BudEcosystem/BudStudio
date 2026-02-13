@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
+from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
 from onyx.agents.bud_agent.workspace_service import create_workspace_tools
 from onyx.agents.bud_agent.workspace_service import ensure_default_workspace_files
@@ -213,18 +214,6 @@ class BudAgentOrchestrator:
                 current_session.compaction_summary if current_session else None
             )
 
-            context_builder = BudAgentContextBuilder(
-                workspace_path=self._workspace_path,
-                context_files=db_context,
-                user_timezone=self._timezone,
-                compaction_summary=compaction_summary,
-            )
-            system_prompt = context_builder.build(
-                db_session=self._db_session,
-                user_id=self._user.id,
-                user_message=user_message,
-            )
-
             # 2. Build tools — local tools bridge to the desktop via Redis
             local_bridge = LocalToolBridge(
                 session_id=str(self._session_id),
@@ -243,8 +232,31 @@ class BudAgentOrchestrator:
                 db_session=self._db_session,
                 user_id=self._user.id,
             )
+            connector_tools = create_connector_tools(
+                db_session=self._db_session,
+                user=self._user,
+                session_id=self._session_id,
+                packet_queue=self._packet_queue,
+                redis_client=self._redis_client,
+            )
             all_tools: list[FunctionTool] = (
-                local_tools + memory_tools + workspace_tools
+                local_tools + memory_tools + workspace_tools + connector_tools
+            )
+
+            # Build connector tools section for the system prompt
+            connector_tool_names = [t.name for t in connector_tools]
+
+            context_builder = BudAgentContextBuilder(
+                workspace_path=self._workspace_path,
+                context_files=db_context,
+                user_timezone=self._timezone,
+                compaction_summary=compaction_summary,
+            )
+            system_prompt = context_builder.build(
+                db_session=self._db_session,
+                user_id=self._user.id,
+                user_message=user_message,
+                connector_tool_names=connector_tool_names,
             )
 
             # 3. Resolve the LLM model and build RunConfig with credentials
@@ -290,6 +302,7 @@ class BudAgentOrchestrator:
                             db_session=self._db_session,
                             user_id=self._user.id,
                             user_message=user_message,
+                            connector_tool_names=connector_tool_names,
                         )
                         messages = self._build_messages(system_prompt)
 
@@ -303,6 +316,14 @@ class BudAgentOrchestrator:
                     )
 
             # 5. Create the agent
+            logger.info(
+                "Creating agent with model=%s, total_tools=%d, "
+                "connector_tools=%d, tool_names=%s",
+                model_name,
+                len(all_tools),
+                len(connector_tools),
+                [t.name for t in connector_tools[:5]],
+            )
             agent = Agent(
                 name="BudAgent",
                 model=model_name,

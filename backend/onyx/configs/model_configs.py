@@ -64,6 +64,8 @@ FAST_GEN_AI_MODEL_VERSION = os.environ.get("FAST_GEN_AI_MODEL_VERSION")
 BUD_FOUNDRY_API_BASE = os.environ.get("BUD_FOUNDRY_API_BASE")
 # Bud Foundry app base - for /playground/initialize endpoint (auth)
 BUD_FOUNDRY_APP_BASE = os.environ.get("BUD_FOUNDRY_APP_BASE")
+# MCP gateway URL for connector tool discovery & execution
+BUD_MCP_GATEWAY_URL = os.environ.get("BUD_MCP_GATEWAY_URL")
 
 # Override the auto-detection of LLM max context length
 GEN_AI_MAX_TOKENS = int(os.environ.get("GEN_AI_MAX_TOKENS") or 0) or None

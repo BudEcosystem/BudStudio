@@ -231,6 +231,14 @@ class AgentCronScheduleType(str, PyEnum):
     ONE_SHOT = "one_shot"
 
 
+class AgentToolPermissionLevel(str, PyEnum):
+    """Permission level for agent connector tools."""
+
+    ALWAYS_ALLOW = "always_allow"
+    NEED_APPROVAL = "need_approval"
+    BLOCKED = "blocked"
+
+
 class AgentCronExecutionStatus(str, PyEnum):
     """Status of an agent cron job execution"""
 

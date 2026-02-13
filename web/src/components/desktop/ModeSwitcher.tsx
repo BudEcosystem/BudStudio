@@ -25,11 +25,10 @@ export function ModeSwitcher({
   const isDark = resolvedTheme === "dark";
 
   const containerStyle = {
-    background: isDark ? "rgba(28, 28, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
     backdropFilter: "blur(10px)",
   };
 
-  const tabGroupBg = isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)";
+  const tabGroupBg = isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 1)";
   const tabGroupBorder = isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)";
   const activeText = isDark ? "#ffffff" : "#ffffff";
   const inactiveText = isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)";
@@ -38,7 +37,7 @@ export function ModeSwitcher({
   return (
     <div
       className={cn(
-        "relative flex items-center justify-center p-3",
+        "relative flex items-center justify-center p-3 bg-background-tint-02",
         className
       )}
       style={containerStyle}

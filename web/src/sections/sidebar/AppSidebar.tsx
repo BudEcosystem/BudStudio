@@ -70,6 +70,7 @@ import { useAgentSession } from "@/components/desktop/AgentSessionContext";
 import SvgSparkle from "@/icons/sparkle";
 import SvgDevKit from "@/icons/dev-kit";
 import SvgClock from "@/icons/clock";
+import SvgPlug from "@/icons/plug";
 import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
 import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
 
@@ -483,6 +484,15 @@ function AppSidebarInner() {
                   >
                     Scheduled
                   </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgPlug}
+                    onClick={() => setAgentView("connectors")}
+                    active={agentView === "connectors"}
+                    folded
+                    testId="sidebar-connectors-tab"
+                  >
+                    Connectors
+                  </SidebarTab>
                 </>
               ) : (
                 <>
@@ -579,6 +589,14 @@ function AppSidebarInner() {
                         testId="sidebar-cron-tab"
                       >
                         Scheduled Tasks
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgPlug}
+                        onClick={() => setAgentView("connectors")}
+                        active={agentView === "connectors"}
+                        testId="sidebar-connectors-tab"
+                      >
+                        Connectors
                       </SidebarTab>
                     </SidebarSection>
                   </>

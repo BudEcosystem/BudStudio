@@ -5,6 +5,7 @@ import { BudAgentScreen } from "./BudAgentScreen";
 import { AgentToolsView } from "./AgentToolsView";
 import { AgentConfigView } from "./AgentConfigView";
 import { CronJobsView } from "./CronJobsView";
+import { ConnectorsView } from "./ConnectorsView";
 
 interface ModeRendererProps {
   children: React.ReactNode;
@@ -31,6 +32,8 @@ export function ModeRenderer({ children }: ModeRendererProps) {
       return <AgentConfigView />;
     case "cron":
       return <CronJobsView />;
+    case "connectors":
+      return <ConnectorsView />;
     case "chat":
     default:
       return <BudAgentScreen />;
