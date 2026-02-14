@@ -377,7 +377,7 @@
   --background-neutral-00: var(--grey-100);
   --background-neutral-01: var(--grey-90);
   --background-neutral-02: var(--grey-85);
-  --background-neutral-03: var(--grey-80);
+  --background-neutral-03: #323337;
   --background-neutral-04: var(--grey-75);
   --background-neutral-inverted-04: var(--grey-20);
   --background-neutral-inverted-03: var(--grey-10);
@@ -390,7 +390,7 @@
 
   /* Background / Tint */
   --background-tint-00: #101010;
-  --background-tint-01: #101010;
+  --background-tint-01: #151718;
   --background-tint-02: #1a1a1a;
   --background-tint-03: #242424;
   --background-tint-04: #2e2e2e;
@@ -402,7 +402,7 @@
 
   /* Border */
   --border-01: var(--grey-80);
-  --border-02: var(--grey-60);
+  --border-02: var(--grey-70);
   --border-03: var(--grey-50);
   --border-04: var(--grey-30);
   --border-05: var(--grey-00);

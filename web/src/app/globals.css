@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
 @import "figma/colors.css";
 
 /* Source Serif 4 - Local font files */
@@ -122,13 +123,14 @@
     --font-hanken-grotesk: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-dm-mono: "DM Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
     --font-source-serif-4: "Source Serif 4", Georgia, Cambria, "Times New Roman", Times, serif;
+    --font-open-sans: "Open Sans", sans-serif;;
 }
 
 
 /* HEADING STYLES */
 
 .font-heading-h1 {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 48px;
     font-weight: 600;
     line-height: 64px;
@@ -136,7 +138,7 @@
 }
 
 .font-heading-h2 {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 24px;
     font-weight: 600;
     line-height: 36px;
@@ -144,7 +146,7 @@
 }
 
 .font-heading-h3 {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 18px;
     font-weight: 600;
     line-height: 28px;
@@ -152,7 +154,7 @@
 }
 
 .font-heading-h3-muted {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 18px;
     font-weight: 500;
     line-height: 28px;
@@ -163,7 +165,7 @@
 /* MAIN CONTENT STYLES */
 
 .font-main-content-body {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 32px;
     font-weight: 200;
@@ -186,7 +188,7 @@
 /* Use :not() to avoid overriding explicit font classes */
 
 .prose {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 32px;
     font-weight: 200;
@@ -195,7 +197,7 @@
 }
 
 .prose h1:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 24px;
     line-height: 36px;
     font-weight: 600;
@@ -203,7 +205,7 @@
 }
 
 .prose h2:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 20px;
     line-height: 32px;
     font-weight: 600;
@@ -211,7 +213,7 @@
 }
 
 .prose h3:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 18px;
     line-height: 28px;
     font-weight: 600;
@@ -221,7 +223,7 @@
 .prose h4:not([class*="font-"]),
 .prose h5:not([class*="font-"]),
 .prose h6:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 28px;
     font-weight: 600;
@@ -229,7 +231,7 @@
 }
 
 .prose p:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 32px;
     font-weight: 200;
@@ -238,7 +240,7 @@
 
 .prose ul:not([class*="font-"]),
 .prose ol:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 32px;
     font-weight: 200;
@@ -246,7 +248,7 @@
 }
 
 .prose li:not([class*="font-"]) {
-    font-family: var(--font-source-serif-4);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 32px;
     font-weight: 200;
@@ -296,7 +298,7 @@
 }
 
 .font-main-content-emphasis {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     font-weight: 700;
     line-height: 24px;
@@ -304,7 +306,7 @@
 }
 
 .font-main-content-muted {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 16px;
     font-weight: 400;
     line-height: 24px;
@@ -323,15 +325,15 @@
 /* MAIN UI STYLES */
 
 .font-main-ui-body {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 200;
     line-height: 20px;
     letter-spacing: 0px;
 }
 
 .font-main-ui-muted {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 14px;
     font-weight: 400;
     line-height: 20px;
@@ -339,7 +341,7 @@
 }
 
 .font-main-ui-action {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 14px;
     font-weight: 600;
     line-height: 20px;
@@ -358,7 +360,7 @@
 /* SECONDARY STYLES */
 
 .font-secondary-body {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 12px;
     font-weight: 400;
     line-height: 16px;
@@ -366,7 +368,7 @@
 }
 
 .font-secondary-action {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 12px;
     font-weight: 600;
     line-height: 16px;
@@ -385,7 +387,7 @@
 /* FIGURE STYLES */
 
 .font-figure-small-label {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 10px;
     font-weight: 700;
     line-height: 12px;
@@ -393,7 +395,7 @@
 }
 
 .font-figure-small-value {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 10px;
     font-weight: 400;
     line-height: 12px;
@@ -401,7 +403,7 @@
 }
 
 .font-figure-keystroke {
-    font-family: var(--font-hanken-grotesk);
+    font-family: var(--font-open-sans);
     font-size: 12px;
     font-weight: 400;
     line-height: 16px;

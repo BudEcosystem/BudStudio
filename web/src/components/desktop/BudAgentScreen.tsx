@@ -595,7 +595,13 @@ export function BudAgentScreen() {
   const noOp = useCallback(() => {}, []);
 
   return (
-    <div className="flex-1 flex flex-col h-full relative" data-testid="bud-agent-screen">
+    <div
+      className={cn(
+        "flex-1 flex flex-col min-h-0 relative rounded-xl m-4 ml-0 overflow-hidden",
+        isDark && "bg-[#232526]"
+      )}
+      data-testid="bud-agent-screen"
+    >
       {/* Grid Background */}
       <div
         className="absolute inset-0 pointer-events-none z-0"
@@ -616,12 +622,12 @@ export function BudAgentScreen() {
       {/* Messages Area */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden default-scrollbar relative z-10" data-testid="agent-messages-container">
         {/* Top shadow fadeout */}
-        <div
+        {/* <div
           className="sticky left-0 right-0 h-8 pointer-events-none z-20 bg-gradient-to-b from-background via-background/70 to-transparent"
           style={{
             top: '60px',
           }}
-        />
+        /> */}
         {isSessionLoading ? (
           <BudAgentSkeleton />
         ) : messages.length === 0 ? (

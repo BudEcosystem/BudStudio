@@ -21,6 +21,7 @@ import SvgBell from "@/icons/bell";
 import SvgX from "@/icons/x";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import SvgUser from "@/icons/user";
+import SvgSettings from "@/icons/settings";
 import { cn } from "@/lib/utils";
 import { useModalContext } from "@/components/context/ModalContext";
 import SidebarTab from "@/refresh-components/buttons/SidebarTab";
@@ -48,7 +49,7 @@ function SettingsPopover({
   onUserSettingsClick,
   onNotificationsClick,
 }: SettingsPopoverProps) {
-  const { user } = useUser();
+  const { user, isAdmin, isCurator } = useUser();
   const { data: notifications } = useSWR<Notification[]>(
     "/api/notifications",
     errorHandlingFetcher
@@ -83,13 +84,15 @@ function SettingsPopover({
     <>
       <PopoverMenu>
         {[
-          // TODO (@raunakab):
-          // Not sure what this does; leave it out for now.
-          // ...dropdownItems.map((item, index) => (
-          //   <NavigationTab key={index} href={item.link}>
-          //     {item.title}
-          //   </NavigationTab>
-          // )),
+          (isAdmin || isCurator) && (
+            <MenuButton
+              key="settings"
+              icon={SvgSettings}
+              href="/admin/configuration/default-assistant"
+            >
+              Settings
+            </MenuButton>
+          ),
           <div key="user-settings" data-testid="Settings/user-settings">
             <MenuButton icon={SvgUser} onClick={onUserSettingsClick}>
               User Settings
@@ -182,25 +185,54 @@ export default function Settings({ folded }: SettingsProps) {
     >
       <PopoverTrigger asChild>
         <div id="onyx-user-dropdown">
-          <SidebarTab
-            leftIcon={({ className }) => (
+          {folded ? (
+            <SidebarTab
+              leftIcon={({ className }) => (
+                <Avatar
+                  className={cn(
+                    "flex items-center justify-center bg-background-neutral-inverted-00",
+                    className,
+                    "w-5 h-5"
+                  )}
+                >
+                  <Text inverted secondaryBody>
+                    {displayName[0]?.toUpperCase()}
+                  </Text>
+                </Avatar>
+              )}
+              active={!!popupState}
+              folded={folded}
+            >
+              {displayName}
+            </SidebarTab>
+          ) : (
+            <div
+              className={cn(
+                "flex flex-row items-center gap-2.5 px-2.5 py-2 rounded-08 cursor-pointer select-none",
+                popupState
+                  ? "bg-background-neutral-03 border border-border-02"
+                  : "border bg-background-neutral-03 border-border-02 hover:bg-background-neutral-02 hover:border-border-01"
+              )}
+            >
               <Avatar
-                className={cn(
-                  "flex items-center justify-center bg-background-neutral-inverted-00",
-                  className,
-                  "w-5 h-5"
-                )}
+                className="flex items-center justify-center bg-background-neutral-inverted-00 w-7 h-7 flex-shrink-0"
               >
                 <Text inverted secondaryBody>
                   {displayName[0]?.toUpperCase()}
                 </Text>
               </Avatar>
-            )}
-            active={!!popupState}
-            folded={folded}
-          >
-            {displayName}
-          </SidebarTab>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-medium text-text-04 truncate">
+                  {displayName}
+                </span>
+                {user?.email && (
+                  <span className="text-[0.6875rem] text-text-02 truncate">
+                    {user.email}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </PopoverTrigger>
       <PopoverContent align="end" side="right">

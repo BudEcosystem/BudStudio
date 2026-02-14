@@ -388,7 +388,7 @@ function ChatInputBarInner({
         </div>
       )}
 
-      <div className="w-full h-full flex flex-col shadow-01 bg-background-neutral-00 rounded-16">
+      <div className="w-full h-full flex flex-col shadow-01 bg-background-neutral-03 rounded-12 border border-border-02">
         {currentMessageFiles.length > 0 && (
           <div className="p-1 rounded-t-16 flex flex-wrap gap-2">
             {currentMessageFiles.map((file) => (

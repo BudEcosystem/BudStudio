@@ -46,7 +46,7 @@ export default async function Layout({
   return (
     <DesktopModeProvider>
       <CronNotificationProvider>
-      <DesktopHeader />
+      {/* <DesktopHeader /> */}
       <ChatProvider
         proSearchToggled={proSearchToggled}
         inputPrompts={inputPrompts}

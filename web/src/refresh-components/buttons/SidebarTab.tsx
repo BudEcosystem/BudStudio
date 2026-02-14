@@ -10,8 +10,10 @@ import Truncated from "@/refresh-components/texts/Truncated";
 const backgroundClasses = (active?: boolean) =>
   ({
     defaulted: [
-      active ? "bg-background-tint-00" : "bg-transparent",
-      "hover:bg-background-tint-03",
+      active
+        ? "bg-background-neutral-03 border border-border-02"
+        : "bg-transparent border border-transparent",
+      "hover:bg-background-neutral-03 hover:border-border-02",
     ],
     lowlight: [
       active ? "bg-background-tint-00" : "bg-transparent",
@@ -85,7 +87,7 @@ export default function SidebarTab({
   const innerContent = (
     <div
       className={cn(
-        "flex flex-row justify-center items-center p-1.5 gap-1 rounded-08 cursor-pointer group/SidebarTab w-full select-none",
+        "flex flex-row justify-center items-center py-1.5 px-2 gap-1 rounded-08 cursor-pointer group/SidebarTab w-full select-none",
         backgroundClasses(active)[variant],
         // active ? "bg-background-tint-00" : "bg-transparent",
         className

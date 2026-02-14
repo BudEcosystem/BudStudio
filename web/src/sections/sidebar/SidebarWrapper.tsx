@@ -69,7 +69,7 @@ export default function SidebarWrapper({
     <div>
       <div
         className={cn(
-          "h-screen flex flex-col bg-background-tint-02 py-2 gap-4 group/SidebarWrapper",
+          "h-screen flex flex-col bg-background-tint-01 py-4 gap-4 group/SidebarWrapper",
           folded ? "w-[3.5rem]" : "w-[15rem]"
         )}
       >

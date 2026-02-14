@@ -63,16 +63,18 @@ import { showErrorNotification, handleMoveOperation } from "./sidebarUtils";
 import SidebarTab from "@/refresh-components/buttons/SidebarTab";
 import { ChatSession } from "@/app/chat/interfaces";
 import { SidebarBody } from "@/sections/sidebar/utils";
-import { useUser } from "@/components/user/UserProvider";
 import SvgSettings from "@/icons/settings";
 import { useDesktopMode } from "@/components/desktop/DesktopModeContext";
 import { useAgentSession } from "@/components/desktop/AgentSessionContext";
 import SvgSparkle from "@/icons/sparkle";
-import SvgDevKit from "@/icons/dev-kit";
 import SvgClock from "@/icons/clock";
 import SvgPlug from "@/icons/plug";
 import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
 import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
+import { useTheme } from "next-themes";
+import SvgSun from "@/icons/sun";
+import SvgMoon from "@/icons/moon";
+import SimpleTooltip from "@/refresh-components/SimpleTooltip";
 
 // Visible-agents = pinned-agents + current-agent (if current-agent not in pinned-agents)
 // OR Visible-agents = pinned-agents (if current-agent in pinned-agents)
@@ -92,6 +94,75 @@ function buildVisibleAgents(
   ).filter((agent) => agent.id !== 0);
 
   return [visibleAgents, currentAgentIsPinned];
+}
+
+function ThemeSwitcher({
+  isDark,
+  folded,
+  onToggle,
+}: {
+  isDark: boolean;
+  folded: boolean;
+  onToggle: () => void;
+}) {
+  const activeText = "#ffffff";
+  const inactiveText = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.7)";
+  const activeBg = isDark ? "#101416" : "#101416";
+
+  if (folded) {
+    return (
+      <SimpleTooltip tooltip={isDark ? "Switch to Light" : "Switch to Dark"}>
+        <button
+          onClick={onToggle}
+          className="flex items-center justify-center w-full p-1.5 rounded-08 cursor-pointer hover:bg-background-neutral-03"
+        >
+          <div className="w-[1rem] h-[1rem] flex items-center justify-center">
+            {isDark ? (
+              <SvgMoon className="h-[1rem] w-[1rem] stroke-text-03" />
+            ) : (
+              <SvgSun className="h-[1rem] w-[1rem] stroke-text-03" />
+            )}
+          </div>
+        </button>
+      </SimpleTooltip>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-center rounded-lg p-1 border mt-4 bg-background-neutral-03 border-border-02"
+      // style={{ background: tabGroupBg, borderColor: tabGroupBorder }}
+    >
+      <button
+        onClick={() => !isDark || onToggle()}
+        className={cn(
+          "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-md",
+          isDark && "hover:opacity-70"
+        )}
+        style={{
+          color: !isDark ? activeText : inactiveText,
+          background: !isDark ? activeBg : "transparent",
+        }}
+      >
+        <SvgSun className="h-3 w-3" style={{ stroke: !isDark ? activeText : inactiveText }} />
+        Light
+      </button>
+      <button
+        onClick={() => isDark || onToggle()}
+        className={cn(
+          "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-md",
+          !isDark && "hover:opacity-70"
+        )}
+        style={{
+          color: isDark ? activeText : inactiveText,
+          background: isDark ? activeBg : "transparent",
+        }}
+      >
+        <SvgMoon className="h-3 w-3" style={{ stroke: isDark ? activeText : inactiveText }} />
+        Dark
+      </button>
+    </div>
+  );
 }
 
 interface RecentsSectionProps {
@@ -148,6 +219,8 @@ function AppSidebarInner() {
     useDesktopMode();
   const { clearCurrentSession } = useAgentSession();
   const { unreadCount } = useCronNotifications();
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const [showNotifications, setShowNotifications] = useState(false);
 
   // State for custom agent modal
@@ -352,24 +425,14 @@ function AppSidebarInner() {
     [folded, route, searchParams, isDesktop, currentMode, clearCurrentSession]
   );
 
-  const { isAdmin, isCurator } = useUser();
-
   const settingsButton = useMemo(
     () => (
-      <div className="px-2">
-        {(isAdmin || isCurator) && (
-          <SidebarTab
-            href="/admin/configuration/default-assistant"
-            leftIcon={SvgSettings}
-            folded={folded}
-          >
-            {isAdmin ? "Admin Panel" : "Curator Panel"}
-          </SidebarTab>
-        )}
+      <div className="px-4">
         <Settings folded={folded} />
+        <ThemeSwitcher isDark={isDark} folded={folded} onToggle={() => setTheme(isDark ? "light" : "dark")} />
       </div>
     ),
-    [folded, isAdmin, isCurator]
+    [folded, isDark, setTheme]
   );
 
   if (!combinedSettings) {
@@ -458,14 +521,6 @@ function AppSidebarInner() {
                     folded
                   >
                     Chat
-                  </SidebarTab>
-                  <SidebarTab
-                    leftIcon={SvgDevKit}
-                    onClick={() => setAgentView("tools")}
-                    active={agentView === "tools"}
-                    folded
-                  >
-                    Tools
                   </SidebarTab>
                   <SidebarTab
                     leftIcon={SvgSettings}
@@ -560,20 +615,13 @@ function AppSidebarInner() {
                       </button>
                     </div>
 
-                    <SidebarSection title="Bud Agent">
+                    <SidebarSection title="">
                       <SidebarTab
                         leftIcon={SvgSparkle}
                         onClick={() => setAgentView("chat")}
                         active={agentView === "chat"}
                       >
                         Chat
-                      </SidebarTab>
-                      <SidebarTab
-                        leftIcon={SvgDevKit}
-                        onClick={() => setAgentView("tools")}
-                        active={agentView === "tools"}
-                      >
-                        Tools
                       </SidebarTab>
                       <SidebarTab
                         leftIcon={SvgSettings}
