@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, memo, useMemo, useState } from "react";
+import React, { useCallback, useEffect, memo, useMemo, useState } from "react";
 import Image from "next/image";
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
 import { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
@@ -65,6 +65,7 @@ import { ChatSession } from "@/app/chat/interfaces";
 import { SidebarBody } from "@/sections/sidebar/utils";
 import SvgSettings from "@/icons/settings";
 import { useDesktopMode } from "@/components/desktop/DesktopModeContext";
+import { ModeSwitcher } from "@/components/desktop/ModeSwitcher";
 import { useAgentSession } from "@/components/desktop/AgentSessionContext";
 import SvgSparkle from "@/icons/sparkle";
 import SvgClock from "@/icons/clock";
@@ -105,9 +106,16 @@ function ThemeSwitcher({
   folded: boolean;
   onToggle: () => void;
 }) {
+  // next-themes resolvedTheme is undefined during SSR/hydration.
+  // Use a mounted flag to avoid showing stale state before the client hydrates.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const activeText = "#ffffff";
   const inactiveText = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.7)";
   const activeBg = isDark ? "#101416" : "#101416";
+
+  if (!mounted) return null;
 
   if (folded) {
     return (
@@ -131,7 +139,6 @@ function ThemeSwitcher({
   return (
     <div
       className="flex items-center rounded-lg p-1 border mt-4 bg-background-neutral-03 border-border-02"
-      // style={{ background: tabGroupBg, borderColor: tabGroupBorder }}
     >
       <button
         onClick={() => !isDark || onToggle()}
@@ -215,7 +222,7 @@ function AppSidebarInner() {
   const { refreshCurrentProjectDetails, fetchProjects, currentProjectId } =
     useProjectsContext();
   const { popup, setPopup } = usePopup();
-  const { isDesktop, currentMode, agentView, setAgentView } =
+  const { isDesktop, currentMode, setMode, agentView, setAgentView } =
     useDesktopMode();
   const { clearCurrentSession } = useAgentSession();
   const { unreadCount } = useCronNotifications();
@@ -486,42 +493,47 @@ function AppSidebarInner() {
         {folded ? (
           <div className="flex flex-col h-full justify-between">
             <div className="px-2">
-              {isDesktop && currentMode === "agent" ? (
+              {isDesktop ? (
                 <>
-                  {/* Notification button above agent nav — Bud admin style */}
-                  <div className="mb-[3%]">
-                    <button
-                      onClick={() => setShowNotifications(true)}
-                      data-testid="sidebar-notifications-tab"
-                      className="flex justify-start items-center rounded-[6.4px] bg-black/[0.03] dark:bg-white/[0.03] cursor-pointer w-full hover:bg-black/[0.08] dark:hover:bg-white/[0.1] hover:shadow-md p-[0.35rem] transition-all"
-                    >
-                      <div className="h-[1.5rem] flex justify-center items-center pl-[0.15rem]">
-                        <Image
-                          src="/images/BudIcon.png"
-                          alt="info"
-                          width={24}
-                          height={24}
-                          style={{ height: "auto", width: "1.5rem" }}
-                        />
-                      </div>
-                      <div className="flex flex-row items-center justify-between w-full">
-                        <span className="text-[0.625rem] font-normal text-muted-foreground pl-[1rem] whitespace-nowrap max-w-[70%] overflow-hidden text-ellipsis">
-                          {unreadCount > 0
-                            ? `${unreadCount} Notification${unreadCount > 1 ? "s" : ""}`
-                            : "Notifications"}
-                        </span>
-                      </div>
-                    </button>
-                  </div>
+                  {/* Mode switcher above notifications */}
+                  <ModeSwitcher currentMode={currentMode} onModeChange={setMode} className="mb-2" />
 
-                  <SidebarTab
-                    leftIcon={SvgSparkle}
-                    onClick={() => setAgentView("chat")}
-                    active={agentView === "chat"}
-                    folded
-                  >
-                    Chat
-                  </SidebarTab>
+                  {currentMode === "agent" ? (
+                    <>
+                      {/* Notification button above agent nav — Bud admin style */}
+                      <div className="mb-[3%]">
+                        <button
+                          onClick={() => setShowNotifications(true)}
+                          data-testid="sidebar-notifications-tab"
+                          className="flex justify-start items-center rounded-[6.4px] bg-black/[0.03] dark:bg-white/[0.03] cursor-pointer w-full hover:bg-black/[0.08] dark:hover:bg-white/[0.1] hover:shadow-md p-[0.35rem] transition-all"
+                        >
+                          <div className="h-[1.5rem] flex justify-center items-center pl-[0.15rem]">
+                            <Image
+                              src="/images/BudIcon.png"
+                              alt="info"
+                              width={24}
+                              height={24}
+                              style={{ height: "auto", width: "1.5rem" }}
+                            />
+                          </div>
+                          <div className="flex flex-row items-center justify-between w-full">
+                            <span className="text-[0.625rem] font-normal text-muted-foreground pl-[1rem] whitespace-nowrap max-w-[70%] overflow-hidden text-ellipsis">
+                              {unreadCount > 0
+                                ? `${unreadCount} Notification${unreadCount > 1 ? "s" : ""}`
+                                : "Notifications"}
+                            </span>
+                          </div>
+                        </button>
+                      </div>
+
+                      <SidebarTab
+                        leftIcon={SvgSparkle}
+                        onClick={() => setAgentView("chat")}
+                        active={agentView === "chat"}
+                        folded
+                      >
+                        Chat
+                      </SidebarTab>
                   <SidebarTab
                     leftIcon={SvgSettings}
                     onClick={() => setAgentView("configuration")}
@@ -548,6 +560,30 @@ function AppSidebarInner() {
                   >
                     Connectors
                   </SidebarTab>
+                    </>
+                  ) : (
+                    <>
+                      {newSessionButton}
+                      <SidebarTab
+                        leftIcon={SvgOnyxOctagon}
+                        onClick={() => toggleModal(ModalIds.AgentsModal, true)}
+                        active={isOpen(ModalIds.AgentsModal)}
+                        folded
+                      >
+                        Agents
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgFolderPlus}
+                        onClick={() =>
+                          toggleModal(ModalIds.CreateProjectModal, true)
+                        }
+                        active={isOpen(ModalIds.CreateProjectModal)}
+                        folded
+                      >
+                        New Project
+                      </SidebarTab>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -579,13 +615,20 @@ function AppSidebarInner() {
           <>
             <SidebarBody
               actionButton={
-                isDesktop && currentMode === "agent"
+                isDesktop
                   ? undefined
                   : newSessionButton
               }
               footer={settingsButton}
             >
               <>
+                {isDesktop && (
+                  <>
+                    <ModeSwitcher currentMode={currentMode} onModeChange={setMode} className="mb-2" />
+                    {currentMode === "chat" && newSessionButton}
+                  </>
+                )}
+
                 {/* Agent mode: show a single "Chat" link */}
                 {isDesktop && currentMode === "agent" ? (
                   <>

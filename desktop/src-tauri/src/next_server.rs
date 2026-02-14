@@ -99,6 +99,7 @@ impl NextServer {
                 .args(["run", "dev", "--", "--port", &self.preferred_port.to_string()])
                 .env("INTERNAL_URL", &internal_url)
                 .env("WEB_DOMAIN", &web_domain)
+                .env("OVERRIDE_API_PRODUCTION", "true")
                 .current_dir(web_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
