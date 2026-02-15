@@ -9,6 +9,7 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
+import type { Packet } from "@/app/chat/services/streamingModels";
 
 /**
  * Tool call information for display in the UI.
@@ -29,6 +30,8 @@ export interface AgentMessage {
   timestamp: Date;
   status?: "thinking" | "streaming" | "complete" | "error" | "stopped";
   toolCalls?: ToolCallInfo[];
+  /** Packet data for unified rendering (streaming + history). */
+  packets?: Packet[];
 }
 
 export interface AgentSession {
@@ -98,7 +101,21 @@ interface BackendMessageSnapshot {
   tool_input: Record<string, unknown> | null;
   tool_output: Record<string, unknown> | null;
   tool_error: string | null;
+  tool_call_id: string | null;
+  step_number: number | null;
+  thinking_content: string | null;
+  ui_spec: Record<string, unknown> | null;
   created_at: string;
+}
+
+interface BackendPacketResponse {
+  ind: number;
+  obj: Record<string, unknown>;
+}
+
+interface BackendHistoryResponse {
+  messages: BackendMessageSnapshot[];
+  packets: BackendPacketResponse[][];
 }
 
 /**
@@ -274,8 +291,21 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         console.error("Failed to fetch session history:", resp.status);
         return;
       }
-      const data = (await resp.json()) as { messages: BackendMessageSnapshot[] };
+      const data = (await resp.json()) as BackendHistoryResponse;
       const messages = convertBackendMessages(data.messages);
+
+      // Map packet turns to agent messages.
+      // Each inner array in data.packets corresponds to one agent turn.
+      if (data.packets && data.packets.length > 0) {
+        const agentMessages = messages.filter((m) => m.role === "agent");
+        for (let i = 0; i < agentMessages.length && i < data.packets.length; i++) {
+          const agentMsg = agentMessages[i];
+          const packetTurn = data.packets[i];
+          if (agentMsg && packetTurn) {
+            agentMsg.packets = packetTurn as unknown as Packet[];
+          }
+        }
+      }
 
       loadedSessionsRef.current.add(sessionId);
 

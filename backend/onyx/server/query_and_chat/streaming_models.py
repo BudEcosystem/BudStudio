@@ -174,6 +174,40 @@ class CitationDelta(BaseObj):
     citations: list[CitationInfo] | None = None
 
 
+"""Agent-Specific Packets"""
+
+
+class AgentApprovalRequired(BaseObj):
+    type: Literal["agent_approval_required"] = "agent_approval_required"
+
+    tool_name: str
+    tool_input: dict | None = None
+    tool_call_id: str
+
+
+class AgentSessionCompacted(BaseObj):
+    type: Literal["agent_session_compacted"] = "agent_session_compacted"
+
+    new_session_id: str
+    summary: str
+
+
+class AgentLocalToolRequest(BaseObj):
+    type: Literal["agent_local_tool_request"] = "agent_local_tool_request"
+
+    tool_name: str
+    tool_input: dict | None = None
+    tool_call_id: str
+
+
+class AgentStopped(BaseObj):
+    type: Literal["agent_stopped"] = "agent_stopped"
+
+
+class AgentDone(BaseObj):
+    type: Literal["agent_done"] = "agent_done"
+
+
 """Packet"""
 
 # Discriminated union of all possible packet object types
@@ -196,6 +230,11 @@ PacketObj = Annotated[
         CitationDelta,
         PacketException,
         FetchToolStart,
+        AgentApprovalRequired,
+        AgentSessionCompacted,
+        AgentLocalToolRequest,
+        AgentStopped,
+        AgentDone,
     ],
     Field(discriminator="type"),
 ]

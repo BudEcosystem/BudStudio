@@ -21,6 +21,8 @@ REMOTE_TOOLS: set[str] = {
     "workspace_read",
     "workspace_write",
     "workspace_list",
+    "web_search",
+    "open_url",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -294,6 +296,83 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": [],
+        },
+    },
+    "web_search": {
+        "name": "web_search",
+        "description": (
+            "Search the public internet for information.\n\n"
+            "### Decision boundary\n"
+            "- You MUST call this tool when the request involves:\n"
+            "    - Fresh/unstable info (news, prices, laws, schedules, "
+            "product specs, scores, exchange rates).\n"
+            "    - Recommendations, or any query where the specific "
+            "sources matter.\n"
+            "    - Verifiable claims, quotes, or citations.\n"
+            "- After ANY successful `web_search` call that yields candidate "
+            "URLs, you MUST call `open_url` on the selected URLs BEFORE "
+            "answering. Do NOT answer from snippets.\n\n"
+            "### When NOT to use\n"
+            "- Casual chat, rewriting/summarizing user-provided text, "
+            "or translation.\n"
+            "- When the user already provided URLs (go straight to "
+            "`open_url`).\n\n"
+            "### Usage hints\n"
+            "- Expand the user's query into a broader list of queries.\n"
+            "- Batch a list of natural-language queries per call.\n"
+            "- Prefer searches for distinct intents; then batch-fetch "
+            "best URLs.\n"
+            "- Deduplicate domains/near-duplicates. Prefer recent, "
+            "authoritative sources.\n"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "List of search queries to run in parallel. "
+                        "Expand the user's question into a broader list of queries."
+                    ),
+                },
+            },
+            "required": ["queries"],
+        },
+    },
+    "open_url": {
+        "name": "open_url",
+        "description": (
+            "Fetch and extract full content from web pages.\n\n"
+            "### Decision boundary\n"
+            "- You MUST use this tool before quoting, citing, or relying "
+            "on page content.\n"
+            "- Use it whenever you already have URLs (from the user or "
+            "from `web_search`).\n"
+            "- Do NOT answer questions based on search snippets alone.\n"
+            "- After a web_search call, strong bias towards using this "
+            "tool to investigate further.\n\n"
+            "### When NOT to use\n"
+            "- If you do not yet have URLs (search first).\n\n"
+            "### Usage hints\n"
+            "- If you've just called web_search, be generous with the "
+            "number of URLs you fetch.\n"
+            "- Avoid many tiny calls; batch URLs in one request.\n"
+            "- Prefer primary, recent, and reputable sources.\n"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "List of URLs to fetch content from. "
+                        "Be generous with the number of URLs."
+                    ),
+                },
+            },
+            "required": ["urls"],
         },
     },
 }

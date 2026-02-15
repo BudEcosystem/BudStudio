@@ -105,7 +105,7 @@ export const ReasoningRenderer: MessageRenderer<
     icon: null,
     status: THINKING_STATUS,
     content: renderedContent,
-    expandedText: renderedContent,
+    expandedText: content.length > 0 ? renderedContent : undefined,
   });
 };
 

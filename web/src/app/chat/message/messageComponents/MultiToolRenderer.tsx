@@ -46,7 +46,7 @@ function ExpandedToolItem({
       {/* Connector line */}
       {!isLastItem && (
         <div
-          className="absolute w-px bg-background-tint-04 z-0"
+          className="absolute w-px bg-background-tint-00 z-0"
           style={{
             left: "10px",
             top: "20px",
@@ -163,7 +163,7 @@ export default function MultiToolRenderer({
     const latestToolIndex = toolsToDisplay.length - 1;
 
     return (
-      <div className="mb-4 relative border border-border-medium rounded-lg p-4 shadow">
+      <div className="mb-4 relative border border-border-medium rounded-lg p-4" style={{ background: "#32333770" }}>
         <div className="relative">
           <div>
             {toolsToDisplay.map((toolGroup, index) => {
@@ -274,6 +274,11 @@ export default function MultiToolRenderer({
         </div>
       </div>
     );
+  }
+
+  // If complete but no tool groups, don't render anything
+  if (toolGroups.length === 0) {
+    return null;
   }
 
   // If complete, show summary with toggle

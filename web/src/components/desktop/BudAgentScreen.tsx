@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/logo/Logo";
 import {
@@ -30,11 +30,29 @@ import AgentIcon from "@/refresh-components/AgentIcon";
 import IconButton from "@/refresh-components/buttons/IconButton";
 import SvgCopy from "@/icons/copy";
 import SvgCheck from "@/icons/check";
+import SvgArrowWallRight from "@/icons/arrow-wall-right";
+import SvgSearchMenu from "@/icons/search-menu";
 import Text from "@/refresh-components/texts/Text";
+import { ChatDocumentDisplay } from "@/app/chat/components/documentSidebar/ChatDocumentDisplay";
+import { removeDuplicateDocs } from "@/lib/documentUtils";
+import { Separator } from "@radix-ui/react-separator";
 import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
-import { ThinkingIndicator } from "./ThinkingIndicator";
+import CitedSourcesToggle from "@/app/chat/message/messageComponents/CitedSourcesToggle";
+
 import { useTheme } from "next-themes";
+import type {
+  Packet,
+  SearchToolDelta,
+  FetchToolStart,
+  CitationDelta,
+  StreamingCitation,
+} from "@/app/chat/services/streamingModels";
+import type { OnyxDocument } from "@/lib/search/interfaces";
+import type { FullChatState } from "@/app/chat/message/messageComponents/interfaces";
+import { groupPacketsByInd } from "@/app/chat/services/packetUtils";
+import { PacketType } from "@/app/chat/services/streamingModels";
+import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
 
 /**
  * Interface for a pending memory update request.
@@ -79,10 +97,93 @@ function getWorkspacePath(): string {
 }
 
 /**
- * Renders agent message content with full markdown support (code blocks, GFM tables, math, etc.)
+ * Extract citation data and document map from an array of packets.
+ * Returns { docs, citations, documentMap } for rendering popovers and sources.
  */
-function AgentMessageContent({ content }: { content: string }) {
-  const { renderedContent } = useMarkdownRenderer(content, undefined, "text-base");
+function extractCitationData(packets: Packet[]): {
+  docs: OnyxDocument[];
+  citations: StreamingCitation[];
+  documentMap: Map<string, OnyxDocument>;
+} {
+  const documentMap = new Map<string, OnyxDocument>();
+  const citations: StreamingCitation[] = [];
+  const seenCitationDocIds = new Set<string>();
+
+  for (const packet of packets) {
+    // Collect documents from search/fetch tool packets
+    if (
+      packet.obj.type === PacketType.SEARCH_TOOL_DELTA ||
+      packet.obj.type === PacketType.FETCH_TOOL_START
+    ) {
+      const toolObj = packet.obj as SearchToolDelta | FetchToolStart;
+      if ("documents" in toolObj && toolObj.documents) {
+        for (const doc of toolObj.documents) {
+          if (doc.document_id) {
+            documentMap.set(doc.document_id, doc);
+          }
+        }
+      }
+    }
+
+    // Collect citations
+    if (packet.obj.type === PacketType.CITATION_DELTA) {
+      const citationObj = packet.obj as CitationDelta;
+      if (citationObj.citations) {
+        for (const citation of citationObj.citations) {
+          if (!seenCitationDocIds.has(citation.document_id)) {
+            seenCitationDocIds.add(citation.document_id);
+            citations.push(citation);
+          }
+        }
+      }
+    }
+  }
+
+  // Build docs array indexed by citation number: docs[citation_num - 1] = document
+  const docs: OnyxDocument[] = [];
+  if (citations.length > 0) {
+    // Find the max citation number to size the array
+    const maxCitNum = Math.max(...citations.map((c) => c.citation_num));
+    for (let i = 0; i < maxCitNum; i++) {
+      const citation = citations.find((c) => c.citation_num === i + 1);
+      if (citation) {
+        const doc = documentMap.get(citation.document_id);
+        if (doc) {
+          docs[i] = doc;
+        }
+      }
+    }
+  }
+
+  return { docs, citations, documentMap };
+}
+
+/**
+ * Renders agent message content with full markdown support (code blocks, GFM tables, math, etc.)
+ * When docs are provided, citation popovers are enabled (e.g., [1] shows tooltip on hover).
+ */
+function AgentMessageContent({
+  content,
+  docs,
+  setPresentingDocument,
+  assistant,
+}: {
+  content: string;
+  docs?: OnyxDocument[] | null;
+  setPresentingDocument?: (doc: OnyxDocument) => void;
+  assistant?: { id: number; name: string; [key: string]: unknown } | null;
+}) {
+  const state = useMemo<FullChatState | undefined>(() => {
+    if (!docs || docs.length === 0 || !assistant) return undefined;
+    return {
+      handleFeedback: () => {},
+      assistant: assistant as FullChatState["assistant"],
+      docs,
+      setPresentingDocument: setPresentingDocument || (() => {}),
+    };
+  }, [docs, assistant, setPresentingDocument]);
+
+  const { renderedContent } = useMarkdownRenderer(content, state, "text-base");
   return (
     <div className="overflow-x-visible max-w-content-max break-words">
       {renderedContent}
@@ -103,6 +204,7 @@ export function BudAgentScreen() {
   const [chatState, setChatState] = useState<ChatState>("input");
   const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [sidebarSourcesMsgId, setSidebarSourcesMsgId] = useState<string | null>(null);
   const [bottomApproval, setBottomApproval] = useState<{
     toolCallId: string;
     toolName: string;
@@ -115,6 +217,8 @@ export function BudAgentScreen() {
   const currentAgentMessageIdRef = useRef<string | null>(null);
   const accumulatedContentRef = useRef<string>("");
   const toolCallsRef = useRef<ToolCallInfo[]>([]);
+  const packetsRef = useRef<Packet[]>([]);
+  const messageFinalizedRef = useRef<boolean>(false);
 
   const {
     currentSession,
@@ -148,7 +252,30 @@ export function BudAgentScreen() {
   // The ChatInputBar requires a non-null assistant, so we'll render a placeholder if none available
   const selectedAssistant = currentAgent || availableAssistants[0] || null;
 
+  // Minimal FullChatState for MultiToolRenderer (only needs handleFeedback + assistant)
+  const minimalChatState = useMemo<FullChatState | null>(() => {
+    if (!selectedAssistant) return null;
+    return {
+      handleFeedback: () => {},
+      assistant: selectedAssistant,
+    };
+  }, [selectedAssistant]);
+
   const messages = currentSession?.messages || [];
+
+  // Compute citation data for the sidebar-selected message
+  const sidebarData = useMemo(() => {
+    if (!sidebarSourcesMsgId) return null;
+    const msg = messages.find((m) => m.id === sidebarSourcesMsgId);
+    if (!msg?.packets || msg.packets.length === 0) return null;
+    const data = extractCitationData(msg.packets);
+    if (data.documentMap.size === 0) return null;
+    return data;
+  }, [sidebarSourcesMsgId, messages]);
+
+  const closeSidebar = useCallback(() => {
+    setSidebarSourcesMsgId(null);
+  }, []);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -201,6 +328,8 @@ export function BudAgentScreen() {
     // Reset refs for new agent response
     accumulatedContentRef.current = "";
     toolCallsRef.current = [];
+    packetsRef.current = [];
+    messageFinalizedRef.current = false;
 
     // Create initial agent message (will be updated via streaming)
     const agentMsg = addMessage(sessionId, {
@@ -227,6 +356,11 @@ export function BudAgentScreen() {
         workspacePath: getWorkspacePath(),
       },
       {
+        onPacket: (packet) => {
+          packetsRef.current = [...packetsRef.current, packet];
+          updateAgentMsg({ packets: [...packetsRef.current] });
+        },
+
         onThinking: () => {
           updateAgentMsg({ status: "thinking" });
         },
@@ -356,7 +490,7 @@ export function BudAgentScreen() {
         },
 
         onComplete: (content) => {
-          // Use the complete content from the event
+          messageFinalizedRef.current = true;
           updateAgentMsg({
             content: content || accumulatedContentRef.current,
             status: "complete",
@@ -364,6 +498,7 @@ export function BudAgentScreen() {
         },
 
         onError: (error) => {
+          messageFinalizedRef.current = true;
           updateAgentMsg({
             content:
               accumulatedContentRef.current ||
@@ -373,6 +508,7 @@ export function BudAgentScreen() {
         },
 
         onStopped: () => {
+          messageFinalizedRef.current = true;
           updateAgentMsg({
             content:
               accumulatedContentRef.current ||
@@ -387,6 +523,13 @@ export function BudAgentScreen() {
         },
 
         onDone: () => {
+          // Finalize message status if stream ended without explicit stop/error/stopped
+          if (!messageFinalizedRef.current) {
+            updateAgentMsg({
+              content: accumulatedContentRef.current || "",
+              status: "complete",
+            });
+          }
           setIsProcessing(false);
           setChatState("input");
           currentAgentMessageIdRef.current = null;
@@ -596,12 +739,16 @@ export function BudAgentScreen() {
 
   return (
     <div
-      className={cn(
-        "flex-1 flex flex-col min-h-0 relative rounded-xl m-4 ml-0 overflow-hidden",
-        isDark ? "bg-[#232526]" : "bg-white border border-gray-200"
-      )}
+      className="flex-1 flex flex-row min-h-0 m-4 ml-0 overflow-hidden"
       data-testid="bud-agent-screen"
     >
+      {/* Main content area */}
+      <div
+        className={cn(
+          "flex-1 flex flex-col min-h-0 relative overflow-hidden rounded-xl",
+          isDark && "bg-[#232526]"
+        )}
+      >
       {/* Grid Background */}
       <div
         className="absolute inset-0 pointer-events-none z-0"
@@ -689,9 +836,9 @@ export function BudAgentScreen() {
                       )}
                       <div className="w-full ml-4">
                         <div className="max-w-content-max break-words">
-                          {/* Thinking indicator */}
-                          {msg.status === "thinking" && !msg.content && (
-                            <ThinkingIndicator />
+                          {/* Initial loading dot before any packets arrive */}
+                          {msg.status === "thinking" && !msg.content && (!msg.packets || msg.packets.length === 0) && (
+                            <div className="py-1"><BlinkingDot /></div>
                           )}
 
                           {/* Status indicator - only for error/stopped states */}
@@ -712,8 +859,22 @@ export function BudAgentScreen() {
                             </span>
                           )}
 
-                          {/* Tool calls display */}
-                          {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          {/* Tool calls display — packet-based rendering */}
+                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => [PacketType.CUSTOM_TOOL_START, PacketType.SEARCH_TOOL_START, PacketType.FETCH_TOOL_START, PacketType.REASONING_START].includes(p.obj.type as PacketType)) ? (
+                            <div
+                              className="mb-3"
+                              data-testid="agent-tool-calls"
+                            >
+                              <MultiToolRenderer
+                                packetGroups={groupPacketsByInd(msg.packets)}
+                                chatState={minimalChatState}
+                                isComplete={msg.status === "complete" || msg.status === "error" || msg.status === "stopped"}
+                                isFinalAnswerComing={msg.packets.some((p) => p.obj.type === "message_start")}
+                                stopPacketSeen={msg.packets.some((p) => p.obj.type === "stop")}
+                              />
+                            </div>
+                          ) : msg.toolCalls && msg.toolCalls.length > 0 ? (
+                            /* Fallback for legacy sessions without packets */
                             <div
                               className="mb-3 space-y-2"
                               data-testid="agent-tool-calls"
@@ -725,41 +886,67 @@ export function BudAgentScreen() {
                                 />
                               ))}
                             </div>
-                          )}
+                          ) : null}
 
-                          {/* Markdown content */}
-                          {msg.content && (
-                            <AgentMessageContent content={msg.content} />
-                          )}
+                          {/* Markdown content with citation popovers */}
+                          {msg.content && (() => {
+                            const citationData = msg.packets && msg.packets.length > 0
+                              ? extractCitationData(msg.packets)
+                              : null;
+                            const hasCitations = citationData && citationData.citations.length > 0;
+                            const isSourcesExpanded = sidebarSourcesMsgId === msg.id;
+                            return (
+                              <>
+                                <AgentMessageContent
+                                  content={msg.content}
+                                  docs={citationData?.docs}
+                                  assistant={selectedAssistant}
+                                />
 
-                          {/* Copy button when message is complete */}
-                          {msg.status === "complete" && msg.content && (
-                            <div className="flex items-center gap-x-0.5 mt-1">
-                              <IconButton
-                                icon={
-                                  copiedMessageId === msg.id
-                                    ? SvgCheck
-                                    : SvgCopy
-                                }
-                                onClick={() => {
-                                  copyAll(msg.content);
-                                  setCopiedMessageId(msg.id);
-                                  if (copyTimeoutRef.current) {
-                                    clearTimeout(copyTimeoutRef.current);
-                                  }
-                                  copyTimeoutRef.current = setTimeout(() => {
-                                    setCopiedMessageId(null);
-                                  }, 2000);
-                                }}
-                                tertiary
-                                tooltip={
-                                  copiedMessageId === msg.id
-                                    ? "Copied!"
-                                    : "Copy"
-                                }
-                              />
-                            </div>
-                          )}
+                                {/* Copy button + Sources toggle on the same row */}
+                                {msg.status === "complete" && (
+                                  <div className="flex items-center gap-x-0.5 mt-1">
+                                    <IconButton
+                                      icon={
+                                        copiedMessageId === msg.id
+                                          ? SvgCheck
+                                          : SvgCopy
+                                      }
+                                      onClick={() => {
+                                        copyAll(msg.content);
+                                        setCopiedMessageId(msg.id);
+                                        if (copyTimeoutRef.current) {
+                                          clearTimeout(copyTimeoutRef.current);
+                                        }
+                                        copyTimeoutRef.current = setTimeout(() => {
+                                          setCopiedMessageId(null);
+                                        }, 2000);
+                                      }}
+                                      tertiary
+                                      tooltip={
+                                        copiedMessageId === msg.id
+                                          ? "Copied!"
+                                          : "Copy"
+                                      }
+                                    />
+                                    {hasCitations && (
+                                      <CitedSourcesToggle
+                                        citations={citationData.citations}
+                                        documentMap={citationData.documentMap}
+                                        nodeId={0}
+                                        onToggle={() => {
+                                          setSidebarSourcesMsgId(
+                                            isSourcesExpanded ? null : msg.id
+                                          );
+                                        }}
+                                      />
+                                    )}
+                                  </div>
+                                )}
+
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -767,24 +954,6 @@ export function BudAgentScreen() {
                 </div>
               )
             )}
-
-            {/* Thinking indicator when processing but no content yet */}
-            {isProcessing &&
-              (!currentAgentMessageIdRef.current ||
-                !accumulatedContentRef.current) && (
-                <div className="py-5 relative flex">
-                  <div className="w-full max-w-message-max mx-auto">
-                    <div className="flex items-start">
-                      {selectedAssistant && (
-                        <AgentIcon agent={selectedAssistant} />
-                      )}
-                      <div className="ml-4">
-                        <BlinkingDot addMargin />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
             <div ref={messagesEndRef} />
           </div>
@@ -851,6 +1020,147 @@ export function BudAgentScreen() {
           onClose={handleMemoryUpdateDialogClose}
         />
       )}
+      </div>{/* End main content area */}
+
+      {/* Sources Sidebar Drawer */}
+      <div
+        className={cn(
+          "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
+          sidebarData ? "w-[25rem]" : "w-[0rem]"
+        )}
+      >
+        <div className="h-full w-[25rem]">
+          {sidebarData && (
+            <AgentSourcesSidebar
+              citationData={sidebarData}
+              onClose={closeSidebar}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Right-side drawer showing cited sources, matching the chat session's DocumentResults sidebar.
+ * Uses the same ChatDocumentDisplay component for individual document rendering.
+ */
+function AgentSourcesSidebar({
+  citationData,
+  onClose,
+}: {
+  citationData: {
+    docs: OnyxDocument[];
+    citations: StreamingCitation[];
+    documentMap: Map<string, OnyxDocument>;
+  };
+  onClose: () => void;
+}) {
+  const { citations, documentMap } = citationData;
+  const [, setPresentingDocument] = useState<OnyxDocument | null>(null);
+
+  // Build the list of all documents from the map, deduped
+  const allDocs = useMemo(() => {
+    return removeDuplicateDocs(Array.from(documentMap.values()));
+  }, [documentMap]);
+
+  // Separate cited vs other documents
+  const citedDocIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of citations) {
+      ids.add(c.document_id);
+    }
+    return ids;
+  }, [citations]);
+
+  const citedDocs = useMemo(
+    () => allDocs.filter((d) => citedDocIds.has(d.document_id)),
+    [allDocs, citedDocIds]
+  );
+  const otherDocs = useMemo(
+    () => allDocs.filter((d) => !citedDocIds.has(d.document_id)),
+    [allDocs, citedDocIds]
+  );
+
+  return (
+    <div
+      id="onyx-chat-sidebar"
+      className="overflow-y-auto h-full w-full"
+    >
+      <div className="h-full flex flex-col p-3 gap-6">
+        {citedDocs.length > 0 && (
+          <div>
+            <div className="flex flex-row w-full items-center justify-between gap-2">
+              <div className="flex items-center gap-2 w-full px-3">
+                <SvgSearchMenu className="w-[1.3rem] h-[1.3rem] stroke-text-03" />
+                <Text headingH3 text03>
+                  Cited Sources
+                </Text>
+              </div>
+              <IconButton
+                icon={SvgArrowWallRight}
+                tertiary
+                onClick={onClose}
+                tooltip="Close Sidebar"
+              />
+            </div>
+            <Separator className="border-b my-3 mx-2" />
+            <div className="flex flex-col gap-1 items-center justify-center">
+              {citedDocs.map((doc) => (
+                <ChatDocumentDisplay
+                  key={doc.document_id}
+                  setPresentingDocument={setPresentingDocument as any}
+                  closeSidebar={onClose}
+                  modal={false}
+                  document={doc}
+                  isSelected={false}
+                  handleSelect={() => {}}
+                  hideSelection
+                  tokenLimitReached={false}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {otherDocs.length > 0 && (
+          <div>
+            <div className="flex flex-row w-full items-center justify-between gap-2">
+              <div className="flex items-center gap-2 w-full px-3">
+                <SvgSearchMenu className="w-[1.3rem] h-[1.3rem] stroke-text-03" />
+                <Text headingH3 text03>
+                  {citedDocs.length > 0 ? "More" : "Found Sources"}
+                </Text>
+              </div>
+              {citedDocs.length === 0 && (
+                <IconButton
+                  icon={SvgArrowWallRight}
+                  tertiary
+                  onClick={onClose}
+                  tooltip="Close Sidebar"
+                />
+              )}
+            </div>
+            <Separator className="border-b my-3 mx-2" />
+            <div className="flex flex-col gap-1 items-center justify-center">
+              {otherDocs.map((doc) => (
+                <ChatDocumentDisplay
+                  key={doc.document_id}
+                  setPresentingDocument={setPresentingDocument as any}
+                  closeSidebar={onClose}
+                  modal={false}
+                  document={doc}
+                  isSelected={false}
+                  handleSelect={() => {}}
+                  hideSelection
+                  tokenLimitReached={false}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

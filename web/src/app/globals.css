@@ -141,7 +141,7 @@
 .font-heading-h2 {
     font-family: var(--font-open-sans);
     font-size: 24px;
-    font-weight: 600;
+    font-weight: 400;
     line-height: 36px;
     letter-spacing: -0.24px;
 }
@@ -149,7 +149,7 @@
 .font-heading-h3 {
     font-family: var(--font-open-sans);
     font-size: 18px;
-    font-weight: 600;
+    font-weight: 400;
     line-height: 28px;
     letter-spacing: -0.18px;
 }
@@ -157,7 +157,7 @@
 .font-heading-h3-muted {
     font-family: var(--font-open-sans);
     font-size: 18px;
-    font-weight: 500;
+    font-weight: 400;
     line-height: 28px;
     letter-spacing: -0.18px;
 }
@@ -211,7 +211,7 @@
     font-family: var(--font-open-sans);
     font-size: 20px;
     line-height: 32px;
-    font-weight: 600;
+    font-weight: 400;
     /* letter-spacing: -0.2px; */
 }
 
@@ -219,7 +219,7 @@
     font-family: var(--font-open-sans);
     font-size: 18px;
     line-height: 28px;
-    font-weight: 600;
+    font-weight: 400;
     /* letter-spacing: -0.18px; */
 }
 
@@ -229,7 +229,7 @@
     font-family: var(--font-open-sans);
     font-size: 16px;
     line-height: 28px;
-    font-weight: 600;
+    font-weight: 400;
     /* letter-spacing: -0.16px; */
 }
 

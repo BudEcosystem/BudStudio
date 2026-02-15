@@ -161,6 +161,10 @@ def add_session_message(
     tool_input: dict[str, Any] | None = None,
     tool_output: dict[str, Any] | None = None,
     tool_error: str | None = None,
+    tool_call_id: str | None = None,
+    step_number: int | None = None,
+    thinking_content: str | None = None,
+    ui_spec: dict[str, Any] | None = None,
 ) -> AgentMessage:
     """Add a new message to an agent session."""
     message = AgentMessage(
@@ -171,6 +175,10 @@ def add_session_message(
         tool_input=tool_input,
         tool_output=tool_output,
         tool_error=tool_error,
+        tool_call_id=tool_call_id,
+        step_number=step_number,
+        thinking_content=thinking_content,
+        ui_spec=ui_spec,
     )
     db_session.add(message)
 
@@ -179,6 +187,62 @@ def add_session_message(
     session = db_session.execute(stmt).scalar_one_or_none()
     if session:
         session.updated_at = datetime.utcnow()
+
+    db_session.commit()
+    db_session.refresh(message)
+    return message
+
+
+def add_tool_message(
+    db_session: Session,
+    session_id: UUID,
+    tool_name: str,
+    tool_input: dict[str, Any],
+    tool_call_id: str,
+    step_number: int,
+    tool_output: dict[str, Any] | None = None,
+    tool_error: str | None = None,
+    ui_spec: dict[str, Any] | None = None,
+) -> AgentMessage:
+    """Create a tool message with tool_call_id and step_number."""
+    return add_session_message(
+        db_session=db_session,
+        session_id=session_id,
+        role=AgentMessageRole.TOOL,
+        tool_name=tool_name,
+        tool_input=tool_input,
+        tool_output=tool_output,
+        tool_error=tool_error,
+        tool_call_id=tool_call_id,
+        step_number=step_number,
+        ui_spec=ui_spec,
+    )
+
+
+def update_tool_message_result(
+    db_session: Session,
+    session_id: UUID,
+    tool_call_id: str,
+    tool_output: dict[str, Any] | None = None,
+    tool_error: str | None = None,
+    ui_spec: dict[str, Any] | None = None,
+) -> AgentMessage | None:
+    """Update an existing tool message with its result after execution."""
+    stmt = select(AgentMessage).where(
+        AgentMessage.session_id == session_id,
+        AgentMessage.tool_call_id == tool_call_id,
+        AgentMessage.role == AgentMessageRole.TOOL,
+    )
+    message = db_session.execute(stmt).scalar_one_or_none()
+    if message is None:
+        return None
+
+    if tool_output is not None:
+        message.tool_output = tool_output
+    if tool_error is not None:
+        message.tool_error = tool_error
+    if ui_spec is not None:
+        message.ui_spec = ui_spec
 
     db_session.commit()
     db_session.refresh(message)

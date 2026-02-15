@@ -161,7 +161,10 @@ def setup_onyx(
         ),
     )
     if not success:
-        raise RuntimeError("Could not connect to Vespa within the specified timeout.")
+        logger.warning(
+            "Could not connect to Vespa within the specified timeout. "
+            "Search features will be unavailable. Continuing startup..."
+        )
 
     logger.notice(f"Model Server: http://{MODEL_SERVER_HOST}:{MODEL_SERVER_PORT}")
     if search_settings.provider_type is None:

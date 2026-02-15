@@ -1,10 +1,13 @@
 """Local tool bridge -- creates FunctionTool objects that delegate execution to the desktop.
 
 When the LLM requests a local tool (file ops, bash, etc.), the bridge:
-1. Emits a BudAgentLocalToolRequest via the packet queue
-2. Blocks on Redis BLPOP waiting for the desktop to execute and POST the result
-3. Returns the result to the Agents SDK
+1. Emits Packet objects (CustomToolStart, AgentLocalToolRequest, etc.)
+2. Persists tool messages to the database
+3. Blocks on Redis BLPOP waiting for the desktop to execute and POST the result
+4. Returns the result to the Agents SDK
 """
+
+from __future__ import annotations
 
 import json
 import uuid
@@ -12,19 +15,28 @@ from queue import Queue
 from typing import Any
 from typing import Callable
 from typing import Coroutine
+from typing import TYPE_CHECKING
 
 import redis
 
 from agents import FunctionTool
 from agents import RunContextWrapper
 
-from onyx.agents.bud_agent.streaming_models import BudAgentApprovalRequired
-from onyx.agents.bud_agent.streaming_models import BudAgentLocalToolRequest
-from onyx.agents.bud_agent.streaming_models import BudAgentToolResult
-from onyx.agents.bud_agent.streaming_models import BudAgentToolStart
 from onyx.agents.bud_agent.tool_definitions import LOCAL_TOOL_SCHEMAS
 from onyx.agents.bud_agent.tool_definitions import requires_approval
+from onyx.db.agent import add_tool_message
+from onyx.db.agent import update_tool_message_result
+from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
+from onyx.server.query_and_chat.streaming_models import AgentLocalToolRequest
+from onyx.server.query_and_chat.streaming_models import CustomToolDelta
+from onyx.server.query_and_chat.streaming_models import CustomToolStart
+from onyx.server.query_and_chat.streaming_models import Packet
+from onyx.server.query_and_chat.streaming_models import SectionEnd
 from onyx.utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from onyx.agents.bud_agent.orchestrator import BudAgentOrchestrator
+    from sqlalchemy.orm import Session
 
 logger = setup_logger()
 
@@ -46,10 +58,21 @@ class LocalToolBridge:
         session_id: str,
         packet_queue: Queue[Any],
         redis_client: redis.Redis,  # type: ignore[type-arg]
+        db_session: Session | None = None,
+        orchestrator: BudAgentOrchestrator | None = None,
     ) -> None:
         self._session_id = session_id
         self._packet_queue = packet_queue
         self._redis_client = redis_client
+        self._db_session = db_session
+        self._orchestrator = orchestrator
+
+    def _emit(self, obj: Any, step: int | None = None) -> None:
+        """Helper to put a Packet on the queue."""
+        ind = step if step is not None else (
+            self._orchestrator.step_number if self._orchestrator else 0
+        )
+        self._packet_queue.put(Packet(ind=ind, obj=obj))
 
     def create_all_local_tools(self) -> list[FunctionTool]:
         """Create FunctionTool objects for all local tools."""
@@ -85,15 +108,31 @@ class LocalToolBridge:
                 json.loads(json_string) if json_string else {}
             )
 
-            # Emit tool_start event
-            self._packet_queue.put(
-                BudAgentToolStart(
-                    tool_name=tool_name,
-                    tool_input=tool_input,
-                    tool_call_id=tool_call_id,
-                    is_local=True,
-                )
-            )
+            # Assign a step number for this tool call, closing any open
+            # text/reasoning section so the tool gets its own step index.
+            if self._orchestrator:
+                step = self._orchestrator.close_open_section_for_tool()
+                self._orchestrator.step_number += 1
+            else:
+                step = 0
+
+            # Emit CustomToolStart packet
+            self._emit(CustomToolStart(tool_name=tool_name), step=step)
+
+            # Persist tool message to DB
+            if self._db_session:
+                try:
+                    from uuid import UUID as UUIDType
+                    add_tool_message(
+                        db_session=self._db_session,
+                        session_id=UUIDType(self._session_id),
+                        tool_name=tool_name,
+                        tool_input=tool_input,
+                        tool_call_id=tool_call_id,
+                        step_number=step,
+                    )
+                except Exception:
+                    logger.warning("Failed to persist tool message", exc_info=True)
 
             # Handle approval if required
             if requires_approval(tool_name):
@@ -102,43 +141,87 @@ class LocalToolBridge:
                 )
                 if not approved:
                     error_msg = f"Tool '{tool_name}' was denied by the user."
-                    self._packet_queue.put(
-                        BudAgentToolResult(
+                    self._emit(
+                        CustomToolDelta(
                             tool_name=tool_name,
-                            tool_output=None,
-                            tool_error=error_msg,
-                            tool_call_id=tool_call_id,
-                        )
+                            response_type="error",
+                            data=error_msg,
+                        ),
+                        step=step,
                     )
+                    self._emit(SectionEnd(), step=step)
+
+                    # Update DB with denial
+                    if self._db_session:
+                        try:
+                            from uuid import UUID as UUIDType
+                            update_tool_message_result(
+                                db_session=self._db_session,
+                                session_id=UUIDType(self._session_id),
+                                tool_call_id=tool_call_id,
+                                tool_error=error_msg,
+                                ui_spec={"approval_status": "denied"},
+                            )
+                        except Exception:
+                            logger.warning("Failed to update denied tool", exc_info=True)
                     return error_msg
 
             # Emit local tool request (tells desktop to execute)
-            self._packet_queue.put(
-                BudAgentLocalToolRequest(
+            self._emit(
+                AgentLocalToolRequest(
                     tool_name=tool_name,
                     tool_input=tool_input,
                     tool_call_id=tool_call_id,
-                    requires_approval=False,  # Already handled above
-                )
+                ),
+                step=step,
             )
 
             # Block on Redis waiting for desktop result
             result = self._wait_for_tool_result(tool_name, tool_call_id)
 
-            # Emit tool_result event
-            self._packet_queue.put(
-                BudAgentToolResult(
-                    tool_name=tool_name,
-                    tool_output=result.get("output"),
-                    tool_error=result.get("error"),
-                    tool_call_id=tool_call_id,
+            # Emit tool result as CustomToolDelta packet
+            output = result.get("output", "")
+            error = result.get("error")
+
+            if error:
+                self._emit(
+                    CustomToolDelta(
+                        tool_name=tool_name,
+                        response_type="error",
+                        data=error,
+                    ),
+                    step=step,
                 )
-            )
+            else:
+                self._emit(
+                    CustomToolDelta(
+                        tool_name=tool_name,
+                        response_type="text",
+                        data=output,
+                    ),
+                    step=step,
+                )
+
+            self._emit(SectionEnd(), step=step)
+
+            # Update DB with result
+            if self._db_session:
+                try:
+                    from uuid import UUID as UUIDType
+                    update_tool_message_result(
+                        db_session=self._db_session,
+                        session_id=UUIDType(self._session_id),
+                        tool_call_id=tool_call_id,
+                        tool_output={"output": output} if output else None,
+                        tool_error=error,
+                    )
+                except Exception:
+                    logger.warning("Failed to update tool result", exc_info=True)
 
             # Return to Agents SDK
-            if result.get("error"):
-                return f"Error: {result['error']}"
-            return result.get("output", "")
+            if error:
+                return f"Error: {error}"
+            return output or ""
 
         return handler
 
@@ -149,8 +232,8 @@ class LocalToolBridge:
         tool_call_id: str,
     ) -> bool:
         """Emit approval request and block until user responds."""
-        self._packet_queue.put(
-            BudAgentApprovalRequired(
+        self._emit(
+            AgentApprovalRequired(
                 tool_name=tool_name,
                 tool_input=tool_input,
                 tool_call_id=tool_call_id,

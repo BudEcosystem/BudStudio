@@ -46,7 +46,7 @@ interface ExecuteRequest {
 }
 
 /**
- * Backend SSE event types.
+ * Backend SSE event types (legacy format).
  */
 interface BackendEvent {
   type: string;
@@ -61,6 +61,40 @@ interface BackendEvent {
   error?: string;
   new_session_id?: string;
   summary?: string;
+}
+
+/**
+ * New Packet format from the backend orchestrator.
+ * Backend now emits structured packets: { ind: number, obj: { type: "...", ... } }
+ */
+interface PacketObj {
+  type: string;
+  tool_name?: string;
+  tool_input?: Record<string, unknown> | null;
+  tool_call_id?: string;
+  new_session_id?: string;
+  summary?: string;
+  [key: string]: unknown;
+}
+
+interface BackendPacket {
+  ind: number;
+  obj: PacketObj;
+}
+
+/**
+ * Check if parsed JSON is in the new Packet format.
+ */
+function isPacketFormat(data: unknown): data is BackendPacket {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "ind" in data &&
+    "obj" in data &&
+    typeof (data as BackendPacket).obj === "object" &&
+    (data as BackendPacket).obj !== null &&
+    "type" in (data as BackendPacket).obj
+  );
 }
 
 /**
@@ -458,16 +492,61 @@ export async function POST(request: NextRequest): Promise<Response> {
 
           // Parse JSON line (backend sends JSON lines, not SSE "data:" format)
           try {
-            const backendEvent = JSON.parse(trimmedLine) as BackendEvent;
+            const parsed = JSON.parse(trimmedLine) as unknown;
+
+            // ── New Packet format: { ind, obj: { type, ... } } ──
+            if (isPacketFormat(parsed)) {
+              const packetType = parsed.obj.type;
+
+              // Intercept local tool requests — execute locally
+              if (packetType === "agent_local_tool_request") {
+                const toolName = parsed.obj.tool_name || "";
+                const toolInput =
+                  (parsed.obj.tool_input as Record<string, unknown>) || {};
+                const toolCallId = parsed.obj.tool_call_id || "";
+
+                await executeLocalTool(
+                  registry,
+                  toolName,
+                  toolInput,
+                  toolCallId,
+                  sessionId,
+                  apiBaseUrl,
+                  cookieString
+                );
+                continue;
+              }
+
+              // Intercept session compaction to update sessionId
+              if (packetType === "agent_session_compacted") {
+                const newId = parsed.obj.new_session_id;
+                if (typeof newId === "string" && newId) {
+                  sessionId = newId;
+                  debugLog(`Session compacted, new sessionId: ${sessionId}`);
+                }
+              }
+
+              // Forward the packet as-is to the browser (useAgentSSE.ts handles it)
+              await writer.write(
+                encoder.encode(`data: ${trimmedLine}\n\n`)
+              );
+
+              // Stop on terminal packet types
+              if (
+                packetType === "agent_done" ||
+                packetType === "error" ||
+                packetType === "agent_stopped"
+              ) {
+                break;
+              }
+
+              continue;
+            }
+
+            // ── Legacy format: { type: "bud_agent_*", ... } ──
+            const backendEvent = parsed as BackendEvent;
 
             // Handle local tool requests — execute locally and POST result to backend.
-            // NOTE: Do NOT emit tool_start/tool_result here. The backend's
-            // LocalToolBridge already emits bud_agent_tool_start before this event
-            // and bud_agent_tool_result after it receives our result. Those events
-            // are translated and forwarded to the browser by the translateEvent()
-            // path below, so emitting duplicates here would cause the UI to show
-            // each tool call twice.
-            // Handle compaction: update sessionId for subsequent tool results
             if (backendEvent.type === "bud_agent_session_compacted") {
               if (backendEvent.new_session_id) {
                 sessionId = backendEvent.new_session_id;
@@ -480,7 +559,6 @@ export async function POST(request: NextRequest): Promise<Response> {
               const toolInput = backendEvent.tool_input || {};
               const toolCallId = backendEvent.tool_call_id || "";
 
-              // Execute the tool locally and POST result to backend
               await executeLocalTool(
                 registry,
                 toolName,
@@ -519,12 +597,20 @@ export async function POST(request: NextRequest): Promise<Response> {
       // Process remaining buffer
       if (buffer.trim()) {
         try {
-          const backendEvent = JSON.parse(buffer.trim()) as BackendEvent;
-          const frontendEvent = translateEvent(backendEvent);
-          if (frontendEvent) {
+          const parsed = JSON.parse(buffer.trim()) as unknown;
+          if (isPacketFormat(parsed)) {
+            // Forward packet as-is
             await writer.write(
-              encoder.encode(formatSSEMessage(frontendEvent))
+              encoder.encode(`data: ${buffer.trim()}\n\n`)
             );
+          } else {
+            const backendEvent = parsed as BackendEvent;
+            const frontendEvent = translateEvent(backendEvent);
+            if (frontendEvent) {
+              await writer.write(
+                encoder.encode(formatSSEMessage(frontendEvent))
+              );
+            }
           }
         } catch {
           debugLog(`Failed to parse final buffer: ${buffer}`);

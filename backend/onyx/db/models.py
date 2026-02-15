@@ -4010,6 +4010,10 @@ class AgentMessage(Base):
         postgresql.JSONB(), nullable=True
     )
     tool_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Links tool_start and tool_result messages for the same tool call
+    tool_call_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Sequential ordering within a turn, maps to packet `ind`
+    step_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Usage tracking
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Extended thinking content (for Claude models with extended thinking)

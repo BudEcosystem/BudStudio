@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from onyx.agents.bud_agent.orchestrator import BudAgentOrchestrator
+from onyx.agents.bud_agent.packet_utils import translate_agent_messages_to_packets
 from onyx.auth.users import current_user
 from onyx.context.search.utils import get_query_embeddings
 from onyx.db.agent import add_session_message
@@ -90,6 +91,10 @@ class AgentMessageSnapshot(BaseModel):
     tool_input: dict[str, Any] | None
     tool_output: dict[str, Any] | None
     tool_error: str | None
+    tool_call_id: str | None = None
+    step_number: int | None = None
+    thinking_content: str | None = None
+    ui_spec: dict[str, Any] | None = None
     created_at: datetime
 
 
@@ -113,8 +118,15 @@ class SessionListResponse(BaseModel):
     sessions: list[AgentSessionSnapshot]
 
 
+class PacketResponse(BaseModel):
+    """Serializable representation of a Packet for JSON API responses."""
+    ind: int
+    obj: dict[str, Any]
+
+
 class SessionHistoryResponse(BaseModel):
     messages: list[AgentMessageSnapshot]
+    packets: list[list[PacketResponse]]
 
 
 class DeleteSessionResponse(BaseModel):
@@ -359,6 +371,20 @@ def get_session_history(
         offset=offset,
     )
 
+    # Reconstruct packets from messages
+    packet_turns = translate_agent_messages_to_packets(messages)
+    serialized_packets: list[list[PacketResponse]] = []
+    for turn in packet_turns:
+        serialized_turn: list[PacketResponse] = []
+        for pkt in turn:
+            serialized_turn.append(
+                PacketResponse(
+                    ind=pkt.ind,
+                    obj=pkt.obj.model_dump(mode="json", exclude_none=True),
+                )
+            )
+        serialized_packets.append(serialized_turn)
+
     return SessionHistoryResponse(
         messages=[
             AgentMessageSnapshot(
@@ -370,10 +396,15 @@ def get_session_history(
                 tool_input=m.tool_input,
                 tool_output=m.tool_output,
                 tool_error=m.tool_error,
+                tool_call_id=getattr(m, "tool_call_id", None),
+                step_number=getattr(m, "step_number", None),
+                thinking_content=getattr(m, "thinking_content", None),
+                ui_spec=getattr(m, "ui_spec", None),
                 created_at=m.created_at,
             )
             for m in messages
-        ]
+        ],
+        packets=serialized_packets,
     )
 
 

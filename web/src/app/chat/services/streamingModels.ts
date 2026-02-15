@@ -32,6 +32,13 @@ export enum PacketType {
   CITATION_START = "citation_start",
   CITATION_DELTA = "citation_delta",
   CITATION_END = "citation_end",
+
+  // Agent-specific packets
+  AGENT_APPROVAL_REQUIRED = "agent_approval_required",
+  AGENT_SESSION_COMPACTED = "agent_session_compacted",
+  AGENT_LOCAL_TOOL_REQUEST = "agent_local_tool_request",
+  AGENT_STOPPED = "agent_stopped",
+  AGENT_DONE = "agent_done",
 }
 
 // Basic Message Packets
@@ -59,6 +66,11 @@ export interface Stop extends BaseObj {
 
 export interface SectionEnd extends BaseObj {
   type: "section_end";
+}
+
+export interface PacketException extends BaseObj {
+  type: "error";
+  exception?: string;
 }
 
 // Specific tool packets
@@ -136,6 +148,42 @@ export interface CitationDelta extends BaseObj {
   citations: StreamingCitation[];
 }
 
+// Agent-specific packets
+export interface AgentApprovalRequired extends BaseObj {
+  type: "agent_approval_required";
+  tool_name: string;
+  tool_input: Record<string, unknown> | null;
+  tool_call_id: string;
+}
+
+export interface AgentSessionCompacted extends BaseObj {
+  type: "agent_session_compacted";
+  new_session_id: string;
+  summary: string;
+}
+
+export interface AgentLocalToolRequest extends BaseObj {
+  type: "agent_local_tool_request";
+  tool_name: string;
+  tool_input: Record<string, unknown> | null;
+  tool_call_id: string;
+}
+
+export interface AgentStopped extends BaseObj {
+  type: "agent_stopped";
+}
+
+export interface AgentDone extends BaseObj {
+  type: "agent_done";
+}
+
+export type AgentObj =
+  | AgentApprovalRequired
+  | AgentSessionCompacted
+  | AgentLocalToolRequest
+  | AgentStopped
+  | AgentDone;
+
 export type ChatObj = MessageStart | MessageDelta | MessageEnd;
 
 export type StopObj = Stop;
@@ -167,7 +215,9 @@ export type ObjTypes =
   | ReasoningObj
   | StopObj
   | SectionEndObj
-  | CitationObj;
+  | CitationObj
+  | AgentObj
+  | PacketException;
 
 // Packet wrapper for streaming objects
 export interface Packet {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback } from "react";
-import type { AgentEvent } from "@/lib/agent/types";
+import type { Packet, PacketType } from "@/app/chat/services/streamingModels";
 import type { ToolCallInfo } from "@/components/desktop/AgentSessionContext";
 
 /**
@@ -14,67 +14,64 @@ export interface AgentExecuteParams {
 }
 
 /**
- * Callbacks for handling agent events.
+ * Callbacks for handling agent packets and events.
  */
 export interface AgentEventCallbacks {
-  /** Called when the agent starts thinking */
+  /** Called for each incoming packet (unified rendering path) */
+  onPacket?: (packet: Packet) => void;
+  /** Called when the agent starts thinking (reasoning_start packet) */
   onThinking?: () => void;
-  /** Called when the agent streams text */
+  /** Called when the agent streams text (message_delta packet) */
   onText?: (content: string) => void;
-  /** Called when a tool starts executing */
+  /** Called when a tool starts executing (custom_tool_start packet) */
   onToolStart?: (toolName: string, toolInput: Record<string, unknown>, toolCallId: string) => void;
-  /** Called when a tool completes */
+  /** Called when a tool completes (custom_tool_delta with result) */
   onToolResult?: (
     toolName: string,
     toolOutput: string,
     toolError: string | undefined,
     toolCallId: string
   ) => void;
-  /** Called when a tool requires approval */
+  /** Called when a tool requires approval (agent_approval_required packet) */
   onApprovalRequired?: (
     toolName: string,
     toolInput: Record<string, unknown>,
     toolCallId: string
   ) => void;
-  /** Called when the agent completes successfully */
+  /** Called when streaming completes (stop packet) */
   onComplete?: (content: string) => void;
   /** Called when an error occurs */
   onError?: (error: string) => void;
   /** Called when the agent is stopped */
   onStopped?: () => void;
-  /** Called when the SSE stream is done (after error, complete, or stopped) */
+  /** Called when the SSE stream is done (agent_done packet or stream end) */
   onDone?: () => void;
-  /** Called when the session is compacted and a new session is created */
+  /** Called when the session is compacted */
   onSessionCompacted?: (newSessionId: string, summary: string) => void;
 }
 
 /**
  * Hook for executing an agent via SSE streaming.
  *
- * This hook manages the SSE connection to the local agent API and
- * provides callbacks for handling different event types.
- *
- * @returns An object with execute and abort functions
+ * SSE events arrive as Packet objects: { ind: number, obj: { type: "...", ... } }
+ * The hook dispatches to both unified onPacket callback and individual event callbacks.
  */
 export function useAgentSSE() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  /**
-   * Execute an agent request and stream events via SSE.
-   */
   const execute = useCallback(
     async (params: AgentExecuteParams, callbacks: AgentEventCallbacks): Promise<void> => {
-      // Abort any existing connection
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
 
-      // Create a new abort controller
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
+      let accumulatedContent = "";
+      // Track tool_call_ids from agent_local_tool_request packets
+      const toolCallIds = new Map<number, string>();
 
       try {
-        // Detect the user's timezone from the browser
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
         const response = await fetch("/api/local-agent/execute", {
@@ -104,7 +101,6 @@ export function useAgentSSE() {
           return;
         }
 
-        // Read the SSE stream
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -116,58 +112,63 @@ export function useAgentSSE() {
             break;
           }
 
-          // Decode and add to buffer
           buffer += decoder.decode(value, { stream: true });
 
-          // Process complete SSE messages
           const lines = buffer.split("\n");
-          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
             const trimmedLine = line.trim();
 
-            // Skip empty lines and comments
             if (!trimmedLine || trimmedLine.startsWith(":")) {
               continue;
             }
 
-            // Parse SSE data lines
+            // Parse JSON line (not SSE data: prefix for packet format)
+            let jsonStr = trimmedLine;
             if (trimmedLine.startsWith("data: ")) {
-              const jsonStr = trimmedLine.slice(6);
-              try {
-                const event = JSON.parse(jsonStr) as AgentEvent;
-                handleEvent(event, callbacks);
+              jsonStr = trimmedLine.slice(6);
+            }
 
-                // Check for terminal events
-                if (
-                  event.type === "done" ||
-                  event.type === "error" ||
-                  event.type === "stopped"
-                ) {
-                  return;
-                }
-              } catch (e) {
-                console.error("Failed to parse SSE event:", e, jsonStr);
+            try {
+              const packet = JSON.parse(jsonStr) as Packet;
+
+              // Dispatch to onPacket for unified rendering
+              callbacks.onPacket?.(packet);
+
+              // Also dispatch to individual callbacks for backward compat
+              const terminated = handlePacket(
+                packet,
+                callbacks,
+                accumulatedContent,
+                toolCallIds,
+                (c: string) => { accumulatedContent = c; }
+              );
+
+              if (terminated) {
+                return;
               }
+            } catch (e) {
+              console.error("Failed to parse SSE packet:", e, jsonStr);
             }
           }
         }
 
         // Process any remaining buffer
         if (buffer.trim()) {
-          const trimmedLine = buffer.trim();
-          if (trimmedLine.startsWith("data: ")) {
-            const jsonStr = trimmedLine.slice(6);
-            try {
-              const event = JSON.parse(jsonStr) as AgentEvent;
-              handleEvent(event, callbacks);
-            } catch (e) {
-              console.error("Failed to parse final SSE event:", e, jsonStr);
-            }
+          let jsonStr = buffer.trim();
+          if (jsonStr.startsWith("data: ")) {
+            jsonStr = jsonStr.slice(6);
+          }
+          try {
+            const packet = JSON.parse(jsonStr) as Packet;
+            callbacks.onPacket?.(packet);
+            handlePacket(packet, callbacks, accumulatedContent, toolCallIds, (c: string) => { accumulatedContent = c; });
+          } catch (e) {
+            console.error("Failed to parse final SSE packet:", e, jsonStr);
           }
         }
 
-        // If we got here without a done event, call onDone
         callbacks.onDone?.();
       } catch (error) {
         if ((error as Error).name === "AbortError") {
@@ -186,9 +187,6 @@ export function useAgentSSE() {
     []
   );
 
-  /**
-   * Abort the current SSE connection.
-   */
   const abort = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -200,41 +198,108 @@ export function useAgentSSE() {
 }
 
 /**
- * Handle an agent event by calling the appropriate callback.
+ * Handle a Packet by dispatching to the appropriate callback.
+ * Returns true if this is a terminal event.
  */
-function handleEvent(event: AgentEvent, callbacks: AgentEventCallbacks): void {
-  switch (event.type) {
-    case "thinking":
+function handlePacket(
+  packet: Packet,
+  callbacks: AgentEventCallbacks,
+  accumulatedContent: string,
+  toolCallIds: Map<number, string>,
+  setContent: (c: string) => void,
+): boolean {
+  const obj = packet.obj;
+  const type = obj.type;
+
+  switch (type) {
+    case "reasoning_start":
       callbacks.onThinking?.();
       break;
-    case "text":
-      callbacks.onText?.(event.content);
+
+    case "message_delta": {
+      const content = (obj as { content: string }).content;
+      const newContent = accumulatedContent + content;
+      setContent(newContent);
+      callbacks.onText?.(content);
       break;
-    case "tool_start":
-      callbacks.onToolStart?.(event.toolName, event.toolInput, event.toolCallId);
+    }
+
+    case "custom_tool_start": {
+      const toolObj = obj as { tool_name: string };
+      callbacks.onToolStart?.(toolObj.tool_name, {}, "");
       break;
-    case "tool_result":
-      callbacks.onToolResult?.(event.toolName, event.toolOutput, event.toolError, event.toolCallId);
+    }
+
+    case "custom_tool_delta": {
+      const toolObj = obj as { tool_name: string; response_type: string; data?: unknown };
+      const output = typeof toolObj.data === "string" ? toolObj.data : JSON.stringify(toolObj.data ?? "");
+      const isError = toolObj.response_type === "error";
+      callbacks.onToolResult?.(
+        toolObj.tool_name,
+        isError ? "" : output,
+        isError ? output : undefined,
+        ""
+      );
       break;
-    case "approval_required":
-      callbacks.onApprovalRequired?.(event.toolName, event.toolInput, event.toolCallId);
+    }
+
+    case "agent_approval_required": {
+      const approvalObj = obj as {
+        tool_name: string;
+        tool_input: Record<string, unknown> | null;
+        tool_call_id: string;
+      };
+      callbacks.onApprovalRequired?.(
+        approvalObj.tool_name,
+        approvalObj.tool_input || {},
+        approvalObj.tool_call_id
+      );
       break;
-    case "complete":
-      callbacks.onComplete?.(event.content);
+    }
+
+    case "agent_local_tool_request": {
+      const reqObj = obj as {
+        tool_name: string;
+        tool_input: Record<string, unknown> | null;
+        tool_call_id: string;
+      };
+      // Track tool_call_id for this step
+      toolCallIds.set(packet.ind, reqObj.tool_call_id);
+      // Also emit as tool_start with actual tool_call_id
+      callbacks.onToolStart?.(
+        reqObj.tool_name,
+        reqObj.tool_input || {},
+        reqObj.tool_call_id
+      );
       break;
-    case "error":
-      callbacks.onError?.(event.error);
+    }
+
+    case "stop":
+      callbacks.onComplete?.(accumulatedContent);
       break;
-    case "stopped":
+
+    case "error": {
+      const errorObj = obj as { exception?: string };
+      callbacks.onError?.(errorObj.exception || "Unknown error");
+      break;
+    }
+
+    case "agent_stopped":
       callbacks.onStopped?.();
       break;
-    case "done":
+
+    case "agent_done":
       callbacks.onDone?.();
+      return true;
+
+    case "agent_session_compacted": {
+      const compactObj = obj as { new_session_id: string; summary: string };
+      callbacks.onSessionCompacted?.(compactObj.new_session_id, compactObj.summary);
       break;
-    case "session_compacted":
-      callbacks.onSessionCompacted?.(event.newSessionId, event.summary);
-      break;
+    }
   }
+
+  return false;
 }
 
 /**
