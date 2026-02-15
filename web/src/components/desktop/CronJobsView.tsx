@@ -1,7 +1,80 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { CronJob } from "@/lib/agent/types";
+
+interface CustomSelectOption {
+  label: string;
+  value: string;
+}
+
+function CustomSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: CustomSelectOption[];
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedLabel =
+    options.find((o) => o.value === value)?.label ?? value;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-border bg-background text-sm cursor-pointer hover:border-muted-foreground transition-colors"
+      >
+        <span>{selectedLabel}</span>
+        <svg
+          className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-background shadow-lg overflow-hidden">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-sm cursor-pointer transition-colors ${
+                option.value === value
+                  ? "bg-purple-600/10 text-purple-600 dark:text-purple-400 font-medium"
+                  : "hover:bg-muted text-foreground"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface JobForm {
   name: string;
@@ -107,20 +180,20 @@ function JobFormFields({
 
       <div>
         <label className="block text-sm font-medium mb-1">Schedule Type</label>
-        <select
+        <CustomSelect
           value={form.schedule_type}
-          onChange={(e) =>
+          options={[
+            { label: "Interval", value: "interval" },
+            { label: "Cron Expression", value: "cron" },
+            { label: "One Shot", value: "one_shot" },
+          ]}
+          onChange={(val) =>
             setForm((f) => ({
               ...f,
-              schedule_type: e.target.value as JobForm["schedule_type"],
+              schedule_type: val as JobForm["schedule_type"],
             }))
           }
-          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
-        >
-          <option value="interval">Interval</option>
-          <option value="cron">Cron Expression</option>
-          <option value="one_shot">One Shot</option>
-        </select>
+        />
       </div>
 
       {form.schedule_type === "cron" && (
@@ -149,10 +222,10 @@ function JobFormFields({
           <label className="block text-sm font-medium mb-1">
             Run Frequency
           </label>
-          <select
+          <CustomSelect
             value={form.interval_preset}
-            onChange={(e) => {
-              const preset = e.target.value;
+            options={INTERVAL_PRESETS}
+            onChange={(preset) => {
               setForm((f) => ({
                 ...f,
                 interval_preset: preset,
@@ -160,14 +233,7 @@ function JobFormFields({
                   preset === "custom" ? f.interval_seconds : preset,
               }));
             }}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm"
-          >
-            {INTERVAL_PRESETS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          />
           {form.interval_preset === "custom" && (
             <div className="mt-2">
               <label className="block text-xs text-muted-foreground mb-1">
@@ -409,11 +475,11 @@ export function CronJobsView() {
 
   return (
     <div
-      className="flex flex-col h-full bg-background"
+      className="flex flex-col h-full"
       data-testid="cron-jobs-view"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 md:px-12 pt-24 pb-4">
+      <div className="flex items-center justify-between px-4 md:px-12 pt-12 pb-4">
         <div className="mb-0">
           <h1 className="text-2xl font-bold text-text-04">Scheduled Tasks</h1>
           <p className="text-sm text-text-02 mt-1">
@@ -447,32 +513,29 @@ export function CronJobsView() {
             </p>
           </div>
         ) : (
-          <div className="w-full border border-border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="w-full border border-border rounded-lg overflow-hidden bg-background-tint-01">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground w-[10%]">
                     Status
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground w-[20%]">
                     Name
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground w-[15%]">
                     Schedule
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
-                    Prompt
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground w-[15%]">
                     Last Run
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground w-[15%]">
                     Next Run
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground w-[5%]">
                     Runs
                   </th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[20%]">
                     Actions
                   </th>
                 </tr>
@@ -498,59 +561,75 @@ export function CronJobsView() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium">{job.name}</span>
+                        <span className="font-medium truncate">{job.name}</span>
                         {job.is_heartbeat && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20 shrink-0">
                             heartbeat
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="px-4 py-3 text-muted-foreground truncate">
                       {formatSchedule(job)}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground max-w-[200px]">
-                      <span className="block truncate">
-                        {job.payload_message}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                    <td className="px-4 py-3 text-muted-foreground truncate">
                       {formatDateTime(job.last_run_at)}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                    <td className="px-4 py-3 text-muted-foreground truncate">
                       {formatDateTime(job.next_run_at)}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {job.run_count}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Run now */}
                         <button
                           onClick={() => handleRunNow(job.id)}
-                          className="px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+                          className="p-2 cursor-pointer transition-colors text-muted-foreground hover:text-green-600 dark:hover:text-green-400"
                           title="Run now"
                         >
-                          Run
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
+                          </svg>
                         </button>
+                        {/* Edit */}
                         <button
                           onClick={() => openEditDialog(job)}
-                          className="px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+                          className="p-2 cursor-pointer transition-colors text-muted-foreground hover:text-blue-600 dark:hover:text-blue-400"
                           title="Edit"
                         >
-                          Edit
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
                         </button>
+                        {/* Toggle enable/disable */}
                         <button
                           onClick={() => handleToggle(job.id, job.enabled)}
-                          className="px-2.5 py-1 text-xs rounded border border-border hover:bg-muted transition-colors"
+                          className="p-2 cursor-pointer transition-colors text-muted-foreground hover:text-yellow-600 dark:hover:text-yellow-400"
+                          title={job.enabled ? "Disable" : "Enable"}
                         >
-                          {job.enabled ? "Disable" : "Enable"}
+                          {job.enabled ? (
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          )}
                         </button>
+                        {/* Delete */}
                         <button
                           onClick={() => setDeletingJobId(job.id)}
-                          className="px-2.5 py-1 text-xs rounded border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10 transition-colors"
+                          className="p-2 cursor-pointer transition-colors text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                          title="Delete"
                           data-testid={`cron-job-delete-${job.id}`}
                         >
-                          Delete
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </div>
                     </td>

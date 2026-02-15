@@ -136,7 +136,7 @@ export function ConnectorDetailDrawer({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
-      <DrawerContent direction="right" className="!top-14">
+      <DrawerContent direction="right">
         {/* Header */}
         <div className="flex items-start gap-3 p-4 border-b border-border">
           <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -168,7 +168,7 @@ export function ConnectorDetailDrawer({
               onClick={() => onToggle(connector.id, !connector.user_enabled)}
               className={`relative inline-flex h-4 w-7 cursor-pointer rounded-full transition-colors ${
                 connector.user_enabled
-                  ? "bg-purple-600"
+                  ? "bg-[#101416]"
                   : "bg-gray-300 dark:bg-gray-600"
               }`}
               title={connector.user_enabled ? "Disable" : "Enable"}

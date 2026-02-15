@@ -598,7 +598,7 @@ export function BudAgentScreen() {
     <div
       className={cn(
         "flex-1 flex flex-col min-h-0 relative rounded-xl m-4 ml-0 overflow-hidden",
-        isDark && "bg-[#232526]"
+        isDark ? "bg-[#232526]" : "bg-white border border-gray-200"
       )}
       data-testid="bud-agent-screen"
     >
@@ -606,10 +606,11 @@ export function BudAgentScreen() {
       <div
         className="absolute inset-0 pointer-events-none z-0"
         style={{
-          backgroundImage: `
-            linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
-          `,
+          backgroundImage: isDark
+            ? `linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+               linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px)`
+            : `linear-gradient(to right, rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+               linear-gradient(to bottom, rgba(0, 0, 0, 0.02) 1px, transparent 1px)`,
           backgroundSize: '40px 40px'
         }}
       />

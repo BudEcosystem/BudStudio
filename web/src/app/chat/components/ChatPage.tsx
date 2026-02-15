@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTheme } from "next-themes";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { SEARCH_PARAM_NAMES } from "@/app/chat/services/searchParams";
 import { useFederatedConnectors, useFilters, useLlmManager } from "@/lib/hooks";
@@ -111,6 +112,9 @@ export function ChatPage({
 
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const {
     chatSessions,
@@ -802,7 +806,7 @@ export function ChatPage({
 
       <FederatedOAuthModal />
 
-      <div className="flex flex-row h-full w-full">
+      <div className="flex flex-row min-h-0 w-full m-4 ml-0">
         <div
           ref={masterFlexboxRef}
           className="flex h-full w-full overflow-x-hidden"
@@ -817,9 +821,20 @@ export function ChatPage({
             >
               {({ getRootProps }) => (
                 <div
-                  className="h-full w-full relative flex-auto min-w-0"
+                  className={cn("h-full w-full relative flex-auto min-w-0 rounded-xl", isDark && "bg-[#232526]")}
                   {...getRootProps()}
                 >
+                  {/* Grid Background */}
+                  <div
+                    className="absolute inset-0 pointer-events-none z-0"
+                    style={{
+                      backgroundImage: `
+                        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px)
+                      `,
+                      backgroundSize: '40px 40px'
+                    }}
+                  />
                   <div
                     onScroll={handleScroll}
                     className="w-full h-[calc(100dvh-100px)] flex flex-col default-scrollbar overflow-y-auto overflow-x-hidden relative"

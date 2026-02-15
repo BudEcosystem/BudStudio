@@ -112,7 +112,7 @@ export function AgentConfigView() {
 
   return (
     <div className="flex-1 h-full overflow-hidden">
-      <div className="h-full flex flex-col px-4 md:px-12 pt-24 pb-4">
+      <div className="h-full flex flex-col px-4 md:px-12 pt-12 pb-4">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-text-04 mb-1">
             Configuration
@@ -130,13 +130,13 @@ export function AgentConfigView() {
         ) : (
           <div className="flex-1 flex gap-4 min-h-0">
             {/* File list */}
-            <div className="w-48 shrink-0 overflow-y-auto border border-border rounded-lg">
+            <div className="w-48 shrink-0 overflow-y-auto border border-border rounded-lg bg-background-tint-01">
               {files.map((file) => (
                 <button
                   key={file.path}
                   className={`w-full text-left px-3 py-2 text-sm border-b border-border last:border-b-0 transition-colors ${
                     selectedPath === file.path
-                      ? "bg-background-tint-03 text-text-04 font-medium"
+                      ? "bg-background-neutral-03 text-text-04 font-medium"
                       : "text-text-03 hover:bg-background-tint-01"
                   }`}
                   onClick={() => selectFile(file.path)}
@@ -147,7 +147,7 @@ export function AgentConfigView() {
             </div>
 
             {/* Editor */}
-            <div className="flex-1 flex flex-col min-w-0 border border-border rounded-lg overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 border border-border rounded-lg overflow-hidden bg-background-tint-01">
               <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-background-tint-01">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-text-04 font-mono">

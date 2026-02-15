@@ -29,7 +29,7 @@ function ConnectorCard({
 
   return (
     <div
-      className="border border-border rounded-lg hover:shadow-sm transition-shadow flex flex-col cursor-pointer"
+      className="border border-border bg-background-tint-01 rounded-lg hover:shadow-sm transition-shadow flex flex-col cursor-pointer"
       onClick={() => onSelect(connector)}
       role="button"
       tabIndex={0}
@@ -86,20 +86,20 @@ function ConnectorCard({
               </button>
             </div>
             {connector.description && (
-              <p className="text-sm text-text-02 line-clamp-2">
+              <p className="text-sm text-text-02 line-clamp-2 mb-4">
                 {String(connector.description)}
               </p>
             )}
-            <div className="flex items-center gap-2 flex-wrap mt-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {connector.transport && (
-                <span className="text-xs bg-background-tint-02 text-text-03 px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-background-neutral-03 px-2 py-0.5 rounded-md">
                   {connector.transport === "STREAMABLEHTTP"
                     ? "HTTP"
                     : String(connector.transport)}
                 </span>
               )}
               {connector.authType && (
-                <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-background-neutral-03 px-2 py-0.5 rounded-md">
                   {String(connector.authType)}
                 </span>
               )}
@@ -339,7 +339,7 @@ export function ConnectorsView() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto" data-testid="connectors-view">
-      <div className="px-4 md:px-12 pt-24 pb-4">
+      <div className="px-4 md:px-12 pt-12 pb-4">
         <h1 className="text-2xl font-bold text-text-04 mb-1">Connectors</h1>
         <p className="text-sm text-text-02 mb-8">
           MCP gateway connectors available to the Bud Agent.

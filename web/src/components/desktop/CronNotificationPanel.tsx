@@ -2,6 +2,7 @@
 
 import { useCronNotifications } from "./CronNotificationContext";
 import type { CronNotification, CronToolRequest } from "@/lib/agent/types";
+import { useTheme } from "next-themes";
 
 function formatSkipReason(reason: string | null): string {
   if (!reason) return "Skipped";
@@ -22,8 +23,8 @@ function formatTime(dateStr: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** Status-colored icon inside a dark rounded square (like Bud admin). */
-function StatusIcon({ status }: { status: string }) {
+/** Status-colored icon inside a rounded square. */
+function StatusIcon({ status, isDark }: { status: string; isDark: boolean }) {
   const colors: Record<string, string> = {
     completed: "text-green-400",
     failed: "text-red-400",
@@ -42,7 +43,7 @@ function StatusIcon({ status }: { status: string }) {
 
   return (
     <div
-      className="bg-[#1F1F1F] rounded-[0.4rem] flex items-center justify-center flex-shrink-0"
+      className={`${isDark ? "bg-[#1F1F1F]" : "bg-gray-100"} rounded-[0.4rem] flex items-center justify-center flex-shrink-0`}
       style={{ width: "2.75rem", height: "2.75rem" }}
     >
       <svg
@@ -84,24 +85,26 @@ function StatusBadge({ status }: { status: string }) {
 function NotificationCard({
   notification,
   onDismiss,
+  isDark,
 }: {
   notification: CronNotification;
   onDismiss: (id: string) => void;
+  isDark: boolean;
 }) {
   const timeStr = notification.completed_at
     ? formatTime(notification.completed_at)
     : formatTime(notification.created_at);
 
   return (
-    <div className="fileInput flex justify-between items-start px-[1.3rem] py-[1.25rem] bg-[#161616] border border-[#1F1F1F] rounded-[1rem] transition-all duration-300 cursor-pointer group">
+    <div className={`fileInput flex justify-between items-start px-[1.3rem] py-[1.25rem] ${isDark ? "bg-[#161616] border-[#1F1F1F]" : "bg-white border-gray-200"} border rounded-[1rem] transition-all duration-300 cursor-pointer group`}>
       <div className="flex justify-start items-center max-w-[65%]">
-        <StatusIcon status={notification.status} />
+        <StatusIcon status={notification.status} isDark={isDark} />
         <div className="pt-[0.3rem] max-w-[94%] ml-[0.75rem]">
-          <p className="text-[0.75rem] font-normal text-[#A4A4A9] tracking-[-0.01rem] truncate">
+          <p className={`text-[0.75rem] font-normal ${isDark ? "text-[#A4A4A9]" : "text-gray-500"} tracking-[-0.01rem] truncate`}>
             {notification.cron_job_name}
           </p>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-[#EEEEEE] text-[0.875rem] font-semibold leading-[1.5rem] tracking-[-0.01rem] truncate">
+            <span className={`${isDark ? "text-[#EEEEEE]" : "text-gray-900"} text-[0.875rem] font-semibold leading-[1.5rem] tracking-[-0.01rem] truncate`}>
               {notification.status === "completed" && notification.result_summary
                 ? notification.result_summary.slice(0, 60) +
                   (notification.result_summary.length > 60 ? "..." : "")
@@ -118,13 +121,13 @@ function NotificationCard({
         </div>
       </div>
       <div className="flex flex-col items-end justify-between h-[2.75rem]">
-        <p className="text-[0.625rem] font-normal text-[#A4A4A9]">{timeStr}</p>
+        <p className={`text-[0.625rem] font-normal ${isDark ? "text-[#A4A4A9]" : "text-gray-500"}`}>{timeStr}</p>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onDismiss(notification.id);
           }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#757575] hover:text-[#EEEEEE]"
+          className={`opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? "text-[#757575] hover:text-[#EEEEEE]" : "text-gray-400 hover:text-gray-700"}`}
           title="Dismiss"
         >
           <svg
@@ -150,29 +153,31 @@ function ToolRequestCard({
   toolRequest,
   onApprove,
   onDeny,
+  isDark,
 }: {
   toolRequest: CronToolRequest;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  isDark: boolean;
 }) {
   const timeStr = formatTime(toolRequest.created_at);
 
   return (
-    <div className="fileInput flex flex-col px-[1.3rem] py-[1.25rem] bg-[#161616] border border-[#1F1F1F] rounded-[1rem] transition-all duration-300">
+    <div className={`fileInput flex flex-col px-[1.3rem] py-[1.25rem] ${isDark ? "bg-[#161616] border-[#1F1F1F]" : "bg-white border-gray-200"} border rounded-[1rem] transition-all duration-300`}>
       <div className="flex justify-between items-start">
         <div className="flex justify-start items-center max-w-[65%]">
           <div
-            className="bg-[#1F1F1F] rounded-[0.4rem] flex items-center justify-center flex-shrink-0"
+            className={`${isDark ? "bg-[#1F1F1F]" : "bg-gray-100"} rounded-[0.4rem] flex items-center justify-center flex-shrink-0`}
             style={{ width: "2.75rem", height: "2.75rem" }}
           >
             <span className="text-yellow-400 text-lg font-bold">!</span>
           </div>
           <div className="pt-[0.3rem] max-w-[94%] ml-[0.75rem]">
-            <p className="text-[0.75rem] font-normal text-[#A4A4A9] tracking-[-0.01rem] truncate">
+            <p className={`text-[0.75rem] font-normal ${isDark ? "text-[#A4A4A9]" : "text-gray-500"} tracking-[-0.01rem] truncate`}>
               {toolRequest.cron_job_name}
             </p>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[#EEEEEE] text-[0.875rem] font-semibold leading-[1.5rem] tracking-[-0.01rem] truncate">
+              <span className={`${isDark ? "text-[#EEEEEE]" : "text-gray-900"} text-[0.875rem] font-semibold leading-[1.5rem] tracking-[-0.01rem] truncate`}>
                 Approval Required
               </span>
               <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border bg-yellow-500/15 text-yellow-400 border-yellow-500/30">
@@ -181,21 +186,21 @@ function ToolRequestCard({
             </div>
           </div>
         </div>
-        <p className="text-[0.625rem] font-normal text-[#A4A4A9] flex-shrink-0">
+        <p className={`text-[0.625rem] font-normal ${isDark ? "text-[#A4A4A9]" : "text-gray-500"} flex-shrink-0`}>
           {timeStr}
         </p>
       </div>
 
       {/* Tool info */}
       <div className="mt-3 ml-[3.5rem] space-y-1.5">
-        <p className="text-[0.75rem] text-[#A4A4A9]">
+        <p className={`text-[0.75rem] ${isDark ? "text-[#A4A4A9]" : "text-gray-500"}`}>
           Tool:{" "}
-          <code className="px-1.5 py-0.5 rounded bg-[#1F1F1F] text-[11px] text-[#EEEEEE]">
+          <code className={`px-1.5 py-0.5 rounded ${isDark ? "bg-[#1F1F1F] text-[#EEEEEE]" : "bg-gray-100 text-gray-900"} text-[11px]`}>
             {toolRequest.tool_name}
           </code>
         </p>
         {toolRequest.tool_input && (
-          <pre className="p-2 rounded-lg bg-[#1F1F1F] text-[11px] text-[#A4A4A9] overflow-x-auto max-h-24 border border-[#2A2A2A]">
+          <pre className={`p-2 rounded-lg ${isDark ? "bg-[#1F1F1F] text-[#A4A4A9] border-[#2A2A2A]" : "bg-gray-50 text-gray-600 border-gray-200"} text-[11px] overflow-x-auto max-h-24 border`}>
             {JSON.stringify(toolRequest.tool_input, null, 2)}
           </pre>
         )}
@@ -237,6 +242,8 @@ export function CronNotificationPanel({
     dismissNotification,
     submitToolResult,
   } = useCronNotifications();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   if (!isOpen) return null;
 
@@ -259,12 +266,14 @@ export function CronNotificationPanel({
   return (
     <div
       className="fixed inset-0 z-[9999] overflow-hidden transition-all duration-500 ease-in-out"
-      style={{
+      style={isDark ? {
         backgroundImage: "url(/images/notification-bg.png)",
         backgroundPosition: "50%",
         backgroundRepeat: "no-repeat",
         backgroundColor: "#060607",
         backgroundSize: "98.2% 96.5%",
+      } : {
+        backgroundColor: "#f5f5f5",
       }}
       data-testid="cron-notification-panel"
     >
@@ -277,10 +286,10 @@ export function CronNotificationPanel({
       {/* Close button — circular with backdrop blur, top-right */}
       <button
         onClick={onClose}
-        className="absolute right-[2.05rem] top-[2.05rem] w-[2rem] h-[2rem] rounded-full flex justify-center items-center backdrop-blur-[34px] bg-white/5 border border-[#757575] z-10 cursor-pointer hover:bg-white/10 transition-colors"
+        className={`absolute right-[2.05rem] top-[2.05rem] w-[2rem] h-[2rem] rounded-full flex justify-center items-center backdrop-blur-[34px] ${isDark ? "bg-white/5 border-[#757575] hover:bg-white/10" : "bg-black/5 border-gray-300 hover:bg-black/10"} border z-10 cursor-pointer transition-colors`}
       >
         <svg
-          className="w-3.5 h-3.5 text-[#EEEEEE]"
+          className={`w-3.5 h-3.5 ${isDark ? "text-[#EEEEEE]" : "text-gray-700"}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -301,19 +310,19 @@ export function CronNotificationPanel({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-[1rem] gap-y-[1rem]">
             {/* Notification list panel */}
             <div
-              className="rounded-[16px] py-[1.25rem] border border-[#1F1F1F] bg-[#0A0A0B] max-h-[90vh] overflow-y-auto"
+              className={`rounded-[16px] py-[1.25rem] border ${isDark ? "border-[#1F1F1F] bg-[#0A0A0B]" : "border-gray-200 bg-white"} max-h-[90vh] overflow-y-auto`}
               style={{ gridRow: "1 / span 100" }}
             >
               {/* Header */}
               <div className="flex justify-between items-center px-[1.5rem]">
-                <h2 className="text-[#EEEEEE] font-semibold text-[1.5rem] leading-[100%] tracking-[-0.015rem]">
+                <h2 className={`${isDark ? "text-[#EEEEEE]" : "text-gray-900"} font-semibold text-[1.5rem] leading-[100%] tracking-[-0.015rem]`}>
                   Notifications
                 </h2>
                 <div className="flex justify-end items-center gap-3">
                   {notifications.length > 0 && (
                     <button
                       onClick={dismissAll}
-                      className="text-[0.75rem] text-[#A4A4A9] hover:text-[#EEEEEE] transition-colors cursor-pointer"
+                      className={`text-[0.75rem] ${isDark ? "text-[#A4A4A9] hover:text-[#EEEEEE]" : "text-gray-500 hover:text-gray-900"} transition-colors cursor-pointer`}
                     >
                       Clear all
                     </button>
@@ -325,9 +334,9 @@ export function CronNotificationPanel({
               <div className="notificationList mt-[1.3rem] flex flex-col gap-[0.7rem] px-[1.5rem]">
                 {totalCount === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="w-12 h-12 rounded-full bg-[#1F1F1F] flex items-center justify-center mb-3">
+                    <div className={`w-12 h-12 rounded-full ${isDark ? "bg-[#1F1F1F]" : "bg-gray-100"} flex items-center justify-center mb-3`}>
                       <svg
-                        className="w-6 h-6 text-[#757575]"
+                        className={`w-6 h-6 ${isDark ? "text-[#757575]" : "text-gray-400"}`}
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -340,8 +349,8 @@ export function CronNotificationPanel({
                         />
                       </svg>
                     </div>
-                    <p className="text-sm text-[#A4A4A9]">No recent activity</p>
-                    <p className="text-xs text-[#757575] mt-1">
+                    <p className={`text-sm ${isDark ? "text-[#A4A4A9]" : "text-gray-500"}`}>No recent activity</p>
+                    <p className={`text-xs ${isDark ? "text-[#757575]" : "text-gray-400"} mt-1`}>
                       Scheduled task results will appear here
                     </p>
                   </div>
@@ -354,6 +363,7 @@ export function CronNotificationPanel({
                         toolRequest={tr}
                         onApprove={handleApprove}
                         onDeny={handleDeny}
+                        isDark={isDark}
                       />
                     ))}
                     {/* Notifications */}
@@ -362,6 +372,7 @@ export function CronNotificationPanel({
                         key={notification.id}
                         notification={notification}
                         onDismiss={dismissNotification}
+                        isDark={isDark}
                       />
                     ))}
                   </>

@@ -101,7 +101,7 @@ export default function AgentIcon({ agent, size = 24 }: AgentIconProps) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="text-text-04">
+          <div className="text-text-04 overflow-hidden rounded">
             {agent.id === -3 ? (
               <ArtAsistantIcon size={size} />
             ) : agent.id === 0 ? (
