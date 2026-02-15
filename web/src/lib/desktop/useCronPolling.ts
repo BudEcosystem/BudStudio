@@ -14,6 +14,7 @@ interface UseCronPollingResult {
   toolRequests: CronToolRequest[];
   unreadCount: number;
   dismissNotification: (executionId: string) => Promise<void>;
+  dismissAllNotifications: () => Promise<void>;
   submitToolResult: (
     executionId: string,
     output?: string,
@@ -59,6 +60,19 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
     },
     []
   );
+
+  const dismissAllNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/agent/cron/executions/acknowledge-all", {
+        method: "POST",
+      });
+      if (response.ok) {
+        setNotifications([]);
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   const submitToolResult = useCallback(
     async (executionId: string, output?: string, error?: string) => {
@@ -116,6 +130,7 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
     toolRequests,
     unreadCount: notifications.length,
     dismissNotification,
+    dismissAllNotifications,
     submitToolResult,
     isLoading,
   };

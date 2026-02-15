@@ -14,6 +14,7 @@ from onyx.auth.users import current_user
 from onyx.configs.constants import OnyxCeleryPriority
 from onyx.configs.constants import OnyxCeleryQueues
 from onyx.configs.constants import OnyxCeleryTask
+from onyx.db.agent_cron import acknowledge_all_notifications
 from onyx.db.agent_cron import acknowledge_notification
 from onyx.db.agent_cron import create_cron_execution
 from onyx.db.agent_cron import create_cron_job
@@ -443,3 +444,16 @@ def acknowledge(
         )
 
     return StatusResponse(status="acknowledged")
+
+
+@router.post("/executions/acknowledge-all")
+def acknowledge_all(
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> StatusResponse:
+    """Mark all cron notifications as read in one call."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    count = acknowledge_all_notifications(db_session, user.id)
+    return StatusResponse(status=f"acknowledged {count}")

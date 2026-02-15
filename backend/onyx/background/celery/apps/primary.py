@@ -92,7 +92,6 @@ def on_worker_init(sender: Worker, **kwargs: Any) -> None:
 
     app_base.wait_for_redis(sender, **kwargs)
     app_base.wait_for_db(sender, **kwargs)
-    app_base.wait_for_vespa_or_shutdown(sender, **kwargs)
 
     # Auto-provision Keycloak OAuth client if needed (same as main.py).
     # This ensures celery workers have OAuth credentials for token refresh

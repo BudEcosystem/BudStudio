@@ -94,8 +94,18 @@ function processSetCookieHeaders(headers: Headers): Headers {
   return newHeaders;
 }
 
+// Paths that are allowed to proxy through in production mode.
+// These are backend APIs that the frontend calls directly.
+const PRODUCTION_ALLOWED_PREFIXES = ["agent/"];
+
 async function handleRequest(request: NextRequest, path: string[]) {
+  const joinedPath = path.join("/");
+  const isAllowedInProduction = PRODUCTION_ALLOWED_PREFIXES.some((prefix) =>
+    joinedPath.startsWith(prefix)
+  );
+
   if (
+    !isAllowedInProduction &&
     process.env.NODE_ENV !== "development" &&
     // NOTE: Set this environment variable to 'true' for preview environments
     // Where you want finer-grained control over API access

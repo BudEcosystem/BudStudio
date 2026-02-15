@@ -240,18 +240,13 @@ export function CronNotificationPanel({
     notifications,
     toolRequests,
     dismissNotification,
+    dismissAllNotifications,
     submitToolResult,
   } = useCronNotifications();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
   if (!isOpen) return null;
-
-  const dismissAll = async () => {
-    for (const n of notifications) {
-      await dismissNotification(n.id);
-    }
-  };
 
   const handleApprove = (executionId: string) => {
     submitToolResult(executionId, "approved", undefined);
@@ -321,7 +316,7 @@ export function CronNotificationPanel({
                 <div className="flex justify-end items-center gap-3">
                   {notifications.length > 0 && (
                     <button
-                      onClick={dismissAll}
+                      onClick={dismissAllNotifications}
                       className={`text-[0.75rem] ${isDark ? "text-[#A4A4A9] hover:text-[#EEEEEE]" : "text-gray-500 hover:text-gray-900"} transition-colors cursor-pointer`}
                     >
                       Clear all

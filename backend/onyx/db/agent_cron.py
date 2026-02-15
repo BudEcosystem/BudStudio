@@ -486,6 +486,25 @@ def acknowledge_notification(
     return result.rowcount > 0  # type: ignore[union-attr]
 
 
+def acknowledge_all_notifications(
+    db_session: Session,
+    user_id: UUID,
+) -> int:
+    """Mark all unread notifications as read. Returns count of updated rows."""
+    stmt = (
+        update(AgentCronExecution)
+        .where(
+            AgentCronExecution.user_id == user_id,
+            AgentCronExecution.is_notification_read == False,  # noqa: E712
+            AgentCronExecution.status.in_(["COMPLETED", "FAILED"]),
+        )
+        .values(is_notification_read=True)
+    )
+    result = db_session.execute(stmt)
+    db_session.commit()
+    return result.rowcount  # type: ignore[union-attr]
+
+
 def is_heartbeat_content_empty(content: str) -> bool:
     """Check if HEARTBEAT.md content is effectively empty.
 

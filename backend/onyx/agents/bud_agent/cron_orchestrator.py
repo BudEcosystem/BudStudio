@@ -599,23 +599,54 @@ class CronAgentOrchestrator:
         )
 
         history: list[dict[str, Any]] = []
+        # Collect consecutive TOOL messages so we can emit them as
+        # Responses-API-format function_call + function_call_output pairs.
+        pending_tools: list[Any] = []
+
+        def _flush_tools() -> None:
+            """Emit tool calls/outputs in Responses API item format."""
+            if not pending_tools:
+                return
+            for t in pending_tools:
+                call_id = t.tool_call_id or t.tool_name or "unknown"
+                # function_call item (the assistant's tool invocation)
+                history.append({
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": t.tool_name or "unknown",
+                    "arguments": json.dumps(t.tool_input) if t.tool_input else "{}",
+                })
+                # function_call_output item (the tool's result)
+                output = (
+                    json.dumps(t.tool_output)
+                    if t.tool_output
+                    else (t.tool_error or "")
+                )
+                history.append({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                })
+            pending_tools.clear()
+
         for msg in previous_messages:
+            if msg.role == AgentMessageRole.TOOL:
+                pending_tools.append(msg)
+                continue
+
+            # Flush any buffered tool messages before the next non-tool msg
+            _flush_tools()
+
             if msg.role == AgentMessageRole.USER:
                 history.append({"role": "user", "content": msg.content or ""})
             elif msg.role == AgentMessageRole.ASSISTANT:
-                history.append(
-                    {"role": "assistant", "content": msg.content or ""}
-                )
-            elif msg.role == AgentMessageRole.TOOL:
-                history.append({
-                    "role": "tool",
-                    "content": (
-                        json.dumps(msg.tool_output)
-                        if msg.tool_output
-                        else (msg.tool_error or "")
-                    ),
-                    "tool_call_id": msg.tool_name or "",
-                })
+                if msg.content:
+                    history.append(
+                        {"role": "assistant", "content": msg.content}
+                    )
+
+        # Flush remaining tool messages at the end
+        _flush_tools()
 
         # Truncate history if it exceeds budget (keep most recent messages)
         system_chars = len(system_prompt)
