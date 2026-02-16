@@ -35,9 +35,14 @@ function OAuthDoneContent() {
           { type: "OAUTH_COMPLETE", gatewayId, status: "success" },
           window.location.origin
         );
-        // Auto-close after a short delay
+        // If opened from desktop app (no window.opener), redirect via deep link
+        // Otherwise auto-close the popup window
         setTimeout(() => {
-          window.close();
+          if (!window.opener) {
+            window.location.href = "budstudio://oauth-success";
+          } else {
+            window.close();
+          }
         }, 1500);
       })
       .catch((err: unknown) => {
@@ -69,14 +74,14 @@ function OAuthDoneContent() {
               Connected successfully!
             </h1>
             <p className="text-sm text-text-02">
-              This window will close automatically.
+              Returning to Bud Studio...
             </p>
-            <button
-              onClick={() => window.close()}
+            <a
+              href="budstudio://oauth-success"
               className="mt-4 text-sm text-purple-600 hover:text-purple-700 underline"
             >
-              Close now
-            </button>
+              Click here if you&apos;re not automatically redirected
+            </a>
           </>
         )}
 
@@ -87,12 +92,12 @@ function OAuthDoneContent() {
               Connection failed
             </h1>
             <p className="text-sm text-red-500 mb-4">{errorMsg}</p>
-            <button
-              onClick={() => window.close()}
+            <a
+              href="budstudio://oauth-error"
               className="text-sm text-purple-600 hover:text-purple-700 underline"
             >
-              Close
-            </button>
+              Return to Bud Studio
+            </a>
           </>
         )}
       </div>

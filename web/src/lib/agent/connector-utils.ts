@@ -116,10 +116,14 @@ export async function toggleConnector(
 }
 
 export async function initiateOAuth(
-  gatewayId: string
+  gatewayId: string,
+  callbackUrl?: string
 ): Promise<{ authorization_url: string }> {
+  const body = callbackUrl ? { callback_url: callbackUrl } : undefined;
   const resp = await fetch(`${BASE}/${gatewayId}/oauth/initiate`, {
     method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!resp.ok) {
     throw new Error(`Failed to initiate OAuth: ${resp.status}`);

@@ -14,6 +14,20 @@ import {
 import { AgentConnectorsSkeleton } from "./AgentConnectorsSkeleton";
 import { ConnectorDetailDrawer } from "./ConnectorDetailDrawer";
 
+// Tauri detection and shell utility
+// @ts-ignore - __TAURI__ is injected by Tauri runtime
+const isTauri = typeof window !== "undefined" && window.__TAURI__ !== undefined;
+
+async function openInSystemBrowser(url: string): Promise<void> {
+  // @ts-ignore - __TAURI__ is injected by Tauri runtime
+  if (typeof window !== "undefined" && window.__TAURI__) {
+    // Tauri v2 uses __TAURI__.shell.open
+    // @ts-ignore - __TAURI__ is injected by Tauri runtime
+    const { open } = window.__TAURI__.shell;
+    await open(url);
+  }
+}
+
 function ConnectorCard({
   connector,
   onToggle,
@@ -206,38 +220,68 @@ export function ConnectorsView() {
   const handleConnect = useCallback(
     async (gatewayId: string) => {
       try {
-        const { authorization_url } = await initiateOAuth(gatewayId);
-        // Open OAuth popup
-        const popup = window.open(
-          authorization_url,
-          "oauth_popup",
-          "width=600,height=700,scrollbars=yes"
-        );
+        // For Tauri, provide callback URL that will redirect back to the app
+        const callbackUrl = isTauri
+          ? `${window.location.origin}/agent/oauth/callback?gateway_id=${gatewayId}`
+          : undefined;
 
-        if (!popup) {
-          setError("Popup was blocked by your browser. Please allow popups for this site and try again.");
-          return;
-        }
+        const { authorization_url } = await initiateOAuth(gatewayId, callbackUrl);
 
-        popupRef.current = popup;
+        if (isTauri) {
+          // In Tauri desktop app, open OAuth URL in system browser
+          await openInSystemBrowser(authorization_url);
 
-        // Fallback: detect popup closing without postMessage
-        if (popupCheckRef.current) {
-          clearInterval(popupCheckRef.current);
-        }
-        popupCheckRef.current = setInterval(() => {
-          if (popup.closed) {
-            if (popupCheckRef.current) {
-              clearInterval(popupCheckRef.current);
-              popupCheckRef.current = null;
+          // Poll for OAuth completion
+          const pollInterval = setInterval(async () => {
+            try {
+              const data = await fetchConnectors();
+              const connector = data.find((c) => c.id === gatewayId);
+              if (connector?.oauth_completed) {
+                clearInterval(pollInterval);
+                loadConnectors();
+              }
+            } catch {
+              // Continue polling on error
             }
-            popupRef.current = null;
-            // Refresh in case OAuth completed but postMessage didn't fire
-            loadConnectors();
+          }, 2000);
+
+          // Stop polling after 5 minutes
+          setTimeout(() => {
+            clearInterval(pollInterval);
+          }, 300000);
+        } else {
+          // In web browser, use popup window
+          const popup = window.open(
+            authorization_url,
+            "oauth_popup",
+            "width=600,height=700,scrollbars=yes"
+          );
+
+          if (!popup) {
+            setError("Popup was blocked by your browser. Please allow popups for this site and try again.");
+            return;
           }
-        }, 1000);
-      } catch {
-        // OAuth initiation failed - no action needed
+
+          popupRef.current = popup;
+
+          // Fallback: detect popup closing without postMessage
+          if (popupCheckRef.current) {
+            clearInterval(popupCheckRef.current);
+          }
+          popupCheckRef.current = setInterval(() => {
+            if (popup.closed) {
+              if (popupCheckRef.current) {
+                clearInterval(popupCheckRef.current);
+                popupCheckRef.current = null;
+              }
+              popupRef.current = null;
+              // Refresh in case OAuth completed but postMessage didn't fire
+              loadConnectors();
+            }
+          }, 1000);
+        }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Failed to initiate OAuth");
       }
     },
     [loadConnectors]

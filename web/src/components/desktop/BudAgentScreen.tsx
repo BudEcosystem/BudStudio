@@ -48,8 +48,9 @@ import type {
   CitationDelta,
   StreamingCitation,
 } from "@/app/chat/services/streamingModels";
-import type { OnyxDocument } from "@/lib/search/interfaces";
+import type { OnyxDocument, MinimalOnyxDocument } from "@/lib/search/interfaces";
 import type { FullChatState } from "@/app/chat/message/messageComponents/interfaces";
+import type { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
 import { groupPacketsByInd } from "@/app/chat/services/packetUtils";
 import { PacketType } from "@/app/chat/services/streamingModels";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
@@ -170,14 +171,14 @@ function AgentMessageContent({
 }: {
   content: string;
   docs?: OnyxDocument[] | null;
-  setPresentingDocument?: (doc: OnyxDocument) => void;
-  assistant?: { id: number; name: string; [key: string]: unknown } | null;
+  setPresentingDocument?: (doc: MinimalOnyxDocument) => void;
+  assistant?: MinimalPersonaSnapshot | null;
 }) {
   const state = useMemo<FullChatState | undefined>(() => {
     if (!docs || docs.length === 0 || !assistant) return undefined;
     return {
       handleFeedback: () => {},
-      assistant: assistant as FullChatState["assistant"],
+      assistant: assistant,
       docs,
       setPresentingDocument: setPresentingDocument || (() => {}),
     };
@@ -212,6 +213,7 @@ export function BudAgentScreen() {
     operationHash: string;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const currentAgentMessageIdRef = useRef<string | null>(null);
@@ -219,6 +221,7 @@ export function BudAgentScreen() {
   const toolCallsRef = useRef<ToolCallInfo[]>([]);
   const packetsRef = useRef<Packet[]>([]);
   const messageFinalizedRef = useRef<boolean>(false);
+  const previousMessageCountRef = useRef<number>(0);
 
   const {
     currentSession,
@@ -277,9 +280,29 @@ export function BudAgentScreen() {
     setSidebarSourcesMsgId(null);
   }, []);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom only when new messages are added
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const messageCount = messages.length;
+    const hasNewMessage = messageCount > previousMessageCountRef.current;
+
+    if (hasNewMessage) {
+      // Only scroll if user is already near the bottom
+      const container = messagesContainerRef.current;
+      if (container) {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        const isNearBottom = distanceFromBottom < 200; // within 200px of bottom
+
+        if (isNearBottom) {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+      } else {
+        // No container ref available, just scroll
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+
+      previousMessageCountRef.current = messageCount;
+    }
   }, [messages]);
 
   // Cleanup on unmount
@@ -768,7 +791,7 @@ export function BudAgentScreen() {
       )}
 
       {/* Messages Area */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden default-scrollbar relative z-10" data-testid="agent-messages-container">
+      <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden default-scrollbar relative z-10" data-testid="agent-messages-container">
         {/* Top shadow fadeout */}
         {/* <div
           className="sticky left-0 right-0 h-8 pointer-events-none z-20 bg-gradient-to-b from-background via-background/70 to-transparent"
