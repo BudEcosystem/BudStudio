@@ -720,3 +720,68 @@ This helps with placing things properly on the screen and seeing how they look d
         transform: rotate(318deg) translateX(200px);
     }
 }
+
+
+/* ANIMATED BORDER - Chat Input */
+
+@keyframes animatedBorderRotate {
+    0% {
+        transform: translate(-50%, -50%) rotate(0turn);
+        opacity: 1;
+    }
+    75% {
+        transform: translate(-50%, -50%) rotate(0.75turn);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) rotate(1turn);
+        opacity: 0;
+    }
+}
+
+@keyframes animatedBorderHide {
+    0% {
+        display: block;
+    }
+    100% {
+        display: none;
+    }
+}
+
+.animated-border-wrapper {
+    position: relative;
+    padding: 1.5px;
+}
+
+.animated-border-wrapper::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(0);
+    width: 99999px;
+    height: 99999px;
+    background-image: conic-gradient(
+        transparent 25%,
+        #ffffff 50%,
+        transparent 50% 75%,
+        #a0a0a0 100%
+    );
+    animation: animatedBorderRotate 4s linear forwards,
+               animatedBorderHide 0s 4s forwards;
+}
+
+.light .animated-border-wrapper::before {
+    background-image: conic-gradient(
+        transparent 25%,
+        #1a1a1a 50%,
+        transparent 50% 75%,
+        #4d4d4d 100%
+    );
+}
+
+.animated-border-wrapper > .animated-border-inner {
+    position: relative;
+    z-index: 1;
+}
