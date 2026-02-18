@@ -1,6 +1,5 @@
 """Celery tasks for agent cron job scheduling and execution."""
 
-from datetime import timezone
 from uuid import UUID
 
 from celery import shared_task
@@ -24,7 +23,6 @@ from onyx.db.agent_cron import create_cron_execution
 from onyx.db.agent_cron import get_cron_execution
 from onyx.db.agent_cron import get_cron_job
 from onyx.db.agent_cron import get_due_cron_jobs
-from onyx.db.agent_cron import get_last_non_heartbeat_skip_time
 from onyx.db.agent_cron import get_last_completed_execution
 from onyx.db.agent_cron import has_active_execution_for_job
 from onyx.db.agent_cron import is_heartbeat_content_empty
@@ -177,35 +175,6 @@ def execute_agent_cron_job(
                     f"Skipped execution {execution_id}: empty-heartbeat-file"
                 )
                 return None
-
-            # Skip check 2: HEARTBEAT.md unchanged since last non-skip run
-            # Find the last execution that wasn't skipped for heartbeat-unchanged.
-            # If the file hasn't been updated since then, skip.
-            last_check_time = get_last_non_heartbeat_skip_time(
-                db_session, job.id
-            )
-            if (
-                heartbeat_file is not None
-                and last_check_time is not None
-                and heartbeat_file.updated_at is not None
-            ):
-                file_updated = heartbeat_file.updated_at
-                ref_time = last_check_time
-                # Ensure both are timezone-aware for comparison
-                if file_updated.tzinfo is None:
-                    file_updated = file_updated.replace(tzinfo=timezone.utc)
-                if ref_time.tzinfo is None:
-                    ref_time = ref_time.replace(tzinfo=timezone.utc)
-                if file_updated <= ref_time:
-                    update_cron_execution_status(
-                        db_session, execution.id,
-                        AgentCronExecutionStatus.SKIPPED,
-                        skip_reason="heartbeat-unchanged",
-                    )
-                    task_logger.info(
-                        f"Skipped execution {execution_id}: heartbeat-unchanged"
-                    )
-                    return None
 
         # Skip check 5: one-shot already completed
         if job.schedule_type == AgentCronScheduleType.ONE_SHOT:

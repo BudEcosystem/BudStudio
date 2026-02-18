@@ -8,9 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from croniter import croniter
-from sqlalchemy import and_
 from sqlalchemy import desc
-from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -387,44 +385,6 @@ def get_last_completed_execution(
     return db_session.execute(stmt).scalar_one_or_none()
 
 
-def get_last_non_heartbeat_skip_time(
-    db_session: Session,
-    cron_job_id: UUID,
-) -> datetime | None:
-    """Get the created_at of the most recent execution that actually processed
-    the heartbeat content successfully.  This is the reference point for
-    detecting whether HEARTBEAT.md has changed since it was last checked.
-
-    Only COMPLETED executions and post-LLM SKIPPED executions (heartbeat-ok,
-    duplicate-response) count — they actually read and processed the heartbeat
-    file content.  FAILED executions are excluded because the agent may have
-    crashed before processing the content (e.g. 401 auth errors).  Pre-LLM
-    skips are excluded because they never inspected the file at all.
-    """
-    stmt = (
-        select(AgentCronExecution.created_at)
-        .where(
-            AgentCronExecution.cron_job_id == cron_job_id,
-            or_(
-                # Executions that ran to completion
-                AgentCronExecution.status == AgentCronExecutionStatus.COMPLETED,
-                # Post-LLM skips (the LLM ran and checked the content)
-                and_(
-                    AgentCronExecution.status == AgentCronExecutionStatus.SKIPPED,
-                    AgentCronExecution.skip_reason.in_([
-                        "heartbeat-ok",
-                        "duplicate-response",
-                    ]),
-                ),
-            ),
-        )
-        .order_by(desc(AgentCronExecution.created_at))
-        .limit(1)
-    )
-    result = db_session.execute(stmt).scalar_one_or_none()
-    return result
-
-
 def get_pending_notifications(
     db_session: Session,
     user_id: UUID,
@@ -496,7 +456,11 @@ def acknowledge_all_notifications(
         .where(
             AgentCronExecution.user_id == user_id,
             AgentCronExecution.is_notification_read == False,  # noqa: E712
-            AgentCronExecution.status.in_(["COMPLETED", "FAILED"]),
+            AgentCronExecution.status.in_([
+                AgentCronExecutionStatus.COMPLETED,
+                AgentCronExecutionStatus.FAILED,
+                AgentCronExecutionStatus.SKIPPED,
+            ]),
         )
         .values(is_notification_read=True)
     )
