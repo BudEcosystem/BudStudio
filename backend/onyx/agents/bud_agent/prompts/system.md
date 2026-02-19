@@ -13,6 +13,7 @@ Tool names are case-sensitive. Call tools exactly as listed.
 - workspace_read: Read a workspace file (SOUL.md, USER.md, etc.)
 - workspace_write: Create or update a workspace file
 - workspace_list: List workspace files, optionally by path prefix
+- manage_cron: Manage cron jobs and scheduled tasks (use for reminders; when scheduling a reminder, write the payload_message as something that will read like a reminder when it fires, and mention that it is a reminder depending on the time gap between setting and firing; include recent context in the payload_message if appropriate)
 $connector_tools_section
 ## Tool Call Style
 Default: do not narrate routine, low-risk tool calls (just call the tool).

@@ -23,6 +23,7 @@ REMOTE_TOOLS: set[str] = {
     "workspace_list",
     "web_search",
     "open_url",
+    "manage_cron",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -373,6 +374,91 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["urls"],
+        },
+    },
+    "manage_cron": {
+        "name": "manage_cron",
+        "description": (
+            "Manage your scheduled cron jobs. You can create, list, update, "
+            "and delete recurring tasks that run automatically on a schedule."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "list", "update", "remove"],
+                    "description": (
+                        "The action to perform: 'add' to create a new cron job, "
+                        "'list' to show all cron jobs, 'update' to modify an "
+                        "existing job, 'remove' to delete a job."
+                    ),
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name for the cron job (required for 'add').",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional description of the cron job.",
+                },
+                "schedule_type": {
+                    "type": "string",
+                    "enum": ["cron", "interval", "one_shot"],
+                    "description": (
+                        "Schedule type (required for 'add'): "
+                        "'cron' for cron expressions, "
+                        "'interval' for recurring intervals, "
+                        "'one_shot' for a single future execution."
+                    ),
+                },
+                "cron_expression": {
+                    "type": "string",
+                    "description": (
+                        "Cron expression (required when schedule_type is 'cron'). "
+                        "Example: '0 * * * *' for every hour."
+                    ),
+                },
+                "interval_seconds": {
+                    "type": "integer",
+                    "description": (
+                        "Interval in seconds (required when schedule_type is 'interval')."
+                    ),
+                },
+                "one_shot_at": {
+                    "type": "string",
+                    "description": (
+                        "ISO-8601 datetime for one-shot execution "
+                        "(required when schedule_type is 'one_shot'). "
+                        "Example: '2025-12-31T23:59:00Z'."
+                    ),
+                },
+                "payload_message": {
+                    "type": "string",
+                    "description": (
+                        "The message/instruction the agent will execute on each run "
+                        "(required for 'add')."
+                    ),
+                },
+                "is_heartbeat": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, the job is a heartbeat check — the agent can "
+                        "respond with HEARTBEAT_OK to skip notification."
+                    ),
+                },
+                "job_id": {
+                    "type": "string",
+                    "description": (
+                        "The UUID of the cron job (required for 'update' and 'remove')."
+                    ),
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable or disable the job (for 'update').",
+                },
+            },
+            "required": ["action"],
         },
     },
 }

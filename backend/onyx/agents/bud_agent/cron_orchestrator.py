@@ -9,6 +9,7 @@ Unlike BudAgentOrchestrator, this orchestrator:
 
 import hashlib
 import json
+import queue
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -26,11 +27,15 @@ from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
+from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
+from onyx.agents.bud_agent.cron_service import create_cron_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
+from onyx.agents.bud_agent.tool_definitions import is_local_tool
+from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
+from onyx.agents.bud_agent.web_search_service import create_web_search_tools
 from onyx.agents.bud_agent.workspace_service import create_workspace_tools
 from onyx.agents.bud_agent.workspace_service import ensure_default_workspace_files
-from onyx.agents.bud_agent.tool_definitions import is_local_tool
 from onyx.db.agent import add_session_message
 from onyx.db.agent import create_compacted_session
 from onyx.db.agent import get_session
@@ -49,6 +54,8 @@ from onyx.db.models import AgentCronExecution
 from onyx.db.models import AgentCronJob
 from onyx.db.models import User
 from onyx.llm.factory import get_default_llms
+from onyx.redis.redis_pool import get_redis_client
+from onyx.server.query_and_chat.streaming_models import Packet
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -93,6 +100,7 @@ class CronAgentOrchestrator:
         db_session: Session,
         execution: AgentCronExecution,
         cron_job: AgentCronJob,
+        tenant_id: str,
         workspace_path: str | None = None,
         model: str | None = None,
     ) -> None:
@@ -101,8 +109,14 @@ class CronAgentOrchestrator:
         self._db_session = db_session
         self._execution = execution
         self._cron_job = cron_job
+        self._tenant_id = tenant_id
         self._workspace_path = workspace_path
         self._model = model
+        # Dummy packet queue — cron does not stream to a client, but
+        # connector / web-search tools expect a queue for UI packets.
+        self._packet_queue: queue.Queue[Packet | Exception | object] = (
+            queue.Queue()
+        )
 
     def run(self, user_message: str) -> CronRunResult:
         """Run the agent loop synchronously, returning accumulated results.
@@ -136,19 +150,9 @@ class CronAgentOrchestrator:
                 current_session.compaction_summary if current_session else None
             )
 
-            context_builder = BudAgentContextBuilder(
-                workspace_path=self._workspace_path,
-                context_files=db_context,
-                compaction_summary=compaction_summary,
-            )
-            system_prompt = context_builder.build(
-                db_session=self._db_session,
-                user_id=self._user.id,
-                user_message=user_message,
-            )
+            # 2. Build tools
+            redis_client = get_redis_client(tenant_id=self._tenant_id)
 
-            # 2. Build tools — remote only (memory + workspace)
-            # Local tools are detected but cause suspension
             memory_tools = create_memory_tools(
                 db_session=self._db_session,
                 user_id=self._user.id,
@@ -158,12 +162,52 @@ class CronAgentOrchestrator:
                 db_session=self._db_session,
                 user_id=self._user.id,
             )
+            connector_tools = create_connector_tools(
+                db_session=self._db_session,
+                user=self._user,
+                session_id=self._session_id,
+                packet_queue=self._packet_queue,
+                redis_client=redis_client,
+            )
 
-            # Create suspension-aware local tool stubs
+            search_context = BudAgentSearchContext()
+            web_search_tools = create_web_search_tools(
+                db_session=self._db_session,
+                packet_queue=self._packet_queue,
+                search_context=search_context,
+                step_number_fn=lambda: 0,
+                session_id=self._session_id,
+            )
+
+            cron_tools = create_cron_tools(
+                db_session=self._db_session,
+                user_id=self._user.id,
+            )
+
+            # Suspension-aware local tool stubs
             local_tools = self._create_local_tool_stubs(result)
 
             all_tools: list[FunctionTool] = (
-                local_tools + memory_tools + workspace_tools
+                local_tools
+                + memory_tools
+                + workspace_tools
+                + connector_tools
+                + web_search_tools
+                + cron_tools
+            )
+
+            connector_tool_names = [t.name for t in connector_tools]
+
+            context_builder = BudAgentContextBuilder(
+                workspace_path=self._workspace_path,
+                context_files=db_context,
+                compaction_summary=compaction_summary,
+            )
+            system_prompt = context_builder.build(
+                db_session=self._db_session,
+                user_id=self._user.id,
+                user_message=user_message,
+                connector_tool_names=connector_tool_names,
             )
 
             # 3. Build RunConfig
@@ -206,6 +250,7 @@ class CronAgentOrchestrator:
                             db_session=self._db_session,
                             user_id=self._user.id,
                             user_message=user_message,
+                            connector_tool_names=connector_tool_names,
                         )
                         messages = self._build_messages(
                             system_prompt,
@@ -303,6 +348,8 @@ class CronAgentOrchestrator:
                 user=self._user,
             )
 
+            redis_client = get_redis_client(tenant_id=self._tenant_id)
+
             memory_tools = create_memory_tools(
                 db_session=self._db_session,
                 user_id=self._user.id,
@@ -312,9 +359,36 @@ class CronAgentOrchestrator:
                 db_session=self._db_session,
                 user_id=self._user.id,
             )
+            connector_tools = create_connector_tools(
+                db_session=self._db_session,
+                user=self._user,
+                session_id=self._session_id,
+                packet_queue=self._packet_queue,
+                redis_client=redis_client,
+            )
+
+            search_context = BudAgentSearchContext()
+            web_search_tools = create_web_search_tools(
+                db_session=self._db_session,
+                packet_queue=self._packet_queue,
+                search_context=search_context,
+                step_number_fn=lambda: 0,
+                session_id=self._session_id,
+            )
+
+            cron_tools = create_cron_tools(
+                db_session=self._db_session,
+                user_id=self._user.id,
+            )
+
             local_tools = self._create_local_tool_stubs(result)
             all_tools: list[FunctionTool] = (
-                local_tools + memory_tools + workspace_tools
+                local_tools
+                + memory_tools
+                + workspace_tools
+                + connector_tools
+                + web_search_tools
+                + cron_tools
             )
 
             llm, _ = get_default_llms(user=self._user)

@@ -31,6 +31,7 @@ from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
 from onyx.agents.bud_agent.connector_service import create_connector_tools
+from onyx.agents.bud_agent.cron_service import create_cron_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
 from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
 from onyx.agents.bud_agent.web_search_service import create_web_search_tools
@@ -315,6 +316,11 @@ class BudAgentOrchestrator:
                 redis_client=self._redis_client,
             )
 
+            cron_tools = create_cron_tools(
+                db_session=self._db_session,
+                user_id=self._user.id,
+            )
+
             # Web search tools — reuse EXA/SERPER providers with citation tracking
             search_context = BudAgentSearchContext()
 
@@ -336,6 +342,7 @@ class BudAgentOrchestrator:
                 + workspace_tools
                 + connector_tools
                 + web_search_tools
+                + cron_tools
             )
 
             connector_tool_names = [t.name for t in connector_tools]

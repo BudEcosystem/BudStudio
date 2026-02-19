@@ -11,6 +11,7 @@ export interface AgentExecuteParams {
   sessionId: string;
   message: string;
   workspacePath: string;
+  model?: string;
 }
 
 /**
@@ -83,6 +84,7 @@ export function useAgentSSE() {
             sessionId: params.sessionId,
             message: params.message,
             workspacePath: params.workspacePath,
+            model: params.model,
             timezone,
           }),
           signal,

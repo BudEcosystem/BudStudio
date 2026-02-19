@@ -42,6 +42,7 @@ interface ExecuteRequest {
   sessionId: string;
   message: string;
   workspacePath: string;
+  model?: string;
   timezone?: string;
 }
 
@@ -107,7 +108,7 @@ function validateRequest(
     return { valid: false, error: "Request body must be a JSON object" };
   }
 
-  const { sessionId, message, workspacePath, timezone } = body as Record<
+  const { sessionId, message, workspacePath, model, timezone } = body as Record<
     string,
     unknown
   >;
@@ -133,6 +134,7 @@ function validateRequest(
       sessionId: sessionId.trim(),
       message: message.trim(),
       workspacePath: workspacePath.trim(),
+      model: typeof model === "string" && model.trim() ? model.trim() : undefined,
       timezone: typeof timezone === "string" ? timezone.trim() : undefined,
     },
   };
@@ -390,7 +392,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   let { sessionId } = validation.data;
-  const { message, workspacePath, timezone } = validation.data;
+  const { message, workspacePath, model, timezone } = validation.data;
 
   // Get cookie string for backend API calls
   const cookieString = await getCookieString();
@@ -433,6 +435,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           body: JSON.stringify({
             message,
             workspace_path: resolvedWorkspacePath,
+            model,
             timezone,
           }),
           signal: request.signal,

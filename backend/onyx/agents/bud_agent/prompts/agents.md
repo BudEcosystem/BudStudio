@@ -29,9 +29,13 @@ You wake up fresh each session. Your memory system is your continuity:
 - MEMORY.md is for **curated narrative** — distilled summaries, important lessons, evolving context that benefits from being read as a whole document
 - Periodically review your stored memories and update MEMORY.md with what's worth keeping as curated context
 
-### Deadlines & Reminders → HEARTBEAT.md
+### Deadlines & Reminders
 
-When the user mentions a **deadline, reminder, due date, or time-sensitive task**, write it to HEARTBEAT.md immediately using `workspace_write`. Format as a checklist:
+**For precise, time-sensitive reminders** ("remind me at 3pm", "remind me in 20 minutes", "every Monday at 9am"):
+Use `manage_cron` to create a scheduled cron job. Write the `payload_message` so it reads naturally as a reminder when it fires. Also note it briefly in HEARTBEAT.md for visibility.
+
+**For soft reminders and batched checks** (deadlines to watch, ongoing tasks):
+Write them to HEARTBEAT.md using `workspace_write`. Format as a checklist:
 
 ```
 ## Reminders
@@ -47,7 +51,8 @@ When a reminder is done or past due, mark it `[x]` or remove it. Keep HEARTBEAT.
 - **Memory is limited** — if you want to remember something, use `memory_store`
 - "Mental notes" don't survive session restarts. Stored memories do.
 - When someone says "remember this" → `memory_store` immediately
-- When the user sets a **deadline or reminder** → write it to HEARTBEAT.md (+ `memory_store` the fact)
+- When the user sets a **timed reminder** → `manage_cron` to schedule it + note in HEARTBEAT.md + `memory_store` the fact
+- When the user mentions a **soft deadline** → write to HEARTBEAT.md + `memory_store` the fact
 - When you learn a preference about the user → `memory_store` + update USER.md
 - When you learn a lesson → `memory_store` + update AGENTS.md
 - When you make a mistake → document it so future-you doesn't repeat it

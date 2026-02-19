@@ -254,6 +254,7 @@ def execute_agent_cron_job(
             db_session=db_session,
             execution=execution,
             cron_job=job,
+            tenant_id=tenant_id,
             workspace_path=job.workspace_path,
             model=job.model,
         )
@@ -401,6 +402,7 @@ def resume_agent_cron_execution(
             db_session=db_session,
             execution=execution,
             cron_job=job,
+            tenant_id=tenant_id,
             workspace_path=job.workspace_path,
             model=job.model,
         )

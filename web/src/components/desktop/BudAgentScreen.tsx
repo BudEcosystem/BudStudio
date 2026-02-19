@@ -23,6 +23,8 @@ import {
   updateToolCallApprovalRequired,
 } from "@/lib/desktop";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
+import { setUserDefaultModel } from "@/lib/users/UserSettings";
+import { structureValue } from "@/lib/llm/utils";
 import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
 import { useMarkdownRenderer } from "@/app/chat/message/messageComponents/markdownUtils";
 import { copyAll } from "@/app/chat/message/copyingUtils";
@@ -251,6 +253,24 @@ export function BudAgentScreen() {
   const llmManager = useLlmManager(llmProviders);
   const filterManager = useFilters();
 
+  // Save model as user default when changed via the LLM popover
+  const prevModelRef = useRef<string | null>(null);
+  useEffect(() => {
+    const { name, provider, modelName } = llmManager.currentLlm;
+    if (!modelName) return;
+
+    const structured = structureValue(name, provider, modelName);
+    if (prevModelRef.current === null) {
+      // First render — just record, don't save
+      prevModelRef.current = structured;
+      return;
+    }
+    if (structured !== prevModelRef.current) {
+      prevModelRef.current = structured;
+      setUserDefaultModel(structured).catch(() => {});
+    }
+  }, [llmManager.currentLlm]);
+
   // Use the current agent or first available
   // The ChatInputBar requires a non-null assistant, so we'll render a placeholder if none available
   const selectedAssistant = currentAgent || availableAssistants[0] || null;
@@ -377,6 +397,7 @@ export function BudAgentScreen() {
         sessionId: activeSessionId,
         message: userMessage,
         workspacePath: getWorkspacePath(),
+        model: llmManager.currentLlm.modelName || undefined,
       },
       {
         onPacket: (packet) => {
