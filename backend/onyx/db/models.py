@@ -59,11 +59,14 @@ from onyx.db.enums import (
     AccessType,
     AgentCronExecutionStatus,
     AgentCronScheduleType,
+    AgentInboxMessageStatus,
     AgentMemorySource,
     AgentMessageRole,
     AgentSessionStatus,
     AgentToolPermissionLevel,
     EmbeddingPrecision,
+    InboxAgentProcessingStatus,
+    InboxSenderType,
     IndexingMode,
     SyncType,
     SyncStatus,
@@ -74,6 +77,7 @@ from onyx.db.enums import (
     ThemePreference,
     WebSearchProviderType,
 )
+
 from onyx.configs.constants import NotificationType
 from onyx.configs.constants import SearchFeedbackType
 from onyx.configs.constants import TokenRateLimitScope
@@ -200,6 +204,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     personal_name: Mapped[str | None] = mapped_column(String, nullable=True)
     personal_role: Mapped[str | None] = mapped_column(String, nullable=True)
     use_memories: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    inbox_auto_reply_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    inbox_reply_depth_limit: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
 
     chosen_assistants: Mapped[list[int] | None] = mapped_column(
         postgresql.JSONB(), nullable=True, default=None
@@ -4407,3 +4417,129 @@ class AgentToolPermission(Base):
             f"tool_name={self.tool_name!r}, "
             f"permission={self.permission_level!r})>"
         )
+
+
+class InboxConversation(Base):
+    """A 1:1 conversation thread between two users."""
+
+    __tablename__ = "inbox_conversation"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    participants: Mapped[list["InboxConversationParticipant"]] = relationship(
+        "InboxConversationParticipant",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
+    messages: Mapped[list["InboxMessage"]] = relationship(
+        "InboxMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
+
+
+class InboxConversationParticipant(Base):
+    """Tracks a user's participation in a conversation, including read state."""
+
+    __tablename__ = "inbox_conversation_participant"
+
+    conversation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("inbox_conversation.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    last_read_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    joined_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    conversation: Mapped["InboxConversation"] = relationship(
+        "InboxConversation", back_populates="participants"
+    )
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index(
+            "ix_inbox_participant_user_read",
+            "user_id",
+            "last_read_at",
+        ),
+    )
+
+
+class InboxMessage(Base):
+    """A message within an inbox conversation."""
+
+    __tablename__ = "inbox_message"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    conversation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("inbox_conversation.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sender_user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sender_type: Mapped[InboxSenderType] = mapped_column(
+        Enum(InboxSenderType, native_enum=False), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    agent_processing_status: Mapped[InboxAgentProcessingStatus | None] = mapped_column(
+        Enum(InboxAgentProcessingStatus, native_enum=False), nullable=True
+    )
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent_session.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    result_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    conversation: Mapped["InboxConversation"] = relationship(
+        "InboxConversation", back_populates="messages"
+    )
+    sender: Mapped["User"] = relationship("User", foreign_keys=[sender_user_id])
+    session: Mapped["AgentSession | None"] = relationship("AgentSession")
+
+    __table_args__ = (
+        Index(
+            "ix_inbox_message_conversation_created",
+            "conversation_id",
+            "created_at",
+        ),
+        Index(
+            "ix_inbox_message_sender_created",
+            "sender_user_id",
+            "created_at",
+        ),
+    )

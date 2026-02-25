@@ -6,6 +6,7 @@ import { AgentToolsView } from "./AgentToolsView";
 import { AgentConfigView } from "./AgentConfigView";
 import { CronJobsView } from "./CronJobsView";
 import { ConnectorsView } from "./ConnectorsView";
+import { InboxView } from "./InboxView";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 
@@ -90,6 +91,12 @@ export function ModeRenderer({ children }: ModeRendererProps) {
       return (
         <DesktopContainer>
           <ConnectorsView />
+        </DesktopContainer>
+      );
+    case "inbox":
+      return (
+        <DesktopContainer>
+          <InboxView />
         </DesktopContainer>
       );
     case "chat":

@@ -681,16 +681,34 @@ def get_default_llms(
             raise ValueError(
                 "OAuth authentication required for Bud Foundry. Please log in with your SSO account."
             )
-        resolved_model = _resolve_bud_foundry_model(
-            user=user,
-        )
-        if not resolved_model:
-            raise ValueError(
-                "No models available from Bud Foundry for this user. "
-                "Please check your permissions with your administrator."
+
+        # Check user's default_model preference first
+        # Format: "displayName__provider__modelName"
+        user_preferred_model: str | None = None
+        if user.default_model:
+            parts = user.default_model.split("__")
+            if len(parts) == 3:
+                user_preferred_model = parts[2]  # modelName
+                logger.info(
+                    "Using user-preferred model '%s' for user %s",
+                    user_preferred_model,
+                    user.id,
+                )
+
+        if user_preferred_model:
+            model_name = user_preferred_model
+            fast_model_name = user_preferred_model
+        else:
+            resolved_model = _resolve_bud_foundry_model(
+                user=user,
             )
-        model_name = resolved_model
-        fast_model_name = resolved_model  # Use same model for fast operations
+            if not resolved_model:
+                raise ValueError(
+                    "No models available from Bud Foundry for this user. "
+                    "Please check your permissions with your administrator."
+                )
+            model_name = resolved_model
+            fast_model_name = resolved_model  # Use same model for fast operations
 
     if not model_name:
         raise ValueError("No default model name found")

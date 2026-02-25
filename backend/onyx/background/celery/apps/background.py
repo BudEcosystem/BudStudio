@@ -135,5 +135,7 @@ celery_app.autodiscover_tasks(
         "onyx.background.celery.tasks.docfetching",
         # Agent cron tasks
         "onyx.background.celery.tasks.agent_cron",
+        # Agent inbox tasks
+        "onyx.background.celery.tasks.agent_inbox",
     ]
 )

@@ -34,3 +34,8 @@ export { CronJobsView } from "./CronJobsView";
 export { ConnectorsView } from "./ConnectorsView";
 export { ConnectorDetailDrawer } from "./ConnectorDetailDrawer";
 export { AgentConnectorsSkeleton } from "./AgentConnectorsSkeleton";
+export {
+  InboxProvider,
+  useInbox,
+} from "./InboxContext";
+export { InboxView } from "./InboxView";

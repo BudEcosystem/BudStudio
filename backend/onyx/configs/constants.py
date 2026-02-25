@@ -158,6 +158,10 @@ DANSWER_REDIS_FUNCTION_LOCK_PREFIX = "da_function_lock:"
 
 TMP_DRALPHA_PERSONA_NAME = "KG Beta"
 
+# Inbox agent safety cap — hard limit on consecutive agent messages
+# in a single conversation to prevent infinite agent ping-pong loops.
+INBOX_AGENT_SAFETY_CAP = 10
+
 
 class DocumentSource(str, Enum):
     # Special case, document passed in via Onyx APIs without specifying a source type
@@ -553,6 +557,9 @@ class OnyxCeleryTask:
     CHECK_FOR_AGENT_CRON_JOBS = "check_for_agent_cron_jobs"
     EXECUTE_AGENT_CRON_JOB = "execute_agent_cron_job"
     RESUME_AGENT_CRON_EXECUTION = "resume_agent_cron_execution"
+
+    # Agent inbox messaging
+    PROCESS_INBOX_MESSAGE = "process_inbox_message"
 
 
 # this needs to correspond to the matching entry in supervisord

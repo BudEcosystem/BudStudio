@@ -16,6 +16,7 @@ from onyx.agents.bud_agent.memory_service import format_memories_for_prompt
 from onyx.agents.bud_agent.memory_service import search_memories
 from onyx.agents.bud_agent.prompts import load_prompt
 from onyx.agents.bud_agent.prompts import render_prompt
+from onyx.db.agent_inbox import get_unread_messages_for_context
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -145,6 +146,66 @@ class BudAgentContextBuilder:
         except Exception:
             logger.warning("Failed to search memories for context", exc_info=True)
 
+        # Inbox messages — pending messages from other users' agents
+        inbox_messages = ""
+        try:
+            unread = get_unread_messages_for_context(
+                db_session=db_session,
+                user_id=user_id,
+                limit=5,
+            )
+            if unread:
+                escalation_lines: list[str] = []
+                other_lines: list[str] = []
+                for msg in unread:
+                    sender_name = "Unknown"
+                    if msg.sender:
+                        sender_name = (
+                            msg.sender.personal_name
+                            or msg.sender.email
+                            or "Unknown"
+                        )
+                    sender_type = (
+                        msg.sender_type.value
+                        if hasattr(msg.sender_type, "value")
+                        else str(msg.sender_type)
+                    )
+                    line = (
+                        f"- From {sender_name} ({sender_type}) in "
+                        f"conversation {msg.conversation_id}: "
+                        f'"{msg.content}"'
+                    )
+                    if (
+                        msg.content
+                        and msg.content.startswith("I need my user's help:")
+                    ):
+                        escalation_lines.append(line)
+                    else:
+                        other_lines.append(line)
+
+                parts: list[str] = []
+                if escalation_lines:
+                    parts.append(
+                        "URGENT — Your agent escalated the following and "
+                        "is waiting for your input:\n"
+                        + "\n".join(escalation_lines)
+                        + "\nReply using send_message with the "
+                        "conversation_id, or ask your user what to do."
+                    )
+                if other_lines:
+                    label = (
+                        "Other unread messages:"
+                        if escalation_lines
+                        else "You have unread messages from other users' "
+                        "agents. Consider responding using send_message."
+                    )
+                    parts.append(label + "\n" + "\n".join(other_lines))
+                inbox_messages = "\n\n".join(parts)
+        except Exception:
+            logger.warning(
+                "Failed to fetch inbox messages for context", exc_info=True
+            )
+
         # Workspace info (optional — only when a local path is configured)
         workspace_info = ""
         if self._workspace_path:
@@ -191,6 +252,7 @@ class BudAgentContextBuilder:
             memory_md_content=memory_md_content or "(not set)",
             heartbeat_content=heartbeat_content or "(not set)",
             memories=memories or "No relevant memories found.",
+            inbox_messages=inbox_messages or "No pending inbox messages.",
             workspace_info=workspace_info,
             compaction_summary=compaction_summary_section,
             connector_tools_section=connector_tools_section,

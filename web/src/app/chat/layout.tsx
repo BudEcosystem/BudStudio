@@ -5,7 +5,7 @@ import { ChatProvider } from "@/refresh-components/contexts/ChatContext";
 import { ProjectsProvider } from "./projects/ProjectsContext";
 import AppSidebar from "@/sections/sidebar/AppSidebar";
 import { ChatModalProvider } from "@/refresh-components/contexts/ChatModalContext";
-import { DesktopModeProvider, DesktopHeader, ModeRenderer, AgentSessionProvider, CronNotificationProvider } from "@/components/desktop";
+import { DesktopModeProvider, DesktopHeader, ModeRenderer, AgentSessionProvider, CronNotificationProvider, InboxProvider } from "@/components/desktop";
 
 export default async function Layout({
   children,
@@ -46,6 +46,7 @@ export default async function Layout({
   return (
     <DesktopModeProvider>
       <CronNotificationProvider>
+      <InboxProvider>
       <DesktopHeader />
       <ChatProvider
         proSearchToggled={proSearchToggled}
@@ -76,6 +77,7 @@ export default async function Layout({
           </ProjectsProvider>
         </ChatModalProvider>
       </ChatProvider>
+      </InboxProvider>
       </CronNotificationProvider>
     </DesktopModeProvider>
   );

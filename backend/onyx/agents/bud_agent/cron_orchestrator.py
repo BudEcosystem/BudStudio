@@ -30,6 +30,7 @@ from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.cron_service import create_cron_tools
+from onyx.agents.bud_agent.inbox_service import create_inbox_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
 from onyx.agents.bud_agent.tool_definitions import is_local_tool
 from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
@@ -184,6 +185,12 @@ class CronAgentOrchestrator:
                 user_id=self._user.id,
             )
 
+            inbox_tools = create_inbox_tools(
+                db_session=self._db_session,
+                user_id=self._user.id,
+                tenant_id=self._tenant_id,
+            )
+
             # Suspension-aware local tool stubs
             local_tools = self._create_local_tool_stubs(result)
 
@@ -194,6 +201,7 @@ class CronAgentOrchestrator:
                 + connector_tools
                 + web_search_tools
                 + cron_tools
+                + inbox_tools
             )
 
             connector_tool_names = [t.name for t in connector_tools]
@@ -381,6 +389,12 @@ class CronAgentOrchestrator:
                 user_id=self._user.id,
             )
 
+            inbox_tools = create_inbox_tools(
+                db_session=self._db_session,
+                user_id=self._user.id,
+                tenant_id=self._tenant_id,
+            )
+
             local_tools = self._create_local_tool_stubs(result)
             all_tools: list[FunctionTool] = (
                 local_tools
@@ -389,6 +403,7 @@ class CronAgentOrchestrator:
                 + connector_tools
                 + web_search_tools
                 + cron_tools
+                + inbox_tools
             )
 
             llm, _ = get_default_llms(user=self._user)

@@ -32,6 +32,7 @@ from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
 from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.cron_service import create_cron_tools
+from onyx.agents.bud_agent.inbox_service import create_inbox_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
 from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
 from onyx.agents.bud_agent.web_search_service import create_web_search_tools
@@ -96,6 +97,7 @@ class BudAgentOrchestrator:
         workspace_path: str | None = None,
         model: str | None = None,
         timezone: str | None = None,
+        tenant_id: str = "public",
     ) -> None:
         self._session_id = session_id
         self._user = user
@@ -104,6 +106,7 @@ class BudAgentOrchestrator:
         self._workspace_path = workspace_path
         self._model = model
         self._timezone = timezone
+        self._tenant_id = tenant_id
         self._packet_queue: queue.Queue[Packet | Exception | object] = (
             queue.Queue()
         )
@@ -321,6 +324,12 @@ class BudAgentOrchestrator:
                 user_id=self._user.id,
             )
 
+            inbox_tools = create_inbox_tools(
+                db_session=self._db_session,
+                user_id=self._user.id,
+                tenant_id=self._tenant_id,
+            )
+
             # Web search tools — reuse EXA/SERPER providers with citation tracking
             search_context = BudAgentSearchContext()
 
@@ -343,6 +352,7 @@ class BudAgentOrchestrator:
                 + connector_tools
                 + web_search_tools
                 + cron_tools
+                + inbox_tools
             )
 
             connector_tool_names = [t.name for t in connector_tools]

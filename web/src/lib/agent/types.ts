@@ -214,6 +214,50 @@ export interface PendingCronData {
 }
 
 /**
+ * Agent inbox messaging types (conversation-based).
+ */
+
+export interface InboxMessageSnapshot {
+  id: string;
+  conversation_id: string;
+  sender_user_id: string;
+  sender_name: string | null;
+  sender_email: string | null;
+  sender_type: "user" | "agent";
+  content: string;
+  agent_processing_status: "pending" | "processing" | "completed" | "failed" | null;
+  result_summary: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationListItem {
+  conversation_id: string;
+  other_participant_name: string | null;
+  other_participant_email: string | null;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+  unread_count: number;
+}
+
+export interface ConversationDetail {
+  conversation_id: string;
+  participants: Array<{
+    user_id: string;
+    name: string | null;
+    email: string | null;
+  }>;
+  messages: InboxMessageSnapshot[];
+}
+
+export interface InboxSettings {
+  auto_reply_enabled: boolean;
+  reply_depth_limit: number | null;
+}
+
+
+/**
  * BudGateway types for MCP gateway connectors.
  */
 

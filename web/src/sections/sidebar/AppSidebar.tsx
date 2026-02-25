@@ -70,7 +70,9 @@ import { useAgentSession } from "@/components/desktop/AgentSessionContext";
 import SvgSparkle from "@/icons/sparkle";
 import SvgClock from "@/icons/clock";
 import SvgPlug from "@/icons/plug";
+import SvgInbox from "@/icons/inbox";
 import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
+import { useInbox } from "@/components/desktop/InboxContext";
 import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
 import { useTheme } from "next-themes";
 import SvgSun from "@/icons/sun";
@@ -226,6 +228,7 @@ function AppSidebarInner() {
     useDesktopMode();
   const { clearCurrentSession } = useAgentSession();
   const { unreadCount } = useCronNotifications();
+  const { unreadCount: inboxUnreadCount } = useInbox();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const [showNotifications, setShowNotifications] = useState(false);
@@ -560,6 +563,20 @@ function AppSidebarInner() {
                   >
                     Connectors
                   </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgInbox}
+                    onClick={() => setAgentView("inbox")}
+                    active={agentView === "inbox"}
+                    folded
+                    testId="sidebar-inbox-tab"
+                  >
+                    Inbox
+                    {inboxUnreadCount > 0 && (
+                      <span className="ml-auto text-xs bg-purple-600 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+                        {inboxUnreadCount}
+                      </span>
+                    )}
+                  </SidebarTab>
                     </>
                   ) : (
                     <>
@@ -688,6 +705,19 @@ function AppSidebarInner() {
                         testId="sidebar-connectors-tab"
                       >
                         Connectors
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgInbox}
+                        onClick={() => setAgentView("inbox")}
+                        active={agentView === "inbox"}
+                        testId="sidebar-inbox-tab"
+                      >
+                        Inbox
+                        {inboxUnreadCount > 0 && (
+                          <span className="ml-auto text-xs bg-purple-600 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+                            {inboxUnreadCount}
+                          </span>
+                        )}
                       </SidebarTab>
                     </SidebarSection>
                   </>

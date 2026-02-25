@@ -239,6 +239,24 @@ class AgentToolPermissionLevel(str, PyEnum):
     BLOCKED = "blocked"
 
 
+class AgentInboxMessageStatus(str, PyEnum):
+    """Status of an agent inbox message"""
+
+    UNREAD = "unread"
+    READ = "read"
+    PROCESSING = "processing"
+    RESPONDED = "responded"
+    AWAITING_USER = "awaiting_user"
+    FAILED = "failed"
+
+    def is_terminal(self) -> bool:
+        terminal_states = {
+            AgentInboxMessageStatus.RESPONDED,
+            AgentInboxMessageStatus.FAILED,
+        }
+        return self in terminal_states
+
+
 class AgentCronExecutionStatus(str, PyEnum):
     """Status of an agent cron job execution"""
 
@@ -256,3 +274,15 @@ class AgentCronExecutionStatus(str, PyEnum):
             AgentCronExecutionStatus.SKIPPED,
         }
         return self in terminal_states
+
+
+class InboxSenderType(str, PyEnum):
+    USER = "user"
+    AGENT = "agent"
+
+
+class InboxAgentProcessingStatus(str, PyEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"

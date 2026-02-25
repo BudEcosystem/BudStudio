@@ -346,17 +346,23 @@ def get_or_create_active_session(
 def get_active_session_for_user(
     db_session: Session,
     user_id: UUID | None,
+    exclude_session_id: UUID | None = None,
 ) -> AgentSession | None:
     """Return the most recent ACTIVE session for the user, or None if none exists.
 
     Unlike get_or_create_active_session(), this never creates a new session.
+    Use *exclude_session_id* to skip a known session (e.g. an inbox
+    processing session that is still technically ACTIVE).
     """
+    conditions = [
+        AgentSession.user_id == user_id,
+        AgentSession.status == AgentSessionStatus.ACTIVE,
+    ]
+    if exclude_session_id is not None:
+        conditions.append(AgentSession.id != exclude_session_id)
     stmt = (
         select(AgentSession)
-        .where(
-            AgentSession.user_id == user_id,
-            AgentSession.status == AgentSessionStatus.ACTIVE,
-        )
+        .where(*conditions)
         .order_by(desc(AgentSession.updated_at))
         .limit(1)
     )

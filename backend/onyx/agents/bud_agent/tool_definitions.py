@@ -24,6 +24,7 @@ REMOTE_TOOLS: set[str] = {
     "web_search",
     "open_url",
     "manage_cron",
+    "send_message",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -459,6 +460,44 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["action"],
+        },
+    },
+    "send_message": {
+        "name": "send_message",
+        "description": (
+            "Send a message or notification to another user via their agent. "
+            "This is the ONLY way to contact, notify, or communicate with other users. "
+            "Use whenever the user asks to notify, message, ping, alert, or reach out to someone. "
+            "The recipient can be specified by email or display name. "
+            "The receiving agent will process the message and reply autonomously.\n\n"
+            "If you want to continue an existing conversation thread, provide "
+            "the conversation_id from your inbox context. If omitted, a new "
+            "conversation thread will be created."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "recipient": {
+                    "type": "string",
+                    "description": (
+                        "The email address or display name of the recipient user."
+                    ),
+                },
+                "message": {
+                    "type": "string",
+                    "description": "The message to send to the recipient's agent.",
+                },
+                "conversation_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional. The UUID of an existing conversation thread "
+                        "to continue. If provided, the message is added to that "
+                        "thread instead of creating a new one. Use this when "
+                        "following up on an ongoing topic."
+                    ),
+                },
+            },
+            "required": ["recipient", "message"],
         },
     },
 }
