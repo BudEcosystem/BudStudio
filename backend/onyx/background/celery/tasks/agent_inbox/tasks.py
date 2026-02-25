@@ -23,7 +23,27 @@ from onyx.db.enums import InboxSenderType
 from onyx.db.models import InboxConversationParticipant
 from onyx.db.models import InboxMessage
 from onyx.db.models import User
+from onyx.redis.event_publisher import publish_event
 from onyx.redis.redis_pool import get_redis_client
+
+
+def _publish_inbox_status(
+    tenant_id: str,
+    receiver_id: UUID,
+    message: InboxMessage,
+    status: str,
+) -> None:
+    """Helper to publish an inbox_status_change event."""
+    publish_event(
+        tenant_id=tenant_id,
+        user_id=receiver_id,
+        event_type="inbox_status_change",
+        data={
+            "conversation_id": str(message.conversation_id),
+            "message_id": str(message.id),
+            "status": status,
+        },
+    )
 
 
 @shared_task(
@@ -321,6 +341,7 @@ def process_inbox_message(
                 InboxAgentProcessingStatus.FAILED,
                 error_message=run_result.error,
             )
+            _publish_inbox_status(tenant_id, receiver.id, message, "failed")
             task_logger.error(
                 f"Inbox message {message_id} processing failed: {run_result.error}"
             )
@@ -330,6 +351,7 @@ def process_inbox_message(
                 InboxAgentProcessingStatus.COMPLETED,
                 result_summary="Escalated to user",
             )
+            _publish_inbox_status(tenant_id, receiver.id, message, "completed")
             task_logger.info(f"Inbox message {message_id}: agent escalated to user")
 
             # Inject proactive message into user's main session
@@ -366,6 +388,12 @@ def process_inbox_message(
                         role=AgentMessageRole.ASSISTANT,
                         content=proactive_msg,
                     )
+                    publish_event(
+                        tenant_id=tenant_id,
+                        user_id=receiver.id,
+                        event_type="session_message",
+                        data={"session_id": str(main_session.id)},
+                    )
                     task_logger.info(
                         f"Inbox message {message_id}: injected proactive "
                         f"message into main session {main_session.id}"
@@ -392,6 +420,7 @@ def process_inbox_message(
                     else None
                 ),
             )
+            _publish_inbox_status(tenant_id, receiver.id, message, "completed")
             task_logger.info(f"Inbox message {message_id} processed successfully")
         elif run_result.no_action:
             update_message_processing_status(
@@ -399,6 +428,7 @@ def process_inbox_message(
                 InboxAgentProcessingStatus.COMPLETED,
                 result_summary="No action needed",
             )
+            _publish_inbox_status(tenant_id, receiver.id, message, "completed")
             task_logger.info(
                 f"Inbox message {message_id}: agent chose no action"
             )
@@ -412,6 +442,7 @@ def process_inbox_message(
                     else "No response generated."
                 ),
             )
+            _publish_inbox_status(tenant_id, receiver.id, message, "completed")
             task_logger.info(f"Inbox message {message_id} completed (no explicit reply)")
 
         # Mark the inbox session as COMPLETED so it doesn't appear

@@ -813,13 +813,20 @@ class BudAgentOrchestrator:
             self._packet_queue.put(e)
             self._emit(AgentDone())
         finally:
-            # Clean up Redis keys (stop key + running flag)
+            # Clean up Redis keys — delete individually because
+            # TenantRedis._prefix_method only prefixes the first
+            # positional arg, so passing multiple keys to a single
+            # delete() call leaves the second key un-prefixed.
             try:
-                self._redis_client.delete(
-                    self._stop_redis_key, self._running_redis_key
-                )
+                self._redis_client.delete(self._stop_redis_key)
+                self._redis_client.delete(self._running_redis_key)
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to clean up one or more agent Redis keys "
+                    "for session %s",
+                    self._session_id,
+                    exc_info=True,
+                )
             self._packet_queue.put(_SENTINEL)
 
     def _compact_session(

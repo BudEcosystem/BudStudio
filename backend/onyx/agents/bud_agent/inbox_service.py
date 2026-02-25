@@ -23,6 +23,7 @@ from onyx.db.agent_inbox import get_conversation_messages
 from onyx.db.agent_inbox import resolve_user
 from onyx.db.enums import InboxSenderType
 from onyx.db.models import User
+from onyx.redis.event_publisher import publish_event
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -109,6 +110,17 @@ def create_inbox_tools(
                 sender_user_id=user_id,
                 sender_type=InboxSenderType.AGENT,
                 content=message_text,
+            )
+
+            # Notify recipient about the new message
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=recipient.id,
+                event_type="inbox_message",
+                data={
+                    "conversation_id": str(conversation.id),
+                    "message_id": str(inbox_msg.id),
+                },
             )
 
             # Check depth limit before dispatching
@@ -227,6 +239,17 @@ def create_reply_tool(
             recipient = db_session.get(User, other_participant.user_id)
             if recipient is None:
                 return "Reply sent."
+
+            # Notify recipient about the new reply
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=recipient.id,
+                event_type="inbox_message",
+                data={
+                    "conversation_id": str(conversation_id),
+                    "message_id": str(inbox_msg.id),
+                },
+            )
 
             recipient_name = (
                 recipient.personal_name or recipient.email or "the recipient"

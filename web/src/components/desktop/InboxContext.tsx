@@ -5,16 +5,19 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   ReactNode,
 } from "react";
 import { useIsDesktop } from "@/lib/desktop";
 import { useInboxPolling } from "@/lib/desktop/useInboxPolling";
+import { useEventStreamContext } from "./EventStreamContext";
 import type {
   ConversationListItem,
   ConversationDetail,
   InboxMessageSnapshot,
   InboxSettings,
 } from "@/lib/agent/types";
+import type { EventStreamEvent } from "@/lib/desktop/useEventStream";
 
 interface InboxContextType {
   unreadCount: number;
@@ -40,8 +43,43 @@ interface InboxProviderProps {
 
 export function InboxProvider({ children }: InboxProviderProps) {
   const isDesktop = useIsDesktop();
-  const polling = useInboxPolling(isDesktop);
+  const { connected, registerHandler, unregisterHandler } =
+    useEventStreamContext();
+  const polling = useInboxPolling(isDesktop, connected);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+
+  // Register handlers for real-time inbox events
+  useEffect(() => {
+    const handleInboxMessage = (event: EventStreamEvent) => {
+      // Refresh unread count and conversation list
+      polling.fetchUnreadCount();
+      polling.fetchConversations();
+
+      // If the event is for the currently selected conversation, refresh detail
+      const eventConvId = event.data.conversation_id as string | undefined;
+      if (eventConvId && eventConvId === selectedConversationId) {
+        polling.fetchConversationDetail(eventConvId);
+      }
+    };
+
+    const handleStatusChange = (_event: EventStreamEvent) => {
+      // Refresh conversations to pick up status updates
+      polling.fetchConversations();
+    };
+
+    registerHandler("inbox_message", handleInboxMessage);
+    registerHandler("inbox_status_change", handleStatusChange);
+
+    return () => {
+      unregisterHandler("inbox_message", handleInboxMessage);
+      unregisterHandler("inbox_status_change", handleStatusChange);
+    };
+  }, [
+    registerHandler,
+    unregisterHandler,
+    polling,
+    selectedConversationId,
+  ]);
 
   const selectConversation = useCallback(
     async (conversationId: string | null) => {

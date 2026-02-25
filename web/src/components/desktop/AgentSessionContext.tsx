@@ -10,6 +10,8 @@ import React, {
   ReactNode,
 } from "react";
 import type { Packet } from "@/app/chat/services/streamingModels";
+import { useEventStreamContext } from "./EventStreamContext";
+import type { EventStreamEvent } from "@/lib/desktop/useEventStream";
 
 /**
  * Tool call information for display in the UI.
@@ -320,6 +322,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ──────────────────────────────────────────────────────────────────────────
+  // Event stream handler registration (moved after switchToSession definition)
+  // ──────────────────────────────────────────────────────────────────────────
+  const { registerHandler, unregisterHandler } = useEventStreamContext();
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Session CRUD
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -391,6 +398,31 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Real-time session message events via SSE
+  // (placed after switchToSession so the const is initialised when referenced)
+  // ──────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleSessionMessage = (event: EventStreamEvent) => {
+      const sessionId = event.data.session_id as string | undefined;
+      if (!sessionId) return;
+
+      if (sessionId !== currentSessionId) {
+        // Different session received a proactive message — switch to it
+        switchToSession(sessionId);
+      }
+
+      // Clear cache (after switchToSession which may re-add it) then re-fetch
+      loadedSessionsRef.current.delete(sessionId);
+      loadSessionMessages(sessionId);
+    };
+
+    registerHandler("session_message", handleSessionMessage);
+    return () => {
+      unregisterHandler("session_message", handleSessionMessage);
+    };
+  }, [registerHandler, unregisterHandler, currentSessionId, loadSessionMessages, switchToSession]);
 
   const deleteSession = useCallback(
     (sessionId: string) => {
