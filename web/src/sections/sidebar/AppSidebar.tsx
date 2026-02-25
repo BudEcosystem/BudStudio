@@ -74,10 +74,6 @@ import SvgInbox from "@/icons/inbox";
 import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
 import { useInbox } from "@/components/desktop/InboxContext";
 import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
-import { useTheme } from "next-themes";
-import SvgSun from "@/icons/sun";
-import SvgMoon from "@/icons/moon";
-import SimpleTooltip from "@/refresh-components/SimpleTooltip";
 
 // Visible-agents = pinned-agents + current-agent (if current-agent not in pinned-agents)
 // OR Visible-agents = pinned-agents (if current-agent in pinned-agents)
@@ -97,81 +93,6 @@ function buildVisibleAgents(
   ).filter((agent) => agent.id !== 0);
 
   return [visibleAgents, currentAgentIsPinned];
-}
-
-function ThemeSwitcher({
-  isDark,
-  folded,
-  onToggle,
-}: {
-  isDark: boolean;
-  folded: boolean;
-  onToggle: () => void;
-}) {
-  // next-themes resolvedTheme is undefined during SSR/hydration.
-  // Use a mounted flag to avoid showing stale state before the client hydrates.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const activeText = "#ffffff";
-  const inactiveText = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.7)";
-  const activeBg = isDark ? "#101416" : "#101416";
-
-  if (!mounted) return null;
-
-  if (folded) {
-    return (
-      <SimpleTooltip tooltip={isDark ? "Switch to Light" : "Switch to Dark"}>
-        <button
-          onClick={onToggle}
-          className="flex items-center justify-center w-full p-1.5 rounded-08 cursor-pointer hover:bg-background-neutral-03"
-        >
-          <div className="w-[1rem] h-[1rem] flex items-center justify-center">
-            {isDark ? (
-              <SvgMoon className="h-[1rem] w-[1rem] stroke-text-03" />
-            ) : (
-              <SvgSun className="h-[1rem] w-[1rem] stroke-text-03" />
-            )}
-          </div>
-        </button>
-      </SimpleTooltip>
-    );
-  }
-
-  return (
-    <div
-      className="flex items-center rounded-lg p-1 border mt-4 bg-background-neutral-03 border-border-02"
-    >
-      <button
-        onClick={() => !isDark || onToggle()}
-        className={cn(
-          "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-md",
-          isDark && "hover:opacity-70"
-        )}
-        style={{
-          color: !isDark ? activeText : inactiveText,
-          background: !isDark ? activeBg : "transparent",
-        }}
-      >
-        <SvgSun className="h-3 w-3" style={{ stroke: !isDark ? activeText : inactiveText }} />
-        Light
-      </button>
-      <button
-        onClick={() => isDark || onToggle()}
-        className={cn(
-          "flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-md",
-          !isDark && "hover:opacity-70"
-        )}
-        style={{
-          color: isDark ? activeText : inactiveText,
-          background: isDark ? activeBg : "transparent",
-        }}
-      >
-        <SvgMoon className="h-3 w-3" style={{ stroke: isDark ? activeText : inactiveText }} />
-        Dark
-      </button>
-    </div>
-  );
 }
 
 interface RecentsSectionProps {
@@ -229,8 +150,6 @@ function AppSidebarInner() {
   const { clearCurrentSession } = useAgentSession();
   const { unreadCount } = useCronNotifications();
   const { unreadCount: inboxUnreadCount } = useInbox();
-  const { resolvedTheme, setTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
   const [showNotifications, setShowNotifications] = useState(false);
 
   // State for custom agent modal
@@ -439,10 +358,12 @@ function AppSidebarInner() {
     () => (
       <div className="px-4">
         <Settings folded={folded} />
-        <ThemeSwitcher isDark={isDark} folded={folded} onToggle={() => setTheme(isDark ? "light" : "dark")} />
+        {isDesktop && (
+          <ModeSwitcher currentMode={currentMode} onModeChange={setMode} className="mt-4" />
+        )}
       </div>
     ),
-    [folded, isDark, setTheme]
+    [folded, isDesktop, currentMode, setMode]
   );
 
   if (!combinedSettings) {
@@ -498,9 +419,6 @@ function AppSidebarInner() {
             <div className="px-2">
               {isDesktop ? (
                 <>
-                  {/* Mode switcher above notifications */}
-                  <ModeSwitcher currentMode={currentMode} onModeChange={setMode} className="mb-2" />
-
                   {currentMode === "agent" ? (
                     <>
                       {/* Notification button above agent nav — Bud admin style */}
@@ -639,12 +557,7 @@ function AppSidebarInner() {
               footer={settingsButton}
             >
               <>
-                {isDesktop && (
-                  <>
-                    <ModeSwitcher currentMode={currentMode} onModeChange={setMode} className="mb-2" />
-                    {currentMode === "chat" && newSessionButton}
-                  </>
-                )}
+                {isDesktop && currentMode === "chat" && newSessionButton}
 
                 {/* Agent mode: show a single "Chat" link */}
                 {isDesktop && currentMode === "agent" ? (
