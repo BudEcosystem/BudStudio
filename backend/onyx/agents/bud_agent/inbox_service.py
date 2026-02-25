@@ -113,6 +113,12 @@ def create_inbox_tools(
             )
 
             # Notify recipient about the new message
+            sender = db_session.get(User, user_id)
+            sender_name = (
+                (sender.personal_name or sender.email)
+                if sender
+                else None
+            )
             publish_event(
                 tenant_id=tenant_id,
                 user_id=recipient.id,
@@ -120,6 +126,7 @@ def create_inbox_tools(
                 data={
                     "conversation_id": str(conversation.id),
                     "message_id": str(inbox_msg.id),
+                    "sender_name": sender_name,
                 },
             )
 
@@ -241,6 +248,12 @@ def create_reply_tool(
                 return "Reply sent."
 
             # Notify recipient about the new reply
+            sender = db_session.get(User, user_id)
+            sender_name = (
+                (sender.personal_name or sender.email)
+                if sender
+                else None
+            )
             publish_event(
                 tenant_id=tenant_id,
                 user_id=recipient.id,
@@ -248,6 +261,7 @@ def create_reply_tool(
                 data={
                     "conversation_id": str(conversation_id),
                     "message_id": str(inbox_msg.id),
+                    "sender_name": sender_name,
                 },
             )
 
