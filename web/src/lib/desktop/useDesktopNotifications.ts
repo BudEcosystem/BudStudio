@@ -2,39 +2,54 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 
+// Tauri IPC invoke function type
+type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+
 /**
  * Hook for sending native desktop notifications via Tauri's notification plugin.
  *
- * Dynamically imports `@tauri-apps/plugin-notification` to avoid breaking web
- * builds.  Only fires notifications when the window is NOT focused (except
- * when `force` is true).
+ * Uses the Tauri IPC `invoke` API directly for sending notifications, because
+ * the plugin's `sendNotification()` helper falls back to the Web Notification
+ * API (`new window.Notification(...)`) which does NOT work in WKWebView on
+ * macOS.  The IPC-based `plugin:notification|notify` command goes through the
+ * Rust plugin and produces real native OS notifications.
+ *
+ * Only fires notifications when the window is NOT focused (except when
+ * `force` is true).
  */
 export function useDesktopNotifications() {
   const [permissionGranted, setPermissionGranted] = useState(false);
   const windowFocusedRef = useRef(true);
-  const pluginRef = useRef<typeof import("@tauri-apps/plugin-notification") | null>(null);
+  const invokeRef = useRef<InvokeFn | null>(null);
 
-  // Load the Tauri notification plugin dynamically
+  // Load the Tauri core invoke function dynamically
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const mod = await import("@tauri-apps/plugin-notification");
+        const core = await import("@tauri-apps/api/core");
         if (cancelled) return;
-        pluginRef.current = mod;
+        invokeRef.current = core.invoke;
 
-        // Request permission
-        let perm = await mod.isPermissionGranted();
-        if (!perm) {
-          const result = await mod.requestPermission();
-          perm = result === "granted";
+        // Check / request permission via IPC
+        // is_permission_granted returns Option<bool>: true, false, or null (unknown)
+        const granted = await core.invoke<boolean | null>(
+          "plugin:notification|is_permission_granted"
+        );
+        if (granted === true) {
+          if (!cancelled) setPermissionGranted(true);
+        } else {
+          // null (unknown) or false (denied) — try requesting
+          const result = await core.invoke<string>(
+            "plugin:notification|request_permission"
+          );
+          if (!cancelled) {
+            setPermissionGranted(result === "granted");
+          }
         }
-        if (!cancelled) {
-          setPermissionGranted(perm);
-        }
-      } catch {
-        // Not running in Tauri — ignore
+      } catch (err) {
+        console.error("[notifications] Init failed:", err);
       }
     })();
 
@@ -69,13 +84,19 @@ export function useDesktopNotifications() {
    */
   const notify = useCallback(
     (title: string, body: string, options?: { force?: boolean }) => {
-      if (!permissionGranted || !pluginRef.current) return;
-      if (!options?.force && windowFocusedRef.current) return;
+      if (!permissionGranted || !invokeRef.current) {
+        return;
+      }
+      if (!options?.force && windowFocusedRef.current) {
+        return;
+      }
 
-      pluginRef.current
-        .sendNotification({ title, body })
-        .catch(() => {
-          // Ignore notification errors
+      invokeRef
+        .current("plugin:notification|notify", {
+          options: { title, body },
+        })
+        .catch((err) => {
+          console.error("[notifications] IPC notify failed:", err);
         });
     },
     [permissionGranted]
@@ -85,19 +106,13 @@ export function useDesktopNotifications() {
    * Update the macOS dock badge count.
    */
   const updateBadgeCount = useCallback((count: number) => {
-    if (!pluginRef.current) return;
+    if (!invokeRef.current) return;
 
-    try {
-      // setBadgeCount is available in tauri-plugin-notification >= 2.0
-      const mod = pluginRef.current as Record<string, unknown>;
-      if (typeof mod.setBadgeCount === "function") {
-        (mod.setBadgeCount as (count: number) => Promise<void>)(count).catch(
-          () => {}
-        );
+    invokeRef.current("plugin:notification|set_badge_count", { count }).catch(
+      () => {
+        // Ignore errors — not all platforms support badge count
       }
-    } catch {
-      // Ignore
-    }
+    );
   }, []);
 
   return { notify, updateBadgeCount, permissionGranted };

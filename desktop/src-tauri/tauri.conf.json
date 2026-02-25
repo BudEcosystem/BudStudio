@@ -49,6 +49,6 @@
         "schemes": ["budstudio"]
       }
     },
-    "notification": {}
+    "notification": null
   }
 }
