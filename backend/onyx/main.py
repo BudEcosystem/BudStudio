@@ -130,6 +130,7 @@ from onyx.server.token_rate_limits.api import (
     router as token_rate_limit_settings_router,
 )
 from onyx.server.utils import BasicAuthenticationError
+from onyx.auth.keycloak_provisioning import ensure_keycloak_client_roles
 from onyx.auth.keycloak_provisioning import provision_keycloak_client
 from onyx.setup import setup_multitenant_onyx
 from onyx.setup import setup_onyx
@@ -306,6 +307,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET:
         logger.notice("Both OAuth Client ID and Secret are configured.")
+
+    # Ensure the Keycloak client has required roles (e.g. manage-users)
+    if AUTH_TYPE == AuthType.OIDC:
+        ensure_keycloak_client_roles()
 
     if DISABLE_GENERATIVE_AI:
         logger.notice("Generative AI Q&A disabled")
