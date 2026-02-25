@@ -131,6 +131,22 @@ from shared_configs.contextvars import get_current_tenant_id
 logger = setup_logger()
 
 
+def extract_personal_name_from_claims(claims: dict[str, Any]) -> str | None:
+    """Extract a display name from OIDC/OAuth claims.
+
+    Checks standard OIDC claims in priority order:
+    name > given_name + family_name > preferred_username
+    """
+    return (
+        claims.get("name")
+        or " ".join(
+            filter(None, [claims.get("given_name"), claims.get("family_name")])
+        )
+        or claims.get("preferred_username")
+        or None
+    )
+
+
 def is_user_admin(user: User | None) -> bool:
     if AUTH_TYPE == AuthType.DISABLED:
         return True
@@ -1394,22 +1410,11 @@ def get_oauth_router(
                 claims = jwt.decode(
                     id_token, options={"verify_signature": False}
                 )
-                personal_name = (
-                    claims.get("name")
-                    or " ".join(
-                        filter(
-                            None,
-                            [
-                                claims.get("given_name"),
-                                claims.get("family_name"),
-                            ],
-                        )
-                    )
-                    or claims.get("preferred_username")
-                    or None
+                personal_name = extract_personal_name_from_claims(claims)
+            except jwt.PyJWTError as e:
+                logger.warning(
+                    f"Could not decode id_token to extract personal name: {e}"
                 )
-            except Exception:
-                pass  # Name extraction is best-effort
 
         # Proceed to authenticate or create the user
         try:

@@ -18,6 +18,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from onyx.auth.users import auth_backend
+from onyx.auth.users import extract_personal_name_from_claims
 from onyx.auth.users import get_user_manager
 from onyx.auth.users import UserManager
 import onyx.configs.app_configs as app_configs
@@ -186,14 +187,7 @@ async def oidc_direct_login(
         )
 
     # Extract display name from OIDC claims
-    personal_name = (
-        userinfo.get("name")
-        or " ".join(
-            filter(None, [userinfo.get("given_name"), userinfo.get("family_name")])
-        )
-        or userinfo.get("preferred_username")
-        or None
-    )
+    personal_name = extract_personal_name_from_claims(userinfo)
 
     # Calculate expires_at timestamp
     import time
