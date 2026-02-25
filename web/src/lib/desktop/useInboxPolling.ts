@@ -9,6 +9,7 @@ import type {
 } from "@/lib/agent/types";
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const SLOW_POLL_INTERVAL_MS = 120_000; // 120 seconds (when SSE is connected)
 
 interface UseInboxPollingResult {
   unreadCount: number;
@@ -16,6 +17,7 @@ interface UseInboxPollingResult {
   conversationDetail: ConversationDetail | null;
   settings: InboxSettings;
   isLoading: boolean;
+  fetchUnreadCount: () => Promise<void>;
   fetchConversations: () => Promise<void>;
   fetchConversationDetail: (conversationId: string) => Promise<void>;
   markRead: (conversationId: string) => Promise<void>;
@@ -25,7 +27,10 @@ interface UseInboxPollingResult {
   updateSettings: (settings: InboxSettings) => Promise<void>;
 }
 
-export function useInboxPolling(enabled: boolean = true): UseInboxPollingResult {
+export function useInboxPolling(
+  enabled: boolean = true,
+  slowMode: boolean = false,
+): UseInboxPollingResult {
   const [unreadCount, setUnreadCount] = useState(0);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [conversationDetail, setConversationDetail] = useState<ConversationDetail | null>(null);
@@ -186,8 +191,9 @@ export function useInboxPolling(enabled: boolean = true): UseInboxPollingResult 
     // Initial fetch
     fetchUnreadCount();
 
-    // Set up polling interval
-    intervalRef.current = setInterval(fetchUnreadCount, POLL_INTERVAL_MS);
+    // Set up polling interval — slower when SSE is connected
+    const interval = slowMode ? SLOW_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+    intervalRef.current = setInterval(fetchUnreadCount, interval);
 
     return () => {
       if (intervalRef.current) {
@@ -195,7 +201,7 @@ export function useInboxPolling(enabled: boolean = true): UseInboxPollingResult 
         intervalRef.current = null;
       }
     };
-  }, [enabled, fetchUnreadCount]);
+  }, [enabled, slowMode, fetchUnreadCount]);
 
   return {
     unreadCount,
@@ -203,6 +209,7 @@ export function useInboxPolling(enabled: boolean = true): UseInboxPollingResult 
     conversationDetail,
     settings,
     isLoading,
+    fetchUnreadCount,
     fetchConversations,
     fetchConversationDetail,
     markRead,

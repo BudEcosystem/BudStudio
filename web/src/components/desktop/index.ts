@@ -39,3 +39,7 @@ export {
   useInbox,
 } from "./InboxContext";
 export { InboxView } from "./InboxView";
+export {
+  EventStreamProvider,
+  useEventStreamContext,
+} from "./EventStreamContext";

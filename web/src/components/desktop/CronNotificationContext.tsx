@@ -3,14 +3,17 @@
 import {
   createContext,
   useContext,
+  useEffect,
   ReactNode,
 } from "react";
 import { useIsDesktop } from "@/lib/desktop";
 import { useCronPolling } from "@/lib/desktop/useCronPolling";
+import { useEventStreamContext } from "./EventStreamContext";
 import type {
   CronNotification,
   CronToolRequest,
 } from "@/lib/agent/types";
+import type { EventStreamEvent } from "@/lib/desktop/useEventStream";
 
 interface CronNotificationContextType {
   notifications: CronNotification[];
@@ -38,10 +41,35 @@ export function CronNotificationProvider({
   children,
 }: CronNotificationProviderProps) {
   const isDesktop = useIsDesktop();
-  const polling = useCronPolling(isDesktop);
+  const { connected, registerHandler, unregisterHandler } =
+    useEventStreamContext();
+  const polling = useCronPolling(isDesktop, connected);
+
+  // Register handler for real-time cron events
+  useEffect(() => {
+    const handleCronStatusChange = (_event: EventStreamEvent) => {
+      polling.fetchPending();
+    };
+
+    registerHandler("cron_status_change", handleCronStatusChange);
+
+    return () => {
+      unregisterHandler("cron_status_change", handleCronStatusChange);
+    };
+  }, [registerHandler, unregisterHandler, polling]);
 
   return (
-    <CronNotificationContext.Provider value={polling}>
+    <CronNotificationContext.Provider
+      value={{
+        notifications: polling.notifications,
+        toolRequests: polling.toolRequests,
+        unreadCount: polling.unreadCount,
+        dismissNotification: polling.dismissNotification,
+        dismissAllNotifications: polling.dismissAllNotifications,
+        submitToolResult: polling.submitToolResult,
+        isLoading: polling.isLoading,
+      }}
+    >
       {children}
     </CronNotificationContext.Provider>
   );

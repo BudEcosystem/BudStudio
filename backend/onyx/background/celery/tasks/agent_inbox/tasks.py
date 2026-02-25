@@ -23,6 +23,7 @@ from onyx.db.enums import InboxSenderType
 from onyx.db.models import InboxConversationParticipant
 from onyx.db.models import InboxMessage
 from onyx.db.models import User
+from onyx.redis.event_publisher import publish_event
 from onyx.redis.redis_pool import get_redis_client
 
 
@@ -321,6 +322,16 @@ def process_inbox_message(
                 InboxAgentProcessingStatus.FAILED,
                 error_message=run_result.error,
             )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=receiver.id,
+                event_type="inbox_status_change",
+                data={
+                    "conversation_id": str(message.conversation_id),
+                    "message_id": str(message.id),
+                    "status": "failed",
+                },
+            )
             task_logger.error(
                 f"Inbox message {message_id} processing failed: {run_result.error}"
             )
@@ -329,6 +340,16 @@ def process_inbox_message(
                 db_session, message.id,
                 InboxAgentProcessingStatus.COMPLETED,
                 result_summary="Escalated to user",
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=receiver.id,
+                event_type="inbox_status_change",
+                data={
+                    "conversation_id": str(message.conversation_id),
+                    "message_id": str(message.id),
+                    "status": "completed",
+                },
             )
             task_logger.info(f"Inbox message {message_id}: agent escalated to user")
 
@@ -366,6 +387,12 @@ def process_inbox_message(
                         role=AgentMessageRole.ASSISTANT,
                         content=proactive_msg,
                     )
+                    publish_event(
+                        tenant_id=tenant_id,
+                        user_id=receiver.id,
+                        event_type="session_message",
+                        data={"session_id": str(main_session.id)},
+                    )
                     task_logger.info(
                         f"Inbox message {message_id}: injected proactive "
                         f"message into main session {main_session.id}"
@@ -392,12 +419,32 @@ def process_inbox_message(
                     else None
                 ),
             )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=receiver.id,
+                event_type="inbox_status_change",
+                data={
+                    "conversation_id": str(message.conversation_id),
+                    "message_id": str(message.id),
+                    "status": "completed",
+                },
+            )
             task_logger.info(f"Inbox message {message_id} processed successfully")
         elif run_result.no_action:
             update_message_processing_status(
                 db_session, message.id,
                 InboxAgentProcessingStatus.COMPLETED,
                 result_summary="No action needed",
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=receiver.id,
+                event_type="inbox_status_change",
+                data={
+                    "conversation_id": str(message.conversation_id),
+                    "message_id": str(message.id),
+                    "status": "completed",
+                },
             )
             task_logger.info(
                 f"Inbox message {message_id}: agent chose no action"
@@ -411,6 +458,16 @@ def process_inbox_message(
                     if run_result.response_text
                     else "No response generated."
                 ),
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=receiver.id,
+                event_type="inbox_status_change",
+                data={
+                    "conversation_id": str(message.conversation_id),
+                    "message_id": str(message.id),
+                    "status": "completed",
+                },
             )
             task_logger.info(f"Inbox message {message_id} completed (no explicit reply)")
 

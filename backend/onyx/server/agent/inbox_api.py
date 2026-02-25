@@ -30,6 +30,7 @@ from onyx.db.enums import InboxSenderType
 from onyx.db.models import InboxConversationParticipant
 from onyx.db.models import InboxMessage
 from onyx.db.models import User
+from onyx.redis.event_publisher import publish_event
 from onyx.utils.logger import setup_logger
 from shared_configs.contextvars import get_current_tenant_id
 
@@ -334,12 +335,25 @@ def reply_to_conversation(
 
     tenant_id = get_current_tenant_id()
 
-    # Dispatch to BOTH agents — each independently decides what to do.
-    # The sender's agent sees it as a direct instruction from their user.
-    # The other participant's agent sees it as an incoming message.
+    # Notify the other participant about the new message
     other_user = _get_other_participant_user(
         db_session, user.id, conversation_id
     )
+    if other_user is not None:
+        publish_event(
+            tenant_id=tenant_id,
+            user_id=other_user.id,
+            event_type="inbox_message",
+            data={
+                "conversation_id": str(conversation_id),
+                "message_id": str(message.id),
+                "sender_name": user.personal_name or user.email,
+            },
+        )
+
+    # Dispatch to BOTH agents — each independently decides what to do.
+    # The sender's agent sees it as a direct instruction from their user.
+    # The other participant's agent sees it as an incoming message.
     if other_user is not None:
         _maybe_dispatch_processing(
             db_session, message, other_user, tenant_id=tenant_id
@@ -395,6 +409,18 @@ def send_message(
     )
 
     tenant_id = get_current_tenant_id()
+
+    publish_event(
+        tenant_id=tenant_id,
+        user_id=recipient_user.id,
+        event_type="inbox_message",
+        data={
+            "conversation_id": str(conversation.id),
+            "message_id": str(message.id),
+            "sender_name": user.personal_name or user.email,
+        },
+    )
+
     _maybe_dispatch_processing(
         db_session, message, recipient_user, tenant_id=tenant_id
     )

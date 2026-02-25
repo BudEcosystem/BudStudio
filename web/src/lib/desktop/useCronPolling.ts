@@ -8,6 +8,7 @@ import type {
 } from "@/lib/agent/types";
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const SLOW_POLL_INTERVAL_MS = 120_000; // 120 seconds (when SSE is connected)
 
 interface UseCronPollingResult {
   notifications: CronNotification[];
@@ -20,10 +21,14 @@ interface UseCronPollingResult {
     output?: string,
     error?: string
   ) => Promise<void>;
+  fetchPending: () => Promise<void>;
   isLoading: boolean;
 }
 
-export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
+export function useCronPolling(
+  enabled: boolean = true,
+  slowMode: boolean = false,
+): UseCronPollingResult {
   const [notifications, setNotifications] = useState<CronNotification[]>([]);
   const [toolRequests, setToolRequests] = useState<CronToolRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -114,8 +119,9 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
     // Initial fetch
     fetchPending();
 
-    // Set up polling interval
-    intervalRef.current = setInterval(fetchPending, POLL_INTERVAL_MS);
+    // Set up polling interval — slower when SSE is connected
+    const interval = slowMode ? SLOW_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+    intervalRef.current = setInterval(fetchPending, interval);
 
     return () => {
       if (intervalRef.current) {
@@ -123,7 +129,7 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
         intervalRef.current = null;
       }
     };
-  }, [enabled, fetchPending]);
+  }, [enabled, slowMode, fetchPending]);
 
   return {
     notifications,
@@ -132,6 +138,7 @@ export function useCronPolling(enabled: boolean = true): UseCronPollingResult {
     dismissNotification,
     dismissAllNotifications,
     submitToolResult,
+    fetchPending,
     isLoading,
   };
 }

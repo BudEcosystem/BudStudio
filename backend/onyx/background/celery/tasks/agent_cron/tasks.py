@@ -32,6 +32,7 @@ from onyx.db.engine.sql_engine import get_session_with_current_tenant
 from onyx.db.enums import AgentCronExecutionStatus
 from onyx.db.enums import AgentCronScheduleType
 from onyx.db.models import User
+from onyx.redis.event_publisher import publish_event
 from onyx.redis.redis_pool import get_redis_client
 
 
@@ -275,6 +276,15 @@ def execute_agent_cron_job(
                 tokens_used=run_result.tokens_used,
                 tool_calls_count=run_result.tool_call_count,
             )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=execution.user_id,
+                event_type="cron_status_change",
+                data={
+                    "execution_id": str(execution.id),
+                    "status": "failed",
+                },
+            )
             task_logger.error(
                 f"Cron execution {execution_id} failed: {run_result.error}"
             )
@@ -288,6 +298,15 @@ def execute_agent_cron_job(
                 tool_input=run_result.suspended_tool_input or {},
                 tool_call_id=run_result.suspended_tool_call_id or "",
                 messages=run_result.suspended_messages or [],
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=execution.user_id,
+                event_type="cron_status_change",
+                data={
+                    "execution_id": str(execution.id),
+                    "status": "suspended",
+                },
             )
             task_logger.info(
                 f"Cron execution {execution_id} suspended for tool: "
@@ -313,6 +332,15 @@ def execute_agent_cron_job(
                 result_summary=run_result.response_text[:2000] if run_result.response_text else None,
                 tokens_used=run_result.tokens_used,
                 tool_calls_count=run_result.tool_call_count,
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=execution.user_id,
+                event_type="cron_status_change",
+                data={
+                    "execution_id": str(execution.id),
+                    "status": "completed",
+                },
             )
             task_logger.info(
                 f"Cron execution {execution_id} completed successfully"
@@ -424,6 +452,15 @@ def resume_agent_cron_execution(
                 tokens_used=run_result.tokens_used,
                 tool_calls_count=run_result.tool_call_count,
             )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=execution.user_id,
+                event_type="cron_status_change",
+                data={
+                    "execution_id": str(execution.id),
+                    "status": "failed",
+                },
+            )
         elif run_result.suspended:
             suspend_cron_execution(
                 db_session=db_session,
@@ -432,6 +469,15 @@ def resume_agent_cron_execution(
                 tool_input=run_result.suspended_tool_input or {},
                 tool_call_id=run_result.suspended_tool_call_id or "",
                 messages=run_result.suspended_messages or [],
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=execution.user_id,
+                event_type="cron_status_change",
+                data={
+                    "execution_id": str(execution.id),
+                    "status": "suspended",
+                },
             )
         elif run_result.skipped:
             update_cron_execution_status(
@@ -448,6 +494,15 @@ def resume_agent_cron_execution(
                 result_summary=run_result.response_text[:2000] if run_result.response_text else None,
                 tokens_used=run_result.tokens_used,
                 tool_calls_count=run_result.tool_call_count,
+            )
+            publish_event(
+                tenant_id=tenant_id,
+                user_id=execution.user_id,
+                event_type="cron_status_change",
+                data={
+                    "execution_id": str(execution.id),
+                    "status": "completed",
+                },
             )
             task_logger.info(
                 f"Resumed execution {execution_id} completed successfully"
