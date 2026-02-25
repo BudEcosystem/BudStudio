@@ -1,7 +1,7 @@
 <a name="readme-top"></a>
 
 <h2 align="center">
-    <a href="https://budecosystem.com/"> <img width="50%" src="https://github.com/onyx-dot-app/onyx/blob/logo/OnyxLogoCropped.jpg?raw=true)" /></a>
+    <a href="https://budecosystem.com/"> <img width="50%" src="https://budecosystem.com/wp-content/themes/BudTheme/img/logo-white.png" /></a>
 </h2>
 
 <p align="center">AI-Powered Workspace with Autonomous Agents</p>
@@ -28,10 +28,6 @@
 At its core is **Bud Agent** - an autonomous AI assistant that can access your local files, execute code, search the web, connect to your company's knowledge sources, and coordinate multi-step workflows, all while running securely in your desktop environment.
 
 ****
-
-![Bud Studio Demo](https://github.com/onyx-dot-app/onyx/releases/download/v0.21.1/OnyxChatSilentDemo.gif)
-
-
 
 ## Key Features
 
