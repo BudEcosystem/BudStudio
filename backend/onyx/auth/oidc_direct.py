@@ -185,6 +185,16 @@ async def oidc_direct_login(
             detail="Email not available from identity provider",
         )
 
+    # Extract display name from OIDC claims
+    personal_name = (
+        userinfo.get("name")
+        or " ".join(
+            filter(None, [userinfo.get("given_name"), userinfo.get("family_name")])
+        )
+        or userinfo.get("preferred_username")
+        or None
+    )
+
     # Calculate expires_at timestamp
     import time
 
@@ -202,6 +212,7 @@ async def oidc_direct_login(
             request=request,
             associate_by_email=True,
             is_verified_by_default=True,
+            personal_name=personal_name,
         )
     except HTTPException:
         raise

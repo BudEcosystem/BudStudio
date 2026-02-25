@@ -440,6 +440,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         *,
         associate_by_email: bool = False,
         is_verified_by_default: bool = False,
+        personal_name: Optional[str] = None,
     ) -> User:
         referral_source = (
             getattr(request.state, "referral_source", None) if request else None
@@ -508,11 +509,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
                 except exceptions.UserNotExists:
                     password = self.password_helper.generate()
-                    user_dict = {
+                    user_dict: dict[str, Any] = {
                         "email": account_email,
                         "hashed_password": self.password_helper.hash(password),
                         "is_verified": is_verified_by_default,
                     }
+                    if personal_name:
+                        user_dict["personal_name"] = personal_name
 
                     user = await self.user_db.create(user_dict)
                     await self.user_db.add_oauth_account(user, oauth_account_dict)
@@ -534,6 +537,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                                 existing_oauth_account,  # type: ignore
                                 oauth_account_dict,
                             )
+
+            # Backfill personal_name for existing users who don't have one
+            if personal_name and user and not user.personal_name:
+                await self.user_db.update(
+                    user, update_dict={"personal_name": personal_name}
+                )
 
             # NOTE: Most IdPs have very short expiry times, and we don't want to force the user to
             # re-authenticate that frequently, so by default this is disabled
@@ -1375,6 +1384,33 @@ def get_oauth_router(
 
         request.state.referral_source = referral_source
 
+        # Extract personal name from id_token claims if available
+        personal_name: str | None = None
+        id_token = token.get("id_token")
+        if id_token:
+            try:
+                # Decode without verification - we only need the name claims
+                # and the token was already verified by the OAuth flow
+                claims = jwt.decode(
+                    id_token, options={"verify_signature": False}
+                )
+                personal_name = (
+                    claims.get("name")
+                    or " ".join(
+                        filter(
+                            None,
+                            [
+                                claims.get("given_name"),
+                                claims.get("family_name"),
+                            ],
+                        )
+                    )
+                    or claims.get("preferred_username")
+                    or None
+                )
+            except Exception:
+                pass  # Name extraction is best-effort
+
         # Proceed to authenticate or create the user
         try:
             user = await user_manager.oauth_callback(
@@ -1387,6 +1423,7 @@ def get_oauth_router(
                 request,
                 associate_by_email=associate_by_email,
                 is_verified_by_default=is_verified_by_default,
+                personal_name=personal_name,
             )
         except UserAlreadyExists:
             raise HTTPException(
