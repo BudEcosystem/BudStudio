@@ -75,7 +75,11 @@ async def _event_generator(
             await pubsub.unsubscribe(channel_name)
             await pubsub.close()
         except Exception:
-            pass
+            logger.warning(
+                "SSE: failed to unsubscribe/close pubsub for %s",
+                channel_name,
+                exc_info=True,
+            )
 
 
 @router.get("/stream")

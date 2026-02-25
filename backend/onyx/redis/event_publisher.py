@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 from datetime import timezone
 from typing import Any
+from typing import Literal
 from uuid import UUID
 
 from onyx.redis.redis_pool import get_raw_redis_client
@@ -28,7 +29,12 @@ def _channel_name(tenant_id: str, user_id: str | UUID) -> str:
 def publish_event(
     tenant_id: str,
     user_id: str | UUID,
-    event_type: str,
+    event_type: Literal[
+        "session_message",
+        "inbox_message",
+        "inbox_status_change",
+        "cron_status_change",
+    ],
     data: dict[str, Any] | None = None,
 ) -> None:
     """Publish a JSON event to the user's event channel.
