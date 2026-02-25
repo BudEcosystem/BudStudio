@@ -161,14 +161,24 @@ async fn start_next_server(handle: tauri::AppHandle, next_server_arc: Arc<TokioM
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
                 log::info!("Navigating to {}", url);
-                match url.parse::<tauri::Url>() {
-                    Ok(parsed_url) => {
-                        if let Err(e) = window.navigate(parsed_url) {
-                            log::error!("Failed to navigate: {}", e);
-                        }
-                    }
+                // Use JavaScript eval to navigate since window.navigate() may not work
+                // when transitioning from tauri:// asset protocol to http://
+                let js = format!("window.location.href = '{}';", url);
+                match window.eval(&js) {
+                    Ok(_) => log::info!("Navigation triggered via JS eval"),
                     Err(e) => {
-                        log::error!("Failed to parse URL: {}", e);
+                        log::error!("JS eval navigation failed: {}, trying window.navigate()", e);
+                        // Fallback to window.navigate()
+                        match url.parse::<tauri::Url>() {
+                            Ok(parsed_url) => {
+                                if let Err(e) = window.navigate(parsed_url) {
+                                    log::error!("Failed to navigate: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to parse URL: {}", e);
+                            }
+                        }
                     }
                 }
             }
@@ -326,6 +336,7 @@ async fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             get_config,
