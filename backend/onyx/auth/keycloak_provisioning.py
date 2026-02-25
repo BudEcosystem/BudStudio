@@ -103,6 +103,18 @@ def _assign_manage_users_role(
         return
     realm_mgmt_uuid = rm_clients[0]["id"]
 
+    # Check if role is already assigned
+    assigned_url = (
+        f"{admin_base}/users/{service_account_user_id}"
+        f"/role-mappings/clients/{realm_mgmt_uuid}"
+    )
+    assigned_response = httpx.get(assigned_url, headers=headers, timeout=30.0)
+    assigned_response.raise_for_status()
+    for role in assigned_response.json():
+        if role["name"] == "manage-users":
+            logger.debug("manage-users role already assigned to service account")
+            return
+
     # Get available client-level roles for realm-management on this service account
     available_roles_url = (
         f"{admin_base}/users/{service_account_user_id}"
@@ -118,19 +130,7 @@ def _assign_manage_users_role(
             break
 
     if not manage_users_role:
-        # Role may already be assigned — check current assignments
-        assigned_url = (
-            f"{admin_base}/users/{service_account_user_id}"
-            f"/role-mappings/clients/{realm_mgmt_uuid}"
-        )
-        assigned_response = httpx.get(assigned_url, headers=headers, timeout=30.0)
-        assigned_response.raise_for_status()
-        for role in assigned_response.json():
-            if role["name"] == "manage-users":
-                logger.debug("manage-users role already assigned to service account")
-                return
-        logger.warning("manage-users role not found in realm-management client")
-        return
+        raise ValueError("manage-users role not found in realm-management client")
 
     # Assign the role
     assign_url = (
