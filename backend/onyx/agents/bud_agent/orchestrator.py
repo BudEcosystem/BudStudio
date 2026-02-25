@@ -372,7 +372,13 @@ class BudAgentOrchestrator:
 
             # 3. Resolve the LLM model and build RunConfig with credentials
             llm, _ = get_default_llms(user=self._user)
-            model_name: str = self._model or llm.config.model_name
+            # "auto" is a DB placeholder for Bud Foundry — always use the
+            # resolved model from get_default_llms instead.
+            model_name: str = (
+                llm.config.model_name
+                if (not self._model or self._model == "auto")
+                else self._model
+            )
 
             run_config = self._build_run_config(llm, model_name)
 

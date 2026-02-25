@@ -285,6 +285,20 @@ def _ensure_bud_foundry_initialized(
         raise ValueError(f"Failed to initialize Bud Foundry session: {e}")
 
 
+def _get_user_preferred_model(user: User) -> str | None:
+    """Parse the user's default_model preference.
+
+    Format is 'displayName__provider__modelName'. Returns the modelName
+    portion, or None if not set / invalid.
+    """
+    if not user.default_model:
+        return None
+    parts = user.default_model.split("__")
+    if len(parts) == 3:
+        return parts[2]
+    return None
+
+
 def _resolve_bud_foundry_model(
     user: User,
 ) -> str | None:
@@ -469,6 +483,7 @@ def get_llm_model_and_settings_for_persona(
     persona: Persona,
     llm_override: LLMOverride | None = None,
     additional_headers: dict[str, str] | None = None,
+    user: User | None = None,
 ) -> tuple[Model, ModelSettings]:
     """Get LitellmModel and settings for a persona.
 
@@ -500,11 +515,45 @@ def get_llm_model_and_settings_for_persona(
     if not llm_provider:
         raise ValueError("No LLM provider found")
 
+    # Resolve "auto" model for Bud Foundry provider
+    is_bud_foundry = llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
+    if is_bud_foundry and model == "auto":
+        if not user:
+            raise ValueError(
+                "OAuth authentication required for Bud Foundry. "
+                "Please log in with your SSO account."
+            )
+
+        user_preferred_model = _get_user_preferred_model(user)
+        if user_preferred_model:
+            logger.info(
+                "Using user-preferred model '%s' for user %s",
+                user_preferred_model,
+                user.id,
+            )
+            model = user_preferred_model
+        else:
+            resolved_model = _resolve_bud_foundry_model(user=user)
+            if not resolved_model:
+                raise ValueError(
+                    "No models available from Bud Foundry for this user. "
+                    "Please check your permissions with your administrator."
+                )
+            model = resolved_model
+
+    # For Bud Foundry, use OAuth token as api_key
+    api_key = llm_provider.api_key
+    if is_bud_foundry and user:
+        _ensure_bud_foundry_initialized(user)
+        user_oauth_token = _get_fresh_oauth_token(user)
+        if user_oauth_token:
+            api_key = user_oauth_token
+
     return get_llm_model_and_settings(
         provider=llm_provider.provider,
         model=model,
         deployment_name=llm_provider.deployment_name,
-        api_key=llm_provider.api_key,
+        api_key=api_key,
         api_base=llm_provider.api_base,
         api_version=llm_provider.api_version,
         custom_config=llm_provider.custom_config,
@@ -682,20 +731,13 @@ def get_default_llms(
                 "OAuth authentication required for Bud Foundry. Please log in with your SSO account."
             )
 
-        # Check user's default_model preference first
-        # Format: "displayName__provider__modelName"
-        user_preferred_model: str | None = None
-        if user.default_model:
-            parts = user.default_model.split("__")
-            if len(parts) == 3:
-                user_preferred_model = parts[2]  # modelName
-                logger.info(
-                    "Using user-preferred model '%s' for user %s",
-                    user_preferred_model,
-                    user.id,
-                )
-
+        user_preferred_model = _get_user_preferred_model(user)
         if user_preferred_model:
+            logger.info(
+                "Using user-preferred model '%s' for user %s",
+                user_preferred_model,
+                user.id,
+            )
             model_name = user_preferred_model
             fast_model_name = user_preferred_model
         else:
