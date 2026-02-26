@@ -1,0 +1,207 @@
+name: Desktop Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            label: mac-arm64
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            label: mac-x64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Install Apple certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security import certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+            security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security list-keychain -d user -s $KEYCHAIN_PATH
+            rm certificate.p12
+          fi
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          args: --target ${{ matrix.target }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app.tar.gz.sig
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi.zip
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi.zip.sig
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip.sig
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Determine version
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          VERSION="${VERSION#desktop-v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Display artifact structure
+        run: find artifacts -type f | head -50
+
+      - name: Generate update manifest (latest.json)
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Find signature files
+          MAC_ARM64_SIG=""
+          MAC_X64_SIG=""
+          WIN_SIG=""
+
+          MAC_ARM64_SIG_FILE=$(find artifacts/desktop-mac-arm64 -name "*.app.tar.gz.sig" -type f 2>/dev/null | head -1)
+          MAC_X64_SIG_FILE=$(find artifacts/desktop-mac-x64 -name "*.app.tar.gz.sig" -type f 2>/dev/null | head -1)
+          WIN_SIG_FILE=$(find artifacts/desktop-windows-x64 -name "*.nsis.zip.sig" -o -name "*.msi.zip.sig" -type f 2>/dev/null | head -1)
+
+          if [ -n "$MAC_ARM64_SIG_FILE" ]; then
+            MAC_ARM64_SIG=$(cat "$MAC_ARM64_SIG_FILE")
+          fi
+          if [ -n "$MAC_X64_SIG_FILE" ]; then
+            MAC_X64_SIG=$(cat "$MAC_X64_SIG_FILE")
+          fi
+          if [ -n "$WIN_SIG_FILE" ]; then
+            WIN_SIG=$(cat "$WIN_SIG_FILE")
+          fi
+
+          REPO="${{ github.repository }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # Find actual filenames
+          MAC_ARM64_FILE=$(find artifacts/desktop-mac-arm64 -name "*.app.tar.gz" ! -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename {})
+          MAC_X64_FILE=$(find artifacts/desktop-mac-x64 -name "*.app.tar.gz" ! -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename {})
+          WIN_FILE=$(find artifacts/desktop-windows-x64 -name "*.nsis.zip" ! -name "*.sig" -o -name "*.msi.zip" ! -name "*.sig" -type f 2>/dev/null | head -1 | xargs -I{} basename {})
+
+          # Build JSON
+          cat > latest.json << MANIFEST
+          {
+            "version": "${VERSION}",
+            "notes": "Bud Studio ${VERSION}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${MAC_ARM64_SIG}",
+                "url": "${BASE_URL}/${MAC_ARM64_FILE}"
+              },
+              "darwin-x86_64": {
+                "signature": "${MAC_X64_SIG}",
+                "url": "${BASE_URL}/${MAC_X64_FILE}"
+              },
+              "windows-x86_64": {
+                "signature": "${WIN_SIG}",
+                "url": "${BASE_URL}/${WIN_FILE}"
+              }
+            }
+          }
+          MANIFEST
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          find artifacts -type f \( \
+            -name "*.dmg" -o \
+            -name "*.app.tar.gz" -o \
+            -name "*.app.tar.gz.sig" -o \
+            -name "*.exe" -o \
+            -name "*.msi" -o \
+            -name "*.msi.zip" -o \
+            -name "*.msi.zip.sig" -o \
+            -name "*.nsis.zip" -o \
+            -name "*.nsis.zip.sig" \
+          \) -exec cp {} release-files/ \;
+          cp latest.json release-files/
+          echo "Release files:"
+          ls -la release-files/
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: release-files/*

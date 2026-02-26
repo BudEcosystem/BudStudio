@@ -43,3 +43,4 @@ export {
   EventStreamProvider,
   useEventStreamContext,
 } from "./EventStreamContext";
+export { UpdateNotification } from "./UpdateNotification";

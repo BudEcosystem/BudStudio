@@ -49,6 +49,12 @@
         "schemes": ["budstudio"]
       }
     },
-    "notification": null
+    "notification": null,
+    "updater": {
+      "endpoints": [
+        "https://github.com/BudEcosystem/onyx/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAyNzdDQUU1QTREN0ZBQjUKUldTMSt0ZWw1Y3AzQXI0cGZZOFJrSnBGS0dob1RNZytmenRvb2FmR2dTL0V0K1psRE9SeEhNYWgK"
+    }
   }
 }

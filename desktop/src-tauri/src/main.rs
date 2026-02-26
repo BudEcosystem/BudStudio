@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex as TokioMutex;
 
 // Global shutdown flag for signal handlers
@@ -301,6 +302,52 @@ fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, tauri::Error> {
     Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
 }
 
+#[derive(Clone, serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    body: Option<String>,
+}
+
+#[tauri::command]
+async fn check_for_update(handle: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let updater = handle.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            log::info!("Update available: {}", update.version);
+            Ok(Some(UpdateInfo {
+                version: update.version.clone(),
+                body: update.body.clone(),
+            }))
+        }
+        Ok(None) => {
+            log::info!("No update available");
+            Ok(None)
+        }
+        Err(e) => {
+            log::warn!("Failed to check for updates: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn install_update(handle: tauri::AppHandle) -> Result<(), String> {
+    let updater = handle.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            log::info!("Downloading and installing update v{}...", update.version);
+            update
+                .download_and_install(|_bytes_downloaded, _total_bytes| {}, || {})
+                .await
+                .map_err(|e| e.to_string())?;
+            log::info!("Update installed, restart required");
+            Ok(())
+        }
+        Ok(None) => Err("No update available".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Initialize logger
@@ -338,6 +385,8 @@ async fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -347,7 +396,9 @@ async fn main() {
             needs_setup,
             complete_setup,
             start_app,
-            validate_backend_url
+            validate_backend_url,
+            check_for_update,
+            install_update
         ])
         .setup(|app| {
             let handle = app.handle().clone();
