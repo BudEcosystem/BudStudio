@@ -5,6 +5,10 @@ Tools are classified as LOCAL (executed on desktop) or REMOTE (executed on backe
 
 from typing import Any
 
+# Sentinel gateway ID used to store per-user permissions for local tools
+# (bash, write_file, edit_file, etc.) in the shared AgentToolPermission table.
+LOCAL_GATEWAY_ID = "__local__"
+
 # Tool classification sets
 LOCAL_TOOLS: set[str] = {
     "read_file",

@@ -298,6 +298,7 @@ class BudAgentOrchestrator:
                 redis_client=self._redis_client,
                 db_session=self._db_session,
                 orchestrator=self,
+                user_id=self._user.id,
             )
             local_tools = local_bridge.create_all_local_tools()
 
