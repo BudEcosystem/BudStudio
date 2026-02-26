@@ -81,22 +81,7 @@ jobs:
             rm certificate.p12
           fi
 
-      - name: Build Tauri app (with notarization)
-        if: runner.os == 'macOS' && secrets.APPLE_TEAM_ID != ''
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        with:
-          projectPath: desktop
-          tauriScript: npx tauri
-          args: --target ${{ matrix.target }}
-
       - name: Build Tauri app
-        if: runner.os != 'macOS' || secrets.APPLE_TEAM_ID == ''
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
