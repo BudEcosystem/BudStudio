@@ -23,6 +23,7 @@ interface UseAutoUpdateReturn {
   error: string | null;
   checkForUpdate: () => Promise<void>;
   installUpdate: () => Promise<void>;
+  relaunchApp: () => Promise<void>;
   dismiss: () => void;
 }
 
@@ -67,17 +68,16 @@ export function useAutoUpdate(): UseAutoUpdateReturn {
       await invoke("install_update");
 
       setStatus("ready");
-
-      // Relaunch the app after a short delay
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      setTimeout(() => {
-        relaunch();
-      }, 1500);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
       setStatus("error");
     }
+  }, []);
+
+  const relaunchApp = useCallback(async () => {
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
   }, []);
 
   const dismiss = useCallback(() => {
@@ -111,6 +111,7 @@ export function useAutoUpdate(): UseAutoUpdateReturn {
     error,
     checkForUpdate,
     installUpdate,
+    relaunchApp,
     dismiss,
   };
 }

@@ -28,7 +28,7 @@ function StatusIcon({ status }: { status: UpdateStatus }) {
 }
 
 export function UpdateNotification() {
-  const { status, updateInfo, error, installUpdate, dismiss } =
+  const { status, updateInfo, error, installUpdate, relaunchApp, dismiss } =
     useAutoUpdate();
 
   const isOpen =
@@ -62,7 +62,7 @@ export function UpdateNotification() {
             {status === "downloading" &&
               "Downloading and installing the update. Please wait..."}
             {status === "ready" &&
-              "Update installed successfully. The app will restart shortly."}
+              "Update installed successfully. Restart to apply the update."}
             {status === "error" &&
               `Failed to update: ${error || "Unknown error"}. You can try again later.`}
           </DialogDescription>
@@ -83,6 +83,16 @@ export function UpdateNotification() {
             <Button secondary disabled className="min-w-[100px]">
               Installing...
             </Button>
+          )}
+          {status === "ready" && (
+            <>
+              <Button secondary onClick={dismiss} className="min-w-[100px]">
+                Restart Later
+              </Button>
+              <Button action onClick={relaunchApp} className="min-w-[100px]">
+                Restart Now
+              </Button>
+            </>
           )}
           {status === "error" && (
             <Button secondary onClick={dismiss} className="min-w-[100px]">
