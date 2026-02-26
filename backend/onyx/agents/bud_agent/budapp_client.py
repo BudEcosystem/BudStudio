@@ -27,14 +27,15 @@ def _headers(access_token: str) -> dict[str, str]:
 
 
 def list_connectors(access_token: str) -> list[dict[str, Any]]:
-    """List all configured connectors from BudApp.
+    """List available connectors from BudApp.
 
-    GET /connectors/configured?client=dashboard&include_disabled=true
+    GET /connectors/available
+    Uses the user-level endpoint (requires ENDPOINT_VIEW, not ENDPOINT_MANAGE).
     """
-    url = f"{_base_url()}/connectors/configured"
+    url = f"{_base_url()}/connectors/available"
     resp = httpx.get(
         url,
-        params={"client": "dashboard", "include_disabled": "true"},
+        params={"client": "studio"},
         headers=_headers(access_token),
         timeout=_TIMEOUT,
     )
