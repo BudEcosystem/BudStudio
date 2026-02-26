@@ -27,7 +27,8 @@ if [ ! -d "$STANDALONE_DIR" ]; then
 fi
 
 # Find the server.js file (it might be nested due to absolute path preservation)
-SERVER_JS=$(find "$STANDALONE_DIR" -name "server.js" -type f | head -1)
+# Exclude node_modules to avoid picking up Next.js internal test server.js files
+SERVER_JS=$(find "$STANDALONE_DIR" -path "*/node_modules" -prune -o -name "server.js" -type f -print | head -1)
 
 if [ -z "$SERVER_JS" ]; then
     echo "Error: server.js not found in standalone directory"
