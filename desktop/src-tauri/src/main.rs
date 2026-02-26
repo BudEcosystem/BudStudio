@@ -9,6 +9,7 @@ use config::AppConfig;
 use next_server::NextServer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::UpdaterExt;
@@ -252,6 +253,7 @@ fn setup_signal_handlers(next_server: Arc<TokioMutex<NextServer>>, port: u16) {
 }
 
 /// Create custom application menu with controlled Quit item
+#[cfg(target_os = "macos")]
 fn create_app_menu(app: &tauri::App) -> Result<Menu<tauri::Wry>, tauri::Error> {
     // Custom quit menu item that we control - this ensures ExitRequested fires
     let quit_item = MenuItem::with_id(app, "quit", "Quit Bud Studio", true, Some("CmdOrCtrl+Q"))?;
@@ -403,9 +405,12 @@ async fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Create custom menu with controlled Quit
-            let menu = create_app_menu(app)?;
-            app.set_menu(menu)?;
+            // Create custom menu with controlled Quit (macOS only)
+            #[cfg(target_os = "macos")]
+            {
+                let menu = create_app_menu(app)?;
+                app.set_menu(menu)?;
+            }
 
             // Get app data directory for persistent cookie storage
             let app_data_dir = app
@@ -435,7 +440,7 @@ async fn main() {
             };
             drop(config); // Release lock before creating window
 
-            let _main_window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(initial_page.into()))
+            let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(initial_page.into()))
                 .title("Bud Studio")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(1000.0, 700.0)
@@ -443,13 +448,18 @@ async fn main() {
                 .fullscreen(false)
                 .decorations(true)
                 .transparent(true)
-                .title_bar_style(tauri::TitleBarStyle::Overlay)
-                .hidden_title(true)
-                .accept_first_mouse(true)
                 .center()
-                .data_directory(webview_data_dir)
-                .build()
-                .expect("Failed to create main window");
+                .data_directory(webview_data_dir);
+
+            #[cfg(target_os = "macos")]
+            {
+                builder = builder
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true)
+                    .accept_first_mouse(true);
+            }
+
+            let _main_window = builder.build().expect("Failed to create main window");
 
             log::info!("Main window created with persistent data directory");
 
@@ -474,15 +484,20 @@ async fn main() {
             Ok(())
         })
         .on_menu_event(|app, event| {
+            #[cfg(target_os = "macos")]
             if event.id() == "quit" {
                 log::info!("Quit menu item clicked, initiating cleanup...");
                 app.exit(0); // This will trigger ExitRequested
             }
+            // Suppress unused variable warnings on non-macOS
+            #[cfg(not(target_os = "macos"))]
+            { let _ = (app, event); }
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             match event {
+                #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { has_visible_windows, .. } => {
                     log::info!(
                         "App reopened from Dock/Finder (has_visible_windows: {})",
