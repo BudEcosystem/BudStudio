@@ -211,6 +211,7 @@ function handlePacket(
   setContent: (c: string) => void,
 ): boolean {
   const obj = packet.obj;
+  if (!obj) return false;
   const type = obj.type;
 
   switch (type) {

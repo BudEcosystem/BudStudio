@@ -21,9 +21,10 @@ from agents import FunctionTool
 from agents import RunContextWrapper
 
 from onyx.agents.bud_agent.budapp_client import list_connectors
-from onyx.agents.bud_agent.streaming_models import BudAgentApprovalRequired
-from onyx.agents.bud_agent.streaming_models import BudAgentToolResult
-from onyx.agents.bud_agent.streaming_models import BudAgentToolStart
+from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
+from onyx.server.query_and_chat.streaming_models import CustomToolDelta
+from onyx.server.query_and_chat.streaming_models import CustomToolStart
+from onyx.server.query_and_chat.streaming_models import Packet
 from onyx.configs.model_configs import BUD_FOUNDRY_APP_BASE
 from onyx.configs.model_configs import BUD_MCP_GATEWAY_URL
 from onyx.db.agent_connector import get_all_tool_permissions
@@ -65,6 +66,7 @@ def create_connector_tools(
     session_id: UUID,
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
+    step_number_fn: Callable[[], int] | None = None,
 ) -> list[FunctionTool]:
     """Create FunctionTool objects for all enabled BudApp connector tools.
 
@@ -188,6 +190,7 @@ def create_connector_tools(
                 session_id=str(session_id),
                 packet_queue=packet_queue,
                 redis_client=redis_client,
+                step_number_fn=step_number_fn,
             ),
         )
         tools.append(tool)
@@ -240,8 +243,14 @@ def _make_invoke_handler(
     session_id: str,
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
+    step_number_fn: Callable[[], int] | None = None,
 ) -> InvokeHandler:
     """Create an async handler for a connector tool."""
+
+    def _emit(obj: Any) -> None:
+        """Put a streaming object on the queue wrapped in a Packet."""
+        ind = step_number_fn() if step_number_fn else 0
+        packet_queue.put(Packet(ind=ind, obj=obj))
 
     async def handler(
         _ctx: RunContextWrapper[Any], json_string: str
@@ -251,15 +260,16 @@ def _make_invoke_handler(
             json.loads(json_string) if json_string else {}
         )
 
-        # Emit tool_start
-        packet_queue.put(
-            BudAgentToolStart(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                tool_call_id=tool_call_id,
-                is_local=False,
-            )
-        )
+        # Strip empty/null optional args that LLMs often hallucinate.
+        # Keeps False and 0 (valid values) but drops None and "".
+        tool_input = {
+            k: v
+            for k, v in tool_input.items()
+            if v is not None and v != ""
+        }
+
+        # Emit tool_start (using CustomToolStart which is in the Packet union)
+        _emit(CustomToolStart(tool_name=tool_name))
 
         # Handle approval if needed
         if permission_level == AgentToolPermissionLevel.NEED_APPROVAL:
@@ -270,15 +280,15 @@ def _make_invoke_handler(
                 tool_call_id=tool_call_id,
                 packet_queue=packet_queue,
                 redis_client=redis_client,
+                step_number_fn=step_number_fn,
             )
             if not approved:
                 error_msg = f"Tool '{tool_name}' was denied by the user."
-                packet_queue.put(
-                    BudAgentToolResult(
+                _emit(
+                    CustomToolDelta(
                         tool_name=tool_name,
-                        tool_output=None,
-                        tool_error=error_msg,
-                        tool_call_id=tool_call_id,
+                        response_type="error",
+                        data=error_msg,
                     )
                 )
                 return error_msg
@@ -294,23 +304,21 @@ def _make_invoke_handler(
         except Exception as e:
             error_msg = f"Error calling connector tool '{tool_name}': {e}"
             logger.exception(error_msg)
-            packet_queue.put(
-                BudAgentToolResult(
+            _emit(
+                CustomToolDelta(
                     tool_name=tool_name,
-                    tool_output=None,
-                    tool_error=error_msg,
-                    tool_call_id=tool_call_id,
+                    response_type="error",
+                    data=error_msg,
                 )
             )
             return error_msg
 
         # Emit result
-        packet_queue.put(
-            BudAgentToolResult(
+        _emit(
+            CustomToolDelta(
                 tool_name=tool_name,
-                tool_output=result,
-                tool_error=None,
-                tool_call_id=tool_call_id,
+                response_type="text",
+                data=result,
             )
         )
         return result
@@ -325,15 +333,16 @@ def _wait_for_approval(
     tool_call_id: str,
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
+    step_number_fn: Callable[[], int] | None = None,
 ) -> bool:
     """Emit approval request and block until user responds via Redis."""
-    packet_queue.put(
-        BudAgentApprovalRequired(
-            tool_name=tool_name,
-            tool_input=tool_input,
-            tool_call_id=tool_call_id,
-        )
+    approval_obj = AgentApprovalRequired(
+        tool_name=tool_name,
+        tool_input=tool_input,
+        tool_call_id=tool_call_id,
     )
+    ind = step_number_fn() if step_number_fn else 0
+    packet_queue.put(Packet(ind=ind, obj=approval_obj))
 
     key = f"bud_agent_approval:{session_id}:{tool_call_id}"
     try:

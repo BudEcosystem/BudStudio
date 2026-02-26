@@ -317,6 +317,7 @@ class BudAgentOrchestrator:
                 session_id=self._session_id,
                 packet_queue=self._packet_queue,
                 redis_client=self._redis_client,
+                step_number_fn=lambda: self.close_open_section_for_tool(),
             )
 
             cron_tools = create_cron_tools(

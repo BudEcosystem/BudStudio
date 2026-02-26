@@ -34,6 +34,7 @@ import SvgCopy from "@/icons/copy";
 import SvgCheck from "@/icons/check";
 import SvgArrowWallRight from "@/icons/arrow-wall-right";
 import SvgSearchMenu from "@/icons/search-menu";
+import SvgEdit from "@/icons/edit";
 import Text from "@/refresh-components/texts/Text";
 import { ChatDocumentDisplay } from "@/app/chat/components/documentSidebar/ChatDocumentDisplay";
 import { removeDuplicateDocs } from "@/lib/documentUtils";
@@ -113,6 +114,7 @@ function extractCitationData(packets: Packet[]): {
   const seenCitationDocIds = new Set<string>();
 
   for (const packet of packets) {
+    if (!packet.obj) continue;
     // Collect documents from search/fetch tool packets
     if (
       packet.obj.type === PacketType.SEARCH_TOOL_DELTA ||
@@ -232,6 +234,8 @@ export function BudAgentScreen() {
     switchToSession,
     addMessage,
     updateMessage,
+    clearCurrentSession,
+    deleteSession,
     sessionPreferences,
     setAlwaysAllowTool,
     setAlwaysAllowMemoryUpdates,
@@ -781,6 +785,43 @@ export function BudAgentScreen() {
   // No-op handlers for features not used in agent mode
   const noOp = useCallback(() => {}, []);
 
+  /**
+   * Clear the current session and start a fresh agent chat.
+   * Stops any in-progress agent, deletes the session on the backend,
+   * and resets local state back to the welcome screen.
+   */
+  const handleNewChat = useCallback(() => {
+    // Stop any running agent first
+    if (isProcessing) {
+      abort();
+      if (currentSessionId) {
+        fetch(`/api/agent/sessions/${currentSessionId}/stop`, {
+          method: "POST",
+        }).catch(() => {});
+      }
+    }
+
+    // Delete the current session (backend + local state)
+    if (currentSessionId) {
+      deleteSession(currentSessionId);
+    } else {
+      clearCurrentSession();
+    }
+
+    // Reset local UI state
+    setIsProcessing(false);
+    setChatState("input");
+    setMessage("");
+    setPendingMemoryUpdate(null);
+    setBottomApproval(null);
+    setSidebarSourcesMsgId(null);
+    accumulatedContentRef.current = "";
+    toolCallsRef.current = [];
+    packetsRef.current = [];
+    messageFinalizedRef.current = false;
+    currentAgentMessageIdRef.current = null;
+  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession]);
+
   return (
     <div
       className="flex-1 flex flex-row min-h-0 m-4 ml-0 overflow-hidden"
@@ -809,6 +850,18 @@ export function BudAgentScreen() {
       {/* Backdrop overlay when approval is required */}
       {bottomApproval && (
         <div className="absolute inset-0 bg-black/50 z-40" />
+      )}
+
+      {/* New Chat button - top right, visible when there are messages */}
+      {messages.length > 0 && (
+        <div className="absolute top-3 right-3 z-30">
+          <IconButton
+            icon={SvgEdit}
+            tooltip="New Chat"
+            tertiary
+            onClick={handleNewChat}
+          />
+        </div>
       )}
 
       {/* Messages Area */}
@@ -904,7 +957,7 @@ export function BudAgentScreen() {
                           )}
 
                           {/* Tool calls display — packet-based rendering */}
-                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => [PacketType.CUSTOM_TOOL_START, PacketType.SEARCH_TOOL_START, PacketType.FETCH_TOOL_START, PacketType.REASONING_START].includes(p.obj.type as PacketType)) ? (
+                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => p.obj && [PacketType.CUSTOM_TOOL_START, PacketType.SEARCH_TOOL_START, PacketType.FETCH_TOOL_START, PacketType.REASONING_START].includes(p.obj.type as PacketType)) ? (
                             <div
                               className="mb-3"
                               data-testid="agent-tool-calls"
@@ -913,8 +966,8 @@ export function BudAgentScreen() {
                                 packetGroups={groupPacketsByInd(msg.packets)}
                                 chatState={minimalChatState}
                                 isComplete={msg.status === "complete" || msg.status === "error" || msg.status === "stopped"}
-                                isFinalAnswerComing={msg.packets.some((p) => p.obj.type === "message_start")}
-                                stopPacketSeen={msg.packets.some((p) => p.obj.type === "stop")}
+                                isFinalAnswerComing={msg.packets.some((p) => p.obj?.type === "message_start")}
+                                stopPacketSeen={msg.packets.some((p) => p.obj?.type === "stop")}
                               />
                             </div>
                           ) : msg.toolCalls && msg.toolCalls.length > 0 ? (
