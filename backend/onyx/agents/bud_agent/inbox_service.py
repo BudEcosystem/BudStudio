@@ -29,6 +29,16 @@ from onyx.utils.logger import setup_logger
 logger = setup_logger()
 
 
+def _get_sender_display_name(
+    db_session: Session, user_id: UUID
+) -> str | None:
+    """Return a human-readable display name for the given user, or None."""
+    user = db_session.get(User, user_id)
+    if user is None:
+        return None
+    return user.personal_name or user.email
+
+
 def create_inbox_tools(
     db_session: Session,
     user_id: UUID,
@@ -113,12 +123,7 @@ def create_inbox_tools(
             )
 
             # Notify recipient about the new message
-            sender = db_session.get(User, user_id)
-            sender_name = (
-                (sender.personal_name or sender.email)
-                if sender
-                else None
-            )
+            sender_name = _get_sender_display_name(db_session, user_id)
             publish_event(
                 tenant_id=tenant_id,
                 user_id=recipient.id,
@@ -248,12 +253,7 @@ def create_reply_tool(
                 return "Reply sent."
 
             # Notify recipient about the new reply
-            sender = db_session.get(User, user_id)
-            sender_name = (
-                (sender.personal_name or sender.email)
-                if sender
-                else None
-            )
+            sender_name = _get_sender_display_name(db_session, user_id)
             publish_event(
                 tenant_id=tenant_id,
                 user_id=recipient.id,
