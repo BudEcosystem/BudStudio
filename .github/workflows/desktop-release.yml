@@ -3,6 +3,11 @@ name: Desktop Release
 on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build for (e.g. v0.2.0)"
+        required: true
 
 permissions:
   contents: write
@@ -115,7 +120,11 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
           VERSION="${TAG#v}"
           VERSION="${VERSION#desktop-v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
