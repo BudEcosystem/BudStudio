@@ -11,6 +11,8 @@
     "shell:allow-open",
     "core:window:allow-start-dragging",
     "core:window:default",
-    "notification:default"
+    "notification:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }
