@@ -15,12 +15,13 @@ import { useChatContext } from "@/refresh-components/contexts/ChatContext";
 import { useAgentsContext } from "@/refresh-components/contexts/AgentsContext";
 import { useLlmManager, useFilters } from "@/lib/hooks";
 import { useProjectsContext } from "@/app/chat/projects/ProjectsContext";
-import { ChatState } from "@/app/chat/interfaces";
 import {
   useAgentSSE,
   createToolCallInfo,
   updateToolCallWithResult,
   updateToolCallApprovalRequired,
+  useChatInteractionState,
+  type PendingMemoryUpdate,
 } from "@/lib/desktop";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
 import { setUserDefaultModel } from "@/lib/users/UserSettings";
@@ -34,6 +35,7 @@ import SvgCopy from "@/icons/copy";
 import SvgCheck from "@/icons/check";
 import SvgArrowWallRight from "@/icons/arrow-wall-right";
 import SvgSearchMenu from "@/icons/search-menu";
+import SvgEdit from "@/icons/edit";
 import Text from "@/refresh-components/texts/Text";
 import { ChatDocumentDisplay } from "@/app/chat/components/documentSidebar/ChatDocumentDisplay";
 import { removeDuplicateDocs } from "@/lib/documentUtils";
@@ -56,17 +58,6 @@ import type { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
 import { groupPacketsByInd } from "@/app/chat/services/packetUtils";
 import { PacketType } from "@/app/chat/services/streamingModels";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
-
-/**
- * Interface for a pending memory update request.
- */
-interface PendingMemoryUpdate {
-  toolCallId: string;
-  toolName: string;
-  filePath: string;
-  oldContent: string;
-  newContent: string;
-}
 
 /**
  * Default fallback workspace path used when no configuration is provided.
@@ -113,6 +104,7 @@ function extractCitationData(packets: Packet[]): {
   const seenCitationDocIds = new Set<string>();
 
   for (const packet of packets) {
+    if (!packet.obj) continue;
     // Collect documents from search/fetch tool packets
     if (
       packet.obj.type === PacketType.SEARCH_TOOL_DELTA ||
@@ -202,27 +194,28 @@ export function BudAgentScreen() {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
-  const [message, setMessage] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [chatState, setChatState] = useState<ChatState>("input");
-  const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
+  // Chat interaction state (streaming refs + UI state with reset helpers)
+  const {
+    message, setMessage,
+    isProcessing, setIsProcessing,
+    chatState, setChatState,
+    pendingMemoryUpdate, setPendingMemoryUpdate,
+    sidebarSourcesMsgId, setSidebarSourcesMsgId,
+    bottomApproval, setBottomApproval,
+    accumulatedContentRef,
+    toolCallsRef,
+    packetsRef,
+    messageFinalizedRef,
+    currentAgentMessageIdRef,
+    resetStreamingRefs,
+    resetAll,
+  } = useChatInteractionState();
+
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [sidebarSourcesMsgId, setSidebarSourcesMsgId] = useState<string | null>(null);
-  const [bottomApproval, setBottomApproval] = useState<{
-    toolCallId: string;
-    toolName: string;
-    toolInput: Record<string, unknown>;
-    operationHash: string;
-  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const currentAgentMessageIdRef = useRef<string | null>(null);
-  const accumulatedContentRef = useRef<string>("");
-  const toolCallsRef = useRef<ToolCallInfo[]>([]);
-  const packetsRef = useRef<Packet[]>([]);
-  const messageFinalizedRef = useRef<boolean>(false);
   const previousMessageCountRef = useRef<number>(0);
 
   const {
@@ -232,6 +225,8 @@ export function BudAgentScreen() {
     switchToSession,
     addMessage,
     updateMessage,
+    clearCurrentSession,
+    deleteSession,
     sessionPreferences,
     setAlwaysAllowTool,
     setAlwaysAllowMemoryUpdates,
@@ -369,10 +364,7 @@ export function BudAgentScreen() {
     setChatState("streaming");
 
     // Reset refs for new agent response
-    accumulatedContentRef.current = "";
-    toolCallsRef.current = [];
-    packetsRef.current = [];
-    messageFinalizedRef.current = false;
+    resetStreamingRefs();
 
     // Create initial agent message (will be updated via streaming)
     const agentMsg = addMessage(sessionId, {
@@ -781,6 +773,33 @@ export function BudAgentScreen() {
   // No-op handlers for features not used in agent mode
   const noOp = useCallback(() => {}, []);
 
+  /**
+   * Clear the current session and start a fresh agent chat.
+   * Stops any in-progress agent, deletes the session on the backend,
+   * and resets local state back to the welcome screen.
+   */
+  const handleNewChat = useCallback(() => {
+    // Stop any running agent first
+    if (isProcessing) {
+      abort();
+      if (currentSessionId) {
+        fetch(`/api/agent/sessions/${currentSessionId}/stop`, {
+          method: "POST",
+        }).catch(() => {});
+      }
+    }
+
+    // Delete the current session (backend + local state)
+    if (currentSessionId) {
+      deleteSession(currentSessionId);
+    } else {
+      clearCurrentSession();
+    }
+
+    // Reset all chat interaction state
+    resetAll();
+  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession, resetAll]);
+
   return (
     <div
       className="flex-1 flex flex-row min-h-0 m-4 ml-0 overflow-hidden"
@@ -809,6 +828,18 @@ export function BudAgentScreen() {
       {/* Backdrop overlay when approval is required */}
       {bottomApproval && (
         <div className="absolute inset-0 bg-black/50 z-40" />
+      )}
+
+      {/* New Chat button - top right, visible when there are messages */}
+      {messages.length > 0 && (
+        <div className="absolute top-3 right-3 z-30">
+          <IconButton
+            icon={SvgEdit}
+            tooltip="New Chat"
+            tertiary
+            onClick={handleNewChat}
+          />
+        </div>
       )}
 
       {/* Messages Area */}
@@ -904,7 +935,7 @@ export function BudAgentScreen() {
                           )}
 
                           {/* Tool calls display — packet-based rendering */}
-                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => [PacketType.CUSTOM_TOOL_START, PacketType.SEARCH_TOOL_START, PacketType.FETCH_TOOL_START, PacketType.REASONING_START].includes(p.obj.type as PacketType)) ? (
+                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => p.obj && [PacketType.CUSTOM_TOOL_START, PacketType.SEARCH_TOOL_START, PacketType.FETCH_TOOL_START, PacketType.REASONING_START].includes(p.obj.type as PacketType)) ? (
                             <div
                               className="mb-3"
                               data-testid="agent-tool-calls"
@@ -913,8 +944,8 @@ export function BudAgentScreen() {
                                 packetGroups={groupPacketsByInd(msg.packets)}
                                 chatState={minimalChatState}
                                 isComplete={msg.status === "complete" || msg.status === "error" || msg.status === "stopped"}
-                                isFinalAnswerComing={msg.packets.some((p) => p.obj.type === "message_start")}
-                                stopPacketSeen={msg.packets.some((p) => p.obj.type === "stop")}
+                                isFinalAnswerComing={msg.packets.some((p) => p.obj?.type === "message_start")}
+                                stopPacketSeen={msg.packets.some((p) => p.obj?.type === "stop")}
                               />
                             </div>
                           ) : msg.toolCalls && msg.toolCalls.length > 0 ? (

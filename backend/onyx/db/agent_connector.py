@@ -208,7 +208,13 @@ def clear_connector_oauth(
     user_id: UUID,
     gateway_id: str,
 ) -> None:
-    """Clear OAuth status for a connector (mark as disconnected)."""
+    """Clear OAuth status for a connector and disable it.
+
+    When a user disconnects OAuth the gateway ID is no longer valid for
+    tool discovery.  Setting ``enabled = False`` prevents stale rows
+    from polluting the slug map and causing 500 errors when the user
+    reconnects with a different gateway ID.
+    """
     stmt = (
         select(AgentConnectorPreference)
         .where(
@@ -219,6 +225,7 @@ def clear_connector_oauth(
     pref = db_session.execute(stmt).scalar_one_or_none()
     if pref:
         pref.oauth_completed = False
+        pref.enabled = False
         db_session.commit()
 
 
