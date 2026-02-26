@@ -15,12 +15,13 @@ import { useChatContext } from "@/refresh-components/contexts/ChatContext";
 import { useAgentsContext } from "@/refresh-components/contexts/AgentsContext";
 import { useLlmManager, useFilters } from "@/lib/hooks";
 import { useProjectsContext } from "@/app/chat/projects/ProjectsContext";
-import { ChatState } from "@/app/chat/interfaces";
 import {
   useAgentSSE,
   createToolCallInfo,
   updateToolCallWithResult,
   updateToolCallApprovalRequired,
+  useChatInteractionState,
+  type PendingMemoryUpdate,
 } from "@/lib/desktop";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
 import { setUserDefaultModel } from "@/lib/users/UserSettings";
@@ -57,17 +58,6 @@ import type { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
 import { groupPacketsByInd } from "@/app/chat/services/packetUtils";
 import { PacketType } from "@/app/chat/services/streamingModels";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
-
-/**
- * Interface for a pending memory update request.
- */
-interface PendingMemoryUpdate {
-  toolCallId: string;
-  toolName: string;
-  filePath: string;
-  oldContent: string;
-  newContent: string;
-}
 
 /**
  * Default fallback workspace path used when no configuration is provided.
@@ -204,27 +194,28 @@ export function BudAgentScreen() {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
-  const [message, setMessage] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [chatState, setChatState] = useState<ChatState>("input");
-  const [pendingMemoryUpdate, setPendingMemoryUpdate] = useState<PendingMemoryUpdate | null>(null);
+  // Chat interaction state (streaming refs + UI state with reset helpers)
+  const {
+    message, setMessage,
+    isProcessing, setIsProcessing,
+    chatState, setChatState,
+    pendingMemoryUpdate, setPendingMemoryUpdate,
+    sidebarSourcesMsgId, setSidebarSourcesMsgId,
+    bottomApproval, setBottomApproval,
+    accumulatedContentRef,
+    toolCallsRef,
+    packetsRef,
+    messageFinalizedRef,
+    currentAgentMessageIdRef,
+    resetStreamingRefs,
+    resetAll,
+  } = useChatInteractionState();
+
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [sidebarSourcesMsgId, setSidebarSourcesMsgId] = useState<string | null>(null);
-  const [bottomApproval, setBottomApproval] = useState<{
-    toolCallId: string;
-    toolName: string;
-    toolInput: Record<string, unknown>;
-    operationHash: string;
-  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const currentAgentMessageIdRef = useRef<string | null>(null);
-  const accumulatedContentRef = useRef<string>("");
-  const toolCallsRef = useRef<ToolCallInfo[]>([]);
-  const packetsRef = useRef<Packet[]>([]);
-  const messageFinalizedRef = useRef<boolean>(false);
   const previousMessageCountRef = useRef<number>(0);
 
   const {
@@ -373,10 +364,7 @@ export function BudAgentScreen() {
     setChatState("streaming");
 
     // Reset refs for new agent response
-    accumulatedContentRef.current = "";
-    toolCallsRef.current = [];
-    packetsRef.current = [];
-    messageFinalizedRef.current = false;
+    resetStreamingRefs();
 
     // Create initial agent message (will be updated via streaming)
     const agentMsg = addMessage(sessionId, {
@@ -808,19 +796,9 @@ export function BudAgentScreen() {
       clearCurrentSession();
     }
 
-    // Reset local UI state
-    setIsProcessing(false);
-    setChatState("input");
-    setMessage("");
-    setPendingMemoryUpdate(null);
-    setBottomApproval(null);
-    setSidebarSourcesMsgId(null);
-    accumulatedContentRef.current = "";
-    toolCallsRef.current = [];
-    packetsRef.current = [];
-    messageFinalizedRef.current = false;
-    currentAgentMessageIdRef.current = null;
-  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession]);
+    // Reset all chat interaction state
+    resetAll();
+  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession, resetAll]);
 
   return (
     <div

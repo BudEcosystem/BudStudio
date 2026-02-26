@@ -7,3 +7,8 @@ export {
   type AgentExecuteParams,
   type AgentEventCallbacks,
 } from "./useAgentSSE";
+export {
+  useChatInteractionState,
+  type PendingMemoryUpdate,
+  type BottomApprovalState,
+} from "./useChatInteractionState";
