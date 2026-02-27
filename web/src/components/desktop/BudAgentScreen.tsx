@@ -626,9 +626,11 @@ export function BudAgentScreen() {
       // Persist "always allow" to the DB so it survives across sessions.
       // For local tools (bash, write_file, edit_file) we use the "__local__"
       // sentinel as the gateway_id in the shared AgentToolPermission table.
-      if (alwaysAllow && bottomApproval) {
-        const toolName = bottomApproval.toolName;
-        if (LOCAL_APPROVAL_TOOLS.has(toolName)) {
+      // Look up the tool name from toolCallsRef (stable) instead of
+      // bottomApproval (state that could be swapped by a new SSE packet).
+      if (alwaysAllow) {
+        const toolName = toolCallsRef.current.find((tc) => tc.id === toolCallId)?.name;
+        if (toolName && LOCAL_APPROVAL_TOOLS.has(toolName)) {
           setToolPermission(LOCAL_GATEWAY_ID, toolName, "always_allow").catch(
             (err) => console.error("Failed to persist tool permission:", err)
           );
@@ -657,7 +659,7 @@ export function BudAgentScreen() {
       // Clear bottom approval UI
       setBottomApproval(null);
     },
-    [currentSessionId, setAlwaysAllowOperation, bottomApproval]
+    [currentSessionId, setAlwaysAllowOperation]
   );
 
   /**
