@@ -13,6 +13,16 @@ LOCAL_TOOLS: set[str] = {
     "bash",
     "glob",
     "grep",
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_click",
+    "browser_fill",
+    "browser_type",
+    "browser_screenshot",
+    "browser_scroll",
+    "browser_select",
+    "browser_tabs",
+    "browser_extract",
 }
 
 REMOTE_TOOLS: set[str] = {
@@ -31,6 +41,11 @@ APPROVAL_REQUIRED_TOOLS: set[str] = {
     "bash",
     "write_file",
     "edit_file",
+    "browser_navigate",
+    "browser_click",
+    "browser_fill",
+    "browser_type",
+    "browser_select",
 }
 
 
@@ -181,6 +196,195 @@ LOCAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["pattern"],
+        },
+    },
+    "browser_navigate": {
+        "name": "browser_navigate",
+        "description": "Navigate to a URL, or go back/forward in browser history.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": (
+                        "The URL to navigate to. Use 'back' or 'forward' "
+                        "for history navigation."
+                    ),
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    "browser_snapshot": {
+        "name": "browser_snapshot",
+        "description": (
+            "Get an accessibility tree snapshot of the current page with "
+            "numbered element references (e1, e2...) for use with other "
+            "browser tools."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "browser_click": {
+        "name": "browser_click",
+        "description": "Click an element identified by its reference from a browser snapshot.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ref": {
+                    "type": "string",
+                    "description": "Element reference from browser_snapshot (e.g. 'e1', 'e2').",
+                },
+                "button": {
+                    "type": "string",
+                    "enum": ["left", "right", "middle"],
+                    "description": "Mouse button to click (default: left).",
+                },
+            },
+            "required": ["ref"],
+        },
+    },
+    "browser_fill": {
+        "name": "browser_fill",
+        "description": "Clear an input field and fill it with the given text.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ref": {
+                    "type": "string",
+                    "description": "Element reference from browser_snapshot (e.g. 'e1', 'e2').",
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The text to fill into the input field.",
+                },
+            },
+            "required": ["ref", "value"],
+        },
+    },
+    "browser_type": {
+        "name": "browser_type",
+        "description": (
+            "Type text using keyboard input. Does not clear existing content. "
+            "Supports special keys like Enter, Tab, Escape."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": (
+                        "The text to type, or a special key name "
+                        "(e.g. 'Enter', 'Tab', 'Escape')."
+                    ),
+                },
+                "ref": {
+                    "type": "string",
+                    "description": "Optional element reference to focus before typing.",
+                },
+            },
+            "required": ["text"],
+        },
+    },
+    "browser_screenshot": {
+        "name": "browser_screenshot",
+        "description": (
+            "Capture a screenshot of the current page. "
+            "Returns a base64-encoded PNG image."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "browser_scroll": {
+        "name": "browser_scroll",
+        "description": "Scroll the page or a specific element up or down.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": ["up", "down"],
+                    "description": "The direction to scroll.",
+                },
+                "amount": {
+                    "type": "integer",
+                    "description": "Number of pixels to scroll (default: 500).",
+                },
+                "ref": {
+                    "type": "string",
+                    "description": "Optional element reference to scroll into view.",
+                },
+            },
+            "required": ["direction"],
+        },
+    },
+    "browser_select": {
+        "name": "browser_select",
+        "description": "Select an option from a dropdown or select element.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ref": {
+                    "type": "string",
+                    "description": "Element reference from browser_snapshot (e.g. 'e1', 'e2').",
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The option value or visible text to select.",
+                },
+            },
+            "required": ["ref", "value"],
+        },
+    },
+    "browser_tabs": {
+        "name": "browser_tabs",
+        "description": (
+            "Manage browser tabs: list all tabs, create a new tab, "
+            "or switch to a tab by index."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "create", "switch"],
+                    "description": "The tab action to perform.",
+                },
+                "tab_index": {
+                    "type": "integer",
+                    "description": (
+                        "The tab index to switch to "
+                        "(required when action is 'switch')."
+                    ),
+                },
+            },
+            "required": ["action"],
+        },
+    },
+    "browser_extract": {
+        "name": "browser_extract",
+        "description": (
+            "Extract the text content of the current page "
+            "or a specific element."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ref": {
+                    "type": "string",
+                    "description": (
+                        "Optional element reference to extract text from. "
+                        "If omitted, extracts from the entire page."
+                    ),
+                },
+            },
+            "required": [],
         },
     },
 }

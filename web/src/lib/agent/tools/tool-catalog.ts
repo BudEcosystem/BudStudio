@@ -161,6 +161,192 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       },
     ],
   },
+  // Browser automation tools (executed on device)
+  {
+    name: "browser_navigate",
+    description:
+      "Navigate to a URL, or go back/forward in browser history.",
+    category: "local",
+    requiresApproval: true,
+    parameters: [
+      {
+        name: "url",
+        type: "string",
+        description:
+          "The URL to navigate to. Use 'back' or 'forward' for history navigation.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "browser_snapshot",
+    description:
+      "Get an accessibility tree snapshot of the current page with numbered element references (e1, e2...) for use with other browser tools.",
+    category: "local",
+    requiresApproval: false,
+    parameters: [],
+  },
+  {
+    name: "browser_click",
+    description:
+      "Click an element identified by its reference from a browser snapshot.",
+    category: "local",
+    requiresApproval: true,
+    parameters: [
+      {
+        name: "ref",
+        type: "string",
+        description:
+          "Element reference from browser_snapshot (e.g. 'e1', 'e2').",
+        required: true,
+      },
+      {
+        name: "button",
+        type: "string",
+        description: "Mouse button to click (default: left).",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "browser_fill",
+    description:
+      "Clear an input field and fill it with the given text.",
+    category: "local",
+    requiresApproval: true,
+    parameters: [
+      {
+        name: "ref",
+        type: "string",
+        description:
+          "Element reference from browser_snapshot (e.g. 'e1', 'e2').",
+        required: true,
+      },
+      {
+        name: "value",
+        type: "string",
+        description: "The text to fill into the input field.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "browser_type",
+    description:
+      "Type text using keyboard input. Does not clear existing content. Supports special keys like Enter, Tab, Escape.",
+    category: "local",
+    requiresApproval: true,
+    parameters: [
+      {
+        name: "text",
+        type: "string",
+        description:
+          "The text to type, or a special key name (e.g. 'Enter', 'Tab', 'Escape').",
+        required: true,
+      },
+      {
+        name: "ref",
+        type: "string",
+        description: "Optional element reference to focus before typing.",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "browser_screenshot",
+    description:
+      "Capture a screenshot of the current page. Returns a base64-encoded PNG image.",
+    category: "local",
+    requiresApproval: false,
+    parameters: [],
+  },
+  {
+    name: "browser_scroll",
+    description:
+      "Scroll the page or a specific element up or down.",
+    category: "local",
+    requiresApproval: false,
+    parameters: [
+      {
+        name: "direction",
+        type: "string",
+        description: "The direction to scroll.",
+        required: true,
+      },
+      {
+        name: "amount",
+        type: "number",
+        description: "Number of pixels to scroll (default: 500).",
+        required: false,
+      },
+      {
+        name: "ref",
+        type: "string",
+        description: "Optional element reference to scroll into view.",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "browser_select",
+    description:
+      "Select an option from a dropdown or select element.",
+    category: "local",
+    requiresApproval: true,
+    parameters: [
+      {
+        name: "ref",
+        type: "string",
+        description:
+          "Element reference from browser_snapshot (e.g. 'e1', 'e2').",
+        required: true,
+      },
+      {
+        name: "value",
+        type: "string",
+        description: "The option value or visible text to select.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "browser_tabs",
+    description:
+      "Manage browser tabs: list all tabs, create a new tab, or switch to a tab by index.",
+    category: "local",
+    requiresApproval: false,
+    parameters: [
+      {
+        name: "action",
+        type: "string",
+        description: "The tab action to perform.",
+        required: true,
+      },
+      {
+        name: "tab_index",
+        type: "number",
+        description:
+          "The tab index to switch to (required when action is 'switch').",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "browser_extract",
+    description:
+      "Extract the text content of the current page or a specific element.",
+    category: "local",
+    requiresApproval: false,
+    parameters: [
+      {
+        name: "ref",
+        type: "string",
+        description:
+          "Optional element reference to extract text from. If omitted, extracts from the entire page.",
+        required: false,
+      },
+    ],
+  },
   // Remote tools (executed on server)
   {
     name: "memory_store",

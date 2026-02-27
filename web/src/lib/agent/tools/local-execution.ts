@@ -16,7 +16,6 @@ import {
   GlobTool,
   GrepTool,
 } from "@/lib/agent/tools";
-
 /** Default workspace path when the requested path doesn't exist on the server. */
 const SERVER_FALLBACK_WORKSPACE = "/tmp/bud-workspace";
 
@@ -50,6 +49,23 @@ export function createLocalToolRegistry(workspacePath: string): ToolRegistry {
   registry.register(new BashTool(workspacePath));
   registry.register(new GlobTool(workspacePath));
   registry.register(new GrepTool(workspacePath));
+
+  // Browser automation tools — loaded lazily to avoid importing playwright-core
+  // at module scope, which would crash if Chromium is not installed.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createBrowserTools } = require("@/lib/agent/tools/browser") as {
+      createBrowserTools: () => import("@/lib/agent/tools").Tool[];
+    };
+    const browserTools = createBrowserTools();
+    for (const tool of browserTools) {
+      registry.register(tool);
+    }
+  } catch {
+    // Browser tools unavailable (playwright-core or Chromium not installed).
+    // Non-browser tools continue to work normally.
+  }
+
   return registry;
 }
 

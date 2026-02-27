@@ -16,6 +16,7 @@ export {
 } from "./file-tools";
 export { BashTool } from "./bash-tool";
 export { GlobTool, GrepTool } from "./search-tools";
+export { createBrowserTools, BrowserManager } from "./browser";
 export {
   OnyxSearchTool,
   createOnyxSearchTool,
