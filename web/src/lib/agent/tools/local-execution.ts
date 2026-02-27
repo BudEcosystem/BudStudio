@@ -53,7 +53,6 @@ export function createLocalToolRegistry(workspacePath: string): ToolRegistry {
   // Browser automation tools — loaded lazily to avoid importing playwright-core
   // at module scope, which would crash if Chromium is not installed.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createBrowserTools } = require("@/lib/agent/tools/browser") as {
       createBrowserTools: () => import("@/lib/agent/tools").Tool[];
     };
