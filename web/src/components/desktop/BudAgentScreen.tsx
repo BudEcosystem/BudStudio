@@ -24,6 +24,7 @@ import {
   type PendingMemoryUpdate,
 } from "@/lib/desktop";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
+import { setToolPermission } from "@/lib/agent/connector-utils";
 import { setUserDefaultModel } from "@/lib/users/UserSettings";
 import { structureValue } from "@/lib/llm/utils";
 import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
@@ -58,6 +59,15 @@ import type { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
 import { groupPacketsByInd } from "@/app/chat/services/packetUtils";
 import { PacketType } from "@/app/chat/services/streamingModels";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
+
+/**
+ * Sentinel gateway ID for local tools (bash, write_file, edit_file).
+ * Must match LOCAL_GATEWAY_ID in backend/onyx/agents/bud_agent/tool_definitions.py.
+ */
+const LOCAL_GATEWAY_ID = "__local__";
+
+/** Local tool names that can require approval. */
+const LOCAL_APPROVAL_TOOLS = new Set(["bash", "write_file", "edit_file"]);
 
 /**
  * Default fallback workspace path used when no configuration is provided.
@@ -608,10 +618,23 @@ export function BudAgentScreen() {
     async (toolCallId: string, alwaysAllow: boolean, operationHash?: string) => {
       if (!currentSessionId) return;
 
-      // Store approval preference if requested
+      // Store session-scoped preference (fast-path for current session)
       if (alwaysAllow && operationHash) {
-        // Store this specific operation as approved
         setAlwaysAllowOperation(operationHash);
+      }
+
+      // Persist "always allow" to the DB so it survives across sessions.
+      // For local tools (bash, write_file, edit_file) we use the "__local__"
+      // sentinel as the gateway_id in the shared AgentToolPermission table.
+      // Look up the tool name from toolCallsRef (stable) instead of
+      // bottomApproval (state that could be swapped by a new SSE packet).
+      if (alwaysAllow) {
+        const toolName = toolCallsRef.current.find((tc) => tc.id === toolCallId)?.name;
+        if (toolName && LOCAL_APPROVAL_TOOLS.has(toolName)) {
+          setToolPermission(LOCAL_GATEWAY_ID, toolName, "always_allow").catch(
+            (err) => console.error("Failed to persist tool permission:", err)
+          );
+        }
       }
 
       try {

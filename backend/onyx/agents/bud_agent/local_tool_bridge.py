@@ -16,16 +16,20 @@ from typing import Any
 from typing import Callable
 from typing import Coroutine
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import redis
 
 from agents import FunctionTool
 from agents import RunContextWrapper
 
+from onyx.agents.bud_agent.tool_definitions import LOCAL_GATEWAY_ID
 from onyx.agents.bud_agent.tool_definitions import LOCAL_TOOL_SCHEMAS
 from onyx.agents.bud_agent.tool_definitions import requires_approval
 from onyx.db.agent import add_tool_message
 from onyx.db.agent import update_tool_message_result
+from onyx.db.agent_connector import get_tool_permissions
+from onyx.db.enums import AgentToolPermissionLevel
 from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
 from onyx.server.query_and_chat.streaming_models import AgentLocalToolRequest
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
@@ -60,12 +64,28 @@ class LocalToolBridge:
         redis_client: redis.Redis,  # type: ignore[type-arg]
         db_session: Session | None = None,
         orchestrator: BudAgentOrchestrator | None = None,
+        user_id: UUID | None = None,
     ) -> None:
         self._session_id = session_id
         self._packet_queue = packet_queue
         self._redis_client = redis_client
         self._db_session = db_session
         self._orchestrator = orchestrator
+
+        # Load persistent local-tool permissions from the DB once at init.
+        self._always_allowed_tools: set[str] = set()
+        if db_session and user_id:
+            try:
+                perms = get_tool_permissions(db_session, user_id, LOCAL_GATEWAY_ID)
+                self._always_allowed_tools = {
+                    p.tool_name
+                    for p in perms
+                    if p.permission_level == AgentToolPermissionLevel.ALWAYS_ALLOW
+                }
+            except Exception:
+                logger.warning(
+                    "Failed to load local tool permissions", exc_info=True
+                )
 
     def _emit(self, obj: Any, step: int | None = None) -> None:
         """Helper to put a Packet on the queue."""
@@ -134,8 +154,8 @@ class LocalToolBridge:
                 except Exception:
                     logger.warning("Failed to persist tool message", exc_info=True)
 
-            # Handle approval if required
-            if requires_approval(tool_name):
+            # Handle approval if required (skip if user has persistent always-allow)
+            if requires_approval(tool_name) and tool_name not in self._always_allowed_tools:
                 approved = self._wait_for_approval(
                     tool_name, tool_input, tool_call_id
                 )
