@@ -8,20 +8,15 @@
  */
 
 import * as fs from "fs";
-import * as path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import {
-  ToolRegistry,
-  ReadFileTool,
-  WriteFileTool,
-  EditFileTool,
-  BashTool,
-  GlobTool,
-  GrepTool,
-} from "@/lib/agent/tools";
+import { ToolRegistry } from "@/lib/agent/tools";
 import type { AgentEvent } from "@/lib/agent/types";
-import { syncWorkspaceFileToBackend } from "@/lib/agent/tools/local-execution";
+import {
+  resolveWorkspacePath as resolveWorkspace,
+  createLocalToolRegistry,
+  syncWorkspaceFileToBackend,
+} from "@/lib/agent/tools/local-execution";
 import { INTERNAL_URL } from "@/lib/constants";
 
 // Debug logging to file
@@ -158,46 +153,17 @@ function formatSSEMessage(event: AgentEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-/** Default workspace path when the requested path doesn't exist on the server. */
-const SERVER_FALLBACK_WORKSPACE = "/tmp/bud-workspace";
-
 /**
- * Resolve the workspace path, ensuring it exists on the filesystem.
- * If the requested path doesn't exist, falls back to SERVER_FALLBACK_WORKSPACE.
- * Creates the directory if it doesn't exist yet.
+ * Resolve the workspace path with debug logging.
  */
 function resolveWorkspacePath(requestedPath: string): string {
-  let workspacePath = requestedPath;
-
-  // If the requested path doesn't exist, use the server fallback
-  if (!fs.existsSync(workspacePath)) {
+  const resolved = resolveWorkspace(requestedPath);
+  if (resolved !== requestedPath) {
     debugLog(
-      `Workspace path "${workspacePath}" does not exist, falling back to "${SERVER_FALLBACK_WORKSPACE}"`
+      `Workspace path "${requestedPath}" does not exist, using "${resolved}"`
     );
-    workspacePath = SERVER_FALLBACK_WORKSPACE;
   }
-
-  // Ensure the workspace directory exists
-  if (!fs.existsSync(workspacePath)) {
-    fs.mkdirSync(workspacePath, { recursive: true });
-    debugLog(`Created workspace directory: ${workspacePath}`);
-  }
-
-  return workspacePath;
-}
-
-/**
- * Create a ToolRegistry with local tools registered.
- */
-function createLocalToolRegistry(workspacePath: string): ToolRegistry {
-  const registry = new ToolRegistry(workspacePath);
-  registry.register(new ReadFileTool(workspacePath));
-  registry.register(new WriteFileTool(workspacePath));
-  registry.register(new EditFileTool(workspacePath));
-  registry.register(new BashTool(workspacePath));
-  registry.register(new GlobTool(workspacePath));
-  registry.register(new GrepTool(workspacePath));
-  return registry;
+  return resolved;
 }
 
 /**
