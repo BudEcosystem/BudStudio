@@ -53,16 +53,21 @@ export function createLocalToolRegistry(workspacePath: string): ToolRegistry {
   // Browser automation tools — loaded lazily to avoid importing playwright-core
   // at module scope, which would crash if Chromium is not installed.
   try {
-    const { createBrowserTools } = require("@/lib/agent/tools/browser") as {
+    // Use relative path — @/ alias doesn't resolve in Node.js require() at runtime
+    const { createBrowserTools } = require("./browser") as {
       createBrowserTools: () => import("@/lib/agent/tools").Tool[];
     };
     const browserTools = createBrowserTools();
     for (const tool of browserTools) {
       registry.register(tool);
     }
-  } catch {
+  } catch (err) {
     // Browser tools unavailable (playwright-core or Chromium not installed).
     // Non-browser tools continue to work normally.
+    console.warn(
+      "[local-execution] Browser tools not loaded:",
+      err instanceof Error ? err.message : err
+    );
   }
 
   return registry;
