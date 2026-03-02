@@ -145,8 +145,11 @@ export class BrowserManager {
     // Ensure the profile directory exists
     fs.mkdirSync(this.profilePath, { recursive: true });
 
-    // Launch a persistent Chromium context
+    // Launch using the system-installed Chrome with an isolated profile.
+    // "channel: chrome" tells Playwright to use the user's Chrome binary
+    // instead of requiring a bundled Chromium download.
     const context = await chromium.launchPersistentContext(this.profilePath, {
+      channel: "chrome",
       headless: this.headless,
       viewport: { width: 1280, height: 720 },
       args: [

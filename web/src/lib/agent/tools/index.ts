@@ -16,7 +16,9 @@ export {
 } from "./file-tools";
 export { BashTool } from "./bash-tool";
 export { GlobTool, GrepTool } from "./search-tools";
-export { createBrowserTools, BrowserManager } from "./browser";
+// Browser tools are NOT re-exported from the barrel to avoid pulling in
+// playwright-core at import time. Use require("./browser") for lazy loading.
+// See local-execution.ts for the lazy loading pattern.
 export {
   OnyxSearchTool,
   createOnyxSearchTool,

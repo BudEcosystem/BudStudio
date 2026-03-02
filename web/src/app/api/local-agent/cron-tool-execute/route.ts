@@ -59,9 +59,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  // Resolve workspace and create tool registry
+  // Resolve workspace and create tool registry (async to await browser tools)
   const resolvedPath = resolveWorkspacePath(workspacePath || "/tmp/bud-workspace");
-  const registry = createLocalToolRegistry(resolvedPath);
+  const registry = await createLocalToolRegistry(resolvedPath);
 
   // Execute the tool
   const result = await executeLocalToolCall(registry, toolName, toolInput || {});
