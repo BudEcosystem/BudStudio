@@ -24,6 +24,9 @@ const cspHeader = `
 const nextConfig = {
   productionBrowserSourceMaps: false,
   output: "standalone",
+  // playwright-core must be resolved at Node.js runtime, not bundled by webpack.
+  // This allows the browser tools to lazy-load it without webpack interference.
+  serverExternalPackages: ["playwright-core"],
   typescript: {
     // Pre-existing type errors on this branch — skip during build
     ignoreBuildErrors: true,

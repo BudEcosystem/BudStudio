@@ -16,7 +16,6 @@ import {
   GlobTool,
   GrepTool,
 } from "@/lib/agent/tools";
-
 /** Default workspace path when the requested path doesn't exist on the server. */
 const SERVER_FALLBACK_WORKSPACE = "/tmp/bud-workspace";
 
@@ -41,8 +40,14 @@ export function resolveWorkspacePath(requestedPath: string): string {
 
 /**
  * Create a ToolRegistry with all local tools registered.
+ *
+ * This function is async because browser tools use playwright-core which
+ * webpack wraps as an async module. The dynamic import() ensures we properly
+ * await the async module initialization.
  */
-export function createLocalToolRegistry(workspacePath: string): ToolRegistry {
+export async function createLocalToolRegistry(
+  workspacePath: string
+): Promise<ToolRegistry> {
   const registry = new ToolRegistry(workspacePath);
   registry.register(new ReadFileTool(workspacePath));
   registry.register(new WriteFileTool(workspacePath));
@@ -50,6 +55,54 @@ export function createLocalToolRegistry(workspacePath: string): ToolRegistry {
   registry.register(new BashTool(workspacePath));
   registry.register(new GlobTool(workspacePath));
   registry.register(new GrepTool(workspacePath));
+
+  // Browser automation tools — loaded lazily via dynamic import() to properly
+  // await the async module (playwright-core is an external package that webpack
+  // wraps as an async module). A synchronous require() would return before the
+  // module's async init completes, leaving exports undefined.
+  try {
+    fs.appendFileSync(
+      "/tmp/bud-agent-debug.log",
+      `[${new Date().toISOString()}] [local-execution] Attempting to load browser tools via dynamic import...\n`
+    );
+    const browserModule = await import("./browser");
+    fs.appendFileSync(
+      "/tmp/bud-agent-debug.log",
+      `[${new Date().toISOString()}] [local-execution] Browser module loaded, keys: ${Object.keys(browserModule).join(", ")}\n`
+    );
+    const { createBrowserTools } = browserModule;
+    if (typeof createBrowserTools !== "function") {
+      throw new Error(
+        `createBrowserTools is ${typeof createBrowserTools}, not a function. Module keys: ${Object.keys(browserModule).join(", ")}`
+      );
+    }
+    const browserTools = createBrowserTools();
+    fs.appendFileSync(
+      "/tmp/bud-agent-debug.log",
+      `[${new Date().toISOString()}] [local-execution] Created ${browserTools.length} browser tools: ${browserTools.map((t) => t.name).join(", ")}\n`
+    );
+    for (const tool of browserTools) {
+      registry.register(tool);
+    }
+  } catch (err) {
+    // Browser tools unavailable (playwright-core or Chromium not installed).
+    // Non-browser tools continue to work normally.
+    const errMsg =
+      err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+    fs.appendFileSync(
+      "/tmp/bud-agent-debug.log",
+      `[${new Date().toISOString()}] [local-execution] Browser tools not loaded: ${errMsg}\n`
+    );
+    console.warn("[local-execution] Browser tools not loaded:", errMsg);
+  }
+
+  // Log all registered tools for debugging
+  const toolNames = registry.getAll().map((t) => t.name);
+  fs.appendFileSync(
+    "/tmp/bud-agent-debug.log",
+    `[${new Date().toISOString()}] [local-execution] Registry created with ${toolNames.length} tools: ${toolNames.join(", ")}\n`
+  );
+
   return registry;
 }
 
