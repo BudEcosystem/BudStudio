@@ -2,8 +2,12 @@
  * Tests for the SSRF (Server-Side Request Forgery) guard module.
  *
  * Tests cover:
- * - isPrivateIP detection for IPv4 private ranges (loopback, RFC 1918, link-local)
- * - isPrivateIP detection for IPv6 loopback and link-local
+ * - isPrivateIP detection for IPv4 private ranges (loopback, RFC 1918, link-local, CGNAT, etc.)
+ * - isPrivateIP detection for IPv6 loopback, link-local, and ULA (fc00::/7)
+ * - isPrivateIP detection for IPv4-mapped IPv6 (::ffff:127.0.0.1, ::ffff:7f00:1)
+ * - isPrivateIP detection for IPv4-compatible IPv6 (::10.0.0.1)
+ * - isPrivateIP detection for NAT64 (64:ff9b::10.0.0.1)
+ * - isPrivateIP detection for IPv6 multicast (ff00::/8)
  * - isPrivateIP returning false for public IPs
  * - validateNavigationUrl blocking dangerous URI schemes
  * - validateNavigationUrl allowing about:blank
@@ -19,8 +23,6 @@ import { isPrivateIP, validateNavigationUrl } from "../ssrf-guard";
 import * as dns from "dns";
 
 // Mock the dns module so DNS resolution calls do not hit the network.
-// By default, resolve4 and resolve6 return empty arrays (no addresses),
-// which means hostnames are treated as unresolvable and allowed through.
 jest.mock("dns", () => ({
   resolve4: jest.fn(
     (_hostname: string, callback: (err: Error | null, addresses: string[]) => void) => {
@@ -89,15 +91,123 @@ describe("isPrivateIP", () => {
     });
   });
 
+  describe("IPv4 CGNAT (100.64.0.0/10)", () => {
+    it("should return true for 100.64.0.1", () => {
+      expect(isPrivateIP("100.64.0.1")).toBe(true);
+    });
+
+    it("should return true for 100.127.255.255", () => {
+      expect(isPrivateIP("100.127.255.255")).toBe(true);
+    });
+
+    it("should return false for 100.128.0.0 (outside /10 range)", () => {
+      expect(isPrivateIP("100.128.0.0")).toBe(false);
+    });
+  });
+
+  describe("IPv4 0.0.0.0/8 ('this' network)", () => {
+    it("should return true for 0.0.0.0", () => {
+      expect(isPrivateIP("0.0.0.0")).toBe(true);
+    });
+
+    it("should return true for 0.255.255.255", () => {
+      expect(isPrivateIP("0.255.255.255")).toBe(true);
+    });
+  });
+
   describe("IPv6 loopback", () => {
     it("should return true for ::1", () => {
       expect(isPrivateIP("::1")).toBe(true);
     });
+
+    it("should return true for 0:0:0:0:0:0:0:1", () => {
+      expect(isPrivateIP("0:0:0:0:0:0:0:1")).toBe(true);
+    });
   });
 
-  describe("IPv6 link-local", () => {
+  describe("IPv6 unspecified", () => {
+    it("should return true for ::", () => {
+      expect(isPrivateIP("::")).toBe(true);
+    });
+  });
+
+  describe("IPv6 link-local (fe80::/10)", () => {
     it("should return true for fe80::1", () => {
       expect(isPrivateIP("fe80::1")).toBe(true);
+    });
+
+    it("should return true for febf::1 (still within /10)", () => {
+      expect(isPrivateIP("febf::1")).toBe(true);
+    });
+  });
+
+  describe("IPv6 ULA (fc00::/7)", () => {
+    it("should return true for fc00::1", () => {
+      expect(isPrivateIP("fc00::1")).toBe(true);
+    });
+
+    it("should return true for fd00::1", () => {
+      expect(isPrivateIP("fd00::1")).toBe(true);
+    });
+
+    it("should return true for fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", () => {
+      expect(isPrivateIP("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")).toBe(true);
+    });
+  });
+
+  describe("IPv6 multicast (ff00::/8)", () => {
+    it("should return true for ff02::1", () => {
+      expect(isPrivateIP("ff02::1")).toBe(true);
+    });
+  });
+
+  describe("IPv4-mapped IPv6 (::ffff:x.x.x.x)", () => {
+    it("should return true for ::ffff:127.0.0.1", () => {
+      expect(isPrivateIP("::ffff:127.0.0.1")).toBe(true);
+    });
+
+    it("should return true for ::ffff:10.0.0.1", () => {
+      expect(isPrivateIP("::ffff:10.0.0.1")).toBe(true);
+    });
+
+    it("should return true for ::ffff:192.168.1.1", () => {
+      expect(isPrivateIP("::ffff:192.168.1.1")).toBe(true);
+    });
+
+    it("should return false for ::ffff:8.8.8.8 (public)", () => {
+      expect(isPrivateIP("::ffff:8.8.8.8")).toBe(false);
+    });
+  });
+
+  describe("IPv4-mapped IPv6 hex form (::ffff:7f00:1)", () => {
+    it("should return true for ::ffff:7f00:1 (127.0.0.1)", () => {
+      expect(isPrivateIP("::ffff:7f00:1")).toBe(true);
+    });
+
+    it("should return true for ::ffff:0a00:1 (10.0.0.1)", () => {
+      expect(isPrivateIP("::ffff:0a00:1")).toBe(true);
+    });
+
+    it("should return true for ::ffff:c0a8:101 (192.168.1.1)", () => {
+      expect(isPrivateIP("::ffff:c0a8:101")).toBe(true);
+    });
+
+    it("should return false for ::ffff:0808:0808 (8.8.8.8)", () => {
+      expect(isPrivateIP("::ffff:0808:0808")).toBe(false);
+    });
+  });
+
+  describe("NAT64 (64:ff9b::x.x.x.x)", () => {
+    it("should return true for 64:ff9b::10.0.0.1", () => {
+      expect(isPrivateIP("64:ff9b::10.0.0.1")).toBe(true);
+    });
+
+    it("should return true for 64:ff9b::127.0.0.1", () => {
+      expect(isPrivateIP("64:ff9b::127.0.0.1")).toBe(true);
+    });
+
+    it("should return false for 64:ff9b::8.8.8.8 (public)", () => {
+      expect(isPrivateIP("64:ff9b::8.8.8.8")).toBe(false);
     });
   });
 
@@ -112,6 +222,16 @@ describe("isPrivateIP", () => {
 
     it("should return false for 93.184.216.34", () => {
       expect(isPrivateIP("93.184.216.34")).toBe(false);
+    });
+  });
+
+  describe("public IPv6 addresses", () => {
+    it("should return false for 2001:4860:4860::8888 (Google DNS)", () => {
+      expect(isPrivateIP("2001:4860:4860::8888")).toBe(false);
+    });
+
+    it("should return false for 2606:4700:4700::1111 (Cloudflare)", () => {
+      expect(isPrivateIP("2606:4700:4700::1111")).toBe(false);
     });
   });
 });
@@ -216,6 +336,18 @@ describe("validateNavigationUrl", () => {
         validateNavigationUrl("http://192.168.1.1")
       ).rejects.toThrow(/Blocked private\/internal IP address "192.168.1.1"/);
     });
+
+    it("should block http://[::1]", async () => {
+      await expect(
+        validateNavigationUrl("http://[::1]")
+      ).rejects.toThrow(/Blocked private\/internal IP/);
+    });
+
+    it("should block http://[::ffff:127.0.0.1]", async () => {
+      await expect(
+        validateNavigationUrl("http://[::ffff:127.0.0.1]")
+      ).rejects.toThrow(/Blocked private\/internal IP/);
+    });
   });
 
   // ---- Public URLs --------------------------------------------------------
@@ -272,6 +404,34 @@ describe("validateNavigationUrl", () => {
         validateNavigationUrl("https://evil.example.com")
       ).rejects.toThrow(
         /resolves to private\/internal IP "::1"/
+      );
+    });
+
+    it("should block a hostname that resolves to an IPv4-mapped IPv6 private address", async () => {
+      (dns.resolve6 as unknown as jest.Mock).mockImplementation(
+        (_hostname: string, callback: (err: Error | null, addresses: string[]) => void) => {
+          callback(null, ["::ffff:127.0.0.1"]);
+        }
+      );
+
+      await expect(
+        validateNavigationUrl("https://evil.example.com")
+      ).rejects.toThrow(
+        /resolves to private\/internal IP/
+      );
+    });
+
+    it("should block a hostname that resolves to a ULA IPv6 address", async () => {
+      (dns.resolve6 as unknown as jest.Mock).mockImplementation(
+        (_hostname: string, callback: (err: Error | null, addresses: string[]) => void) => {
+          callback(null, ["fd00::1"]);
+        }
+      );
+
+      await expect(
+        validateNavigationUrl("https://evil.example.com")
+      ).rejects.toThrow(
+        /resolves to private\/internal IP/
       );
     });
 

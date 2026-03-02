@@ -191,7 +191,7 @@ export class BrowserFillTool implements Tool {
     const locator = this.manager.resolveRef(ref);
     await locator.fill(value, { timeout: 10_000 });
 
-    return `Filled element ${ref} with value`;
+    return `Filled element ${ref}`;
   }
 }
 
@@ -251,7 +251,7 @@ export class BrowserTypeTool implements Tool {
     }
 
     await page.keyboard.type(text);
-    return "Typed text";
+    return ref ? `Typed text into element ${ref}` : "Typed text";
   }
 }
 

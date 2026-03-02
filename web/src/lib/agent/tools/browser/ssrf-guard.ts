@@ -38,21 +38,24 @@ const BLOCKED_HOSTNAMES: string[] = ["localhost", "0.0.0.0"];
  * Each entry is [network, prefix-length].
  */
 const PRIVATE_IPV4_RANGES: Array<[string, number]> = [
+  ["0.0.0.0", 8], // "This" network (RFC 1122)
   ["127.0.0.0", 8], // Loopback
   ["10.0.0.0", 8], // RFC 1918
   ["172.16.0.0", 12], // RFC 1918
   ["192.168.0.0", 16], // RFC 1918
   ["169.254.0.0", 16], // Link-local
+  ["100.64.0.0", 10], // Shared address space (RFC 6598 / CGNAT)
+  ["192.0.0.0", 24], // IETF Protocol assignments
+  ["192.0.2.0", 24], // TEST-NET-1 (RFC 5737)
+  ["198.51.100.0", 24], // TEST-NET-2 (RFC 5737)
+  ["203.0.113.0", 24], // TEST-NET-3 (RFC 5737)
+  ["198.18.0.0", 15], // Benchmarking (RFC 2544)
+  ["224.0.0.0", 4], // Multicast
+  ["240.0.0.0", 4], // Reserved
 ];
 
-/**
- * IPv6 addresses / prefixes that are blocked.
- */
-const BLOCKED_IPV6_LOOPBACK = "::1";
-const BLOCKED_IPV6_LINK_LOCAL_PREFIX = "fe80";
-
 // ---------------------------------------------------------------------------
-// Helpers – IP parsing
+// Helpers – IPv4 parsing
 // ---------------------------------------------------------------------------
 
 /**
@@ -70,7 +73,7 @@ function ipv4ToNumber(ip: string): number | null {
   let num = 0;
   for (const part of parts) {
     const octet = Number(part);
-    if (isNaN(octet) || octet < 0 || octet > 255) {
+    if (isNaN(octet) || octet < 0 || octet > 255 || part !== String(octet)) {
       return null;
     }
     num = (num << 8) | octet;
@@ -94,21 +97,177 @@ function isInCIDR(ip: number, network: number, prefixLen: number): boolean {
 }
 
 /**
- * Checks whether an IPv6 address string is a blocked address.
+ * Checks whether an IPv4 address is in a private/reserved range.
+ */
+function isPrivateIPv4(ip: string): boolean {
+  const num = ipv4ToNumber(ip);
+  if (num === null) return false;
+
+  for (const [network, prefixLen] of PRIVATE_IPV4_RANGES) {
+    const networkNum = ipv4ToNumber(network);
+    if (networkNum !== null && isInCIDR(num, networkNum, prefixLen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers – IPv6 parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Expands a compressed IPv6 address to its full 8-group hex representation.
+ * Returns null if the input is not a valid IPv6 address.
+ */
+function expandIPv6(ip: string): string | null {
+  // Strip bracket notation [::1] -> ::1
+  let addr = ip.startsWith("[") && ip.endsWith("]") ? ip.slice(1, -1) : ip;
+  // Strip zone id (%eth0 etc.)
+  const zoneIdx = addr.indexOf("%");
+  if (zoneIdx !== -1) addr = addr.slice(0, zoneIdx);
+
+  addr = addr.toLowerCase();
+
+  // Handle IPv4-mapped/compatible addresses (::ffff:1.2.3.4, ::1.2.3.4)
+  const lastColon = addr.lastIndexOf(":");
+  if (lastColon !== -1) {
+    const suffix = addr.slice(lastColon + 1);
+    if (suffix.includes(".")) {
+      // This is an IPv4-mapped or IPv4-compatible IPv6 address
+      const v4num = ipv4ToNumber(suffix);
+      if (v4num === null) return null;
+      const hi = (v4num >>> 16) & 0xffff;
+      const lo = v4num & 0xffff;
+      addr = addr.slice(0, lastColon + 1) + hi.toString(16) + ":" + lo.toString(16);
+    }
+  }
+
+  const parts = addr.split("::");
+  if (parts.length > 2) return null; // At most one ::
+
+  let groups: string[];
+  if (parts.length === 2) {
+    const left = parts[0] === "" ? [] : parts[0]!.split(":");
+    const right = parts[1] === "" ? [] : parts[1]!.split(":");
+    const missing = 8 - left.length - right.length;
+    if (missing < 0) return null;
+    groups = [...left, ...Array(missing).fill("0"), ...right];
+  } else {
+    groups = addr.split(":");
+  }
+
+  if (groups.length !== 8) return null;
+
+  // Validate each group is a valid hex value 0-ffff
+  for (const g of groups) {
+    if (g.length === 0 || g.length > 4 || !/^[0-9a-f]+$/.test(g)) return null;
+  }
+
+  return groups.map((g) => g.padStart(4, "0")).join(":");
+}
+
+/**
+ * Extracts an embedded IPv4 address from an IPv4-mapped/compatible IPv6 address.
+ * Returns null if the address doesn't embed an IPv4.
  *
- * @param ip - IPv6 address string
- * @returns `true` if the address is loopback (`::1`) or link-local (`fe80::/10`)
+ * Handles:
+ * - ::ffff:1.2.3.4 (IPv4-mapped)
+ * - ::1.2.3.4 (IPv4-compatible, deprecated)
+ * - ::ffff:0a00:0001 (hex-encoded IPv4-mapped)
+ * - 64:ff9b::1.2.3.4 (NAT64 well-known prefix, RFC 6052)
+ */
+function extractEmbeddedIPv4(ip: string): string | null {
+  const expanded = expandIPv6(ip);
+  if (!expanded) return null;
+
+  const groups = expanded.split(":").map((g) => parseInt(g, 16));
+
+  // ::ffff:x:x (IPv4-mapped — groups 0-4 are 0, group 5 is 0xffff)
+  if (
+    groups[0] === 0 &&
+    groups[1] === 0 &&
+    groups[2] === 0 &&
+    groups[3] === 0 &&
+    groups[4] === 0 &&
+    groups[5] === 0xffff
+  ) {
+    const hi = groups[6]!;
+    const lo = groups[7]!;
+    return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+  }
+
+  // ::x:x (IPv4-compatible — all zeros except last two groups)
+  if (
+    groups[0] === 0 &&
+    groups[1] === 0 &&
+    groups[2] === 0 &&
+    groups[3] === 0 &&
+    groups[4] === 0 &&
+    groups[5] === 0
+  ) {
+    const combined = ((groups[6]! << 16) | groups[7]!) >>> 0;
+    // Skip ::0 and ::1 — these are IPv6-native, not embedded IPv4
+    if (combined > 1) {
+      return `${(combined >> 24) & 0xff}.${(combined >> 16) & 0xff}.${(combined >> 8) & 0xff}.${combined & 0xff}`;
+    }
+  }
+
+  // 64:ff9b::x:x (NAT64 well-known prefix RFC 6052)
+  if (
+    groups[0] === 0x0064 &&
+    groups[1] === 0xff9b &&
+    groups[2] === 0 &&
+    groups[3] === 0 &&
+    groups[4] === 0 &&
+    groups[5] === 0
+  ) {
+    const hi = groups[6]!;
+    const lo = groups[7]!;
+    return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether an IPv6 address is a blocked address.
+ *
+ * Blocks:
+ * - ::1 (loopback)
+ * - fe80::/10 (link-local)
+ * - fc00::/7 (Unique Local Addresses, RFC 4193)
+ * - :: (unspecified)
+ * - ff00::/8 (multicast)
+ * - IPv4-mapped/compatible addresses that embed a private IPv4
+ * - NAT64 (64:ff9b::/96) addresses that embed a private IPv4
  */
 function isBlockedIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
+  const expanded = expandIPv6(ip);
+  if (!expanded) return false;
 
-  if (normalized === BLOCKED_IPV6_LOOPBACK) {
-    return true;
-  }
+  const firstGroup = expanded.slice(0, 4);
+  const firstByte = parseInt(firstGroup, 16) >> 8;
 
-  if (normalized.startsWith(BLOCKED_IPV6_LINK_LOCAL_PREFIX)) {
-    return true;
-  }
+  // ::1 loopback
+  if (expanded === "0000:0000:0000:0000:0000:0000:0000:0001") return true;
+
+  // :: unspecified
+  if (expanded === "0000:0000:0000:0000:0000:0000:0000:0000") return true;
+
+  // fe80::/10 link-local (first 10 bits = 1111 1110 10)
+  const first16 = parseInt(firstGroup, 16);
+  if ((first16 & 0xffc0) === 0xfe80) return true;
+
+  // fc00::/7 Unique Local Addresses (first 7 bits = 1111 110)
+  if ((firstByte & 0xfe) === 0xfc) return true;
+
+  // ff00::/8 multicast
+  if (firstByte === 0xff) return true;
+
+  // Check for embedded private IPv4 (IPv4-mapped, IPv4-compatible, NAT64)
+  const embeddedV4 = extractEmbeddedIPv4(ip);
+  if (embeddedV4 !== null && isPrivateIPv4(embeddedV4)) return true;
 
   return false;
 }
@@ -121,32 +280,24 @@ function isBlockedIPv6(ip: string): boolean {
  * Determines whether an IP address (v4 or v6) belongs to a private or
  * otherwise blocked network range.
  *
+ * Handles:
+ * - Standard IPv4 dotted-decimal
+ * - IPv6 full and compressed notation
+ * - IPv4-mapped IPv6 (::ffff:127.0.0.1 and ::ffff:7f00:0001)
+ * - IPv4-compatible IPv6 (::127.0.0.1)
+ * - NAT64 prefix (64:ff9b::127.0.0.1)
+ * - IPv6 ULA (fc00::/7)
+ * - IPv6 link-local (fe80::/10)
+ * - IPv6 multicast (ff00::/8)
+ *
  * @param ip - An IPv4 or IPv6 address string
  * @returns `true` if the address is private / blocked
- *
- * @example
- * ```typescript
- * isPrivateIP("127.0.0.1");    // true
- * isPrivateIP("10.0.0.5");     // true
- * isPrivateIP("8.8.8.8");      // false
- * isPrivateIP("::1");          // true
- * isPrivateIP("fe80::1");      // true
- * ```
  */
 export function isPrivateIP(ip: string): boolean {
   // Try IPv4 first
-  const num = ipv4ToNumber(ip);
-  if (num !== null) {
-    for (const [network, prefixLen] of PRIVATE_IPV4_RANGES) {
-      const networkNum = ipv4ToNumber(network);
-      if (networkNum !== null && isInCIDR(num, networkNum, prefixLen)) {
-        return true;
-      }
-    }
-    return false;
-  }
+  if (isPrivateIPv4(ip)) return true;
 
-  // Fall back to IPv6 check
+  // IPv6 checks (including embedded IPv4)
   return isBlockedIPv6(ip);
 }
 
@@ -156,9 +307,6 @@ export function isPrivateIP(ip: string): boolean {
 
 /**
  * Resolves a hostname to its IPv4 addresses.
- *
- * @param hostname - The hostname to resolve
- * @returns A promise resolving to an array of IPv4 address strings (may be empty)
  */
 function resolveIPv4(hostname: string): Promise<string[]> {
   return new Promise((resolve) => {
@@ -174,9 +322,6 @@ function resolveIPv4(hostname: string): Promise<string[]> {
 
 /**
  * Resolves a hostname to its IPv6 addresses.
- *
- * @param hostname - The hostname to resolve
- * @returns A promise resolving to an array of IPv6 address strings (may be empty)
  */
 function resolveIPv6(hostname: string): Promise<string[]> {
   return new Promise((resolve) => {
@@ -196,10 +341,7 @@ function resolveIPv6(hostname: string): Promise<string[]> {
 
 /**
  * Reads the optional domain allowlist from the `BUD_BROWSER_ALLOWED_DOMAINS`
- * environment variable. When set, only hostnames matching one of the listed
- * domains (or their subdomains) are permitted.
- *
- * @returns An array of lowercase domain strings, or `null` if the env var is unset/empty
+ * environment variable.
  */
 function getAllowedDomains(): string[] | null {
   const raw = process.env.BUD_BROWSER_ALLOWED_DOMAINS;
@@ -215,12 +357,6 @@ function getAllowedDomains(): string[] | null {
 
 /**
  * Checks whether a hostname matches any entry in the allowlist.
- * A match occurs when the hostname equals the domain exactly or is a
- * subdomain of it (e.g. "sub.example.com" matches "example.com").
- *
- * @param hostname - The hostname to check
- * @param allowedDomains - The list of allowed domain patterns
- * @returns `true` if the hostname is allowed
  */
 function isDomainAllowed(hostname: string, allowedDomains: string[]): boolean {
   const lower = hostname.toLowerCase();
@@ -253,18 +389,6 @@ function isDomainAllowed(hostname: string, allowedDomains: string[]): boolean {
  *
  * @param url - The URL string to validate
  * @throws Error if the URL is blocked for any reason
- *
- * @example
- * ```typescript
- * // These will throw:
- * await validateNavigationUrl("file:///etc/passwd");
- * await validateNavigationUrl("http://localhost:8080/admin");
- * await validateNavigationUrl("http://169.254.169.254/metadata");
- *
- * // These will pass:
- * await validateNavigationUrl("https://example.com/page");
- * await validateNavigationUrl("about:blank");
- * ```
  */
 export async function validateNavigationUrl(url: string): Promise<void> {
   // --- Step 1: Parse the URL ------------------------------------------------
