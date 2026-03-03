@@ -376,10 +376,10 @@ def list_llm_provider_basics(
         # frontend never sees the raw placeholder value.
         if full_llm_provider.default_model_name == "auto":
             for mc in full_llm_provider.model_configurations:
-                if mc.model_name and "embed" not in mc.model_name.lower():
-                    full_llm_provider.default_model_name = mc.model_name
+                if mc.name and "embed" not in mc.name.lower():
+                    full_llm_provider.default_model_name = mc.name
                     if full_llm_provider.fast_default_model_name == "auto":
-                        full_llm_provider.fast_default_model_name = mc.model_name
+                        full_llm_provider.fast_default_model_name = mc.name
                     break
 
         llm_provider_list.append(full_llm_provider)
