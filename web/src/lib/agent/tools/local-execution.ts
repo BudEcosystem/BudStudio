@@ -131,7 +131,7 @@ export async function executeLocalToolCall(
 
 /**
  * Sync a workspace file to the backend database after a local write/edit.
- * This ensures the cron system's heartbeat-unchanged check sees file updates
+ * This ensures the backend sees file updates
  * made through the agent's file tools.
  */
 export async function syncWorkspaceFileToBackend(

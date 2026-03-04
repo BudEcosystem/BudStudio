@@ -4171,10 +4171,6 @@ class AgentCronJob(Base):
     payload_message: Mapped[str] = mapped_column(Text, nullable=False)
     workspace_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    is_heartbeat: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
-
     # Dedup fields
     last_response_hash: Mapped[str | None] = mapped_column(
         String(64), nullable=True

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { isDesktopApp } from "./hooks";
+import { hasTauriRuntime } from "./hooks";
 
 interface UpdateInfo {
   version: string;
@@ -35,7 +35,7 @@ export function useAutoUpdate(): UseAutoUpdateReturn {
   const [error, setError] = useState<string | null>(null);
 
   const checkForUpdate = useCallback(async () => {
-    if (!isDesktopApp()) return;
+    if (!hasTauriRuntime()) return;
 
     try {
       setStatus("checking");
@@ -58,7 +58,7 @@ export function useAutoUpdate(): UseAutoUpdateReturn {
   }, []);
 
   const installUpdate = useCallback(async () => {
-    if (!isDesktopApp()) return;
+    if (!hasTauriRuntime()) return;
 
     try {
       setStatus("downloading");
@@ -76,6 +76,7 @@ export function useAutoUpdate(): UseAutoUpdateReturn {
   }, []);
 
   const relaunchApp = useCallback(async () => {
+    if (!hasTauriRuntime()) return;
     const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
   }, []);
@@ -88,7 +89,7 @@ export function useAutoUpdate(): UseAutoUpdateReturn {
 
   // Check on mount and periodically
   useEffect(() => {
-    if (!isDesktopApp()) return;
+    if (!hasTauriRuntime()) return;
 
     // Delay initial check to let the app finish loading
     const initialTimeout = setTimeout(() => {

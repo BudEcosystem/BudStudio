@@ -53,3 +53,16 @@ export function useIsDesktop(): boolean {
 export function isDesktopApp(): boolean {
   return detectTauri();
 }
+
+/**
+ * Strict check for the actual Tauri runtime (not just localStorage flag).
+ * Use this before calling Tauri native APIs like `invoke` or plugin imports.
+ */
+export function hasTauriRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  // @ts-ignore - __TAURI__ is injected by Tauri runtime
+  if (window.__TAURI__ !== undefined) return true;
+  // @ts-ignore - __TAURI_INTERNALS__ is injected by Tauri runtime
+  if (window.__TAURI_INTERNALS__ !== undefined) return true;
+  return false;
+}

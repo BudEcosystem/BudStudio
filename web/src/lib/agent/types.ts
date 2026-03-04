@@ -177,7 +177,6 @@ export interface CronJob {
   payload_message: string;
   workspace_path: string | null;
   model: string | null;
-  is_heartbeat: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
   run_count: number;

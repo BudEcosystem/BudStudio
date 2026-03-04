@@ -38,7 +38,6 @@ WORKSPACE_FILES = [
     "IDENTITY.md",
     "USER.md",
     "MEMORY.md",
-    "HEARTBEAT.md",
 ]
 
 # ---------------------------------------------------------------------------
@@ -51,7 +50,6 @@ _DEFAULT_TEMPLATES: dict[str, str] = {
     "IDENTITY.md": load_prompt("identity"),
     "USER.md": load_prompt("user"),
     "MEMORY.md": "",
-    "HEARTBEAT.md": "",
 }
 
 
@@ -83,11 +81,13 @@ class BudAgentContextBuilder:
         context_files: dict[str, str] | None = None,
         user_timezone: str | None = None,
         compaction_summary: str | None = None,
+        mode: str | None = None,
     ) -> None:
         self._workspace_path = workspace_path
         self._context_files = context_files or {}
         self._user_timezone = user_timezone
         self._compaction_summary = compaction_summary
+        self._mode = mode
 
     def _get_file(self, filename: str) -> str:
         """Get workspace file content, falling back to default template."""
@@ -124,10 +124,6 @@ class BudAgentContextBuilder:
         memory_md_content = _truncate_content(
             self._get_file("MEMORY.md"), per_file_budget
         )
-        heartbeat_content = _truncate_content(
-            self._get_file("HEARTBEAT.md"), per_file_budget
-        )
-
         # Time context
         tz = self._user_timezone or "UTC"
         now = datetime.now(timezone.utc)
@@ -240,6 +236,18 @@ class BudAgentContextBuilder:
                 lines.append(f"- {name}")
             connector_tools_section = "\n".join(lines)
 
+        # Mode-specific instructions
+        mode_instructions = ""
+        if self._mode:
+            _MODE_TEMPLATE_MAP = {
+                "interactive": "mode_interactive",
+                "cron": "mode_cron",
+                "inbox": "mode_inbox",
+            }
+            template_name = _MODE_TEMPLATE_MAP.get(self._mode)
+            if template_name:
+                mode_instructions = load_prompt(template_name)
+
         # Render the single system.md template
         return render_prompt(
             "system",
@@ -250,10 +258,10 @@ class BudAgentContextBuilder:
             identity_content=identity_content or "(not set)",
             user_content=user_content or "(not set)",
             memory_md_content=memory_md_content or "(not set)",
-            heartbeat_content=heartbeat_content or "(not set)",
             memories=memories or "No relevant memories found.",
             inbox_messages=inbox_messages or "No pending inbox messages.",
             workspace_info=workspace_info,
             compaction_summary=compaction_summary_section,
             connector_tools_section=connector_tools_section,
+            mode_instructions=mode_instructions or "No mode specified.",
         )

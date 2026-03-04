@@ -52,7 +52,6 @@ class CreateCronJobRequest(BaseModel):
     payload_message: str
     workspace_path: str | None = None
     model: str | None = None
-    is_heartbeat: bool = False
 
 
 class UpdateCronJobRequest(BaseModel):
@@ -66,7 +65,6 @@ class UpdateCronJobRequest(BaseModel):
     payload_message: str | None = None
     workspace_path: str | None = None
     model: str | None = None
-    is_heartbeat: bool | None = None
 
 
 class CronJobSnapshot(BaseModel):
@@ -82,7 +80,6 @@ class CronJobSnapshot(BaseModel):
     payload_message: str
     workspace_path: str | None
     model: str | None
-    is_heartbeat: bool
     next_run_at: datetime | None
     last_run_at: datetime | None
     run_count: int
@@ -150,7 +147,6 @@ def _job_to_snapshot(job: Any) -> CronJobSnapshot:
         payload_message=job.payload_message,
         workspace_path=job.workspace_path,
         model=job.model,
-        is_heartbeat=job.is_heartbeat,
         next_run_at=job.next_run_at,
         last_run_at=job.last_run_at,
         run_count=job.run_count,
@@ -196,7 +192,6 @@ def create_job(
             one_shot_at=request.one_shot_at,
             workspace_path=request.workspace_path,
             model=request.model,
-            is_heartbeat=request.is_heartbeat,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

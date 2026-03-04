@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
+import { hasTauriRuntime } from "./hooks";
 
 // Tauri IPC invoke function type
 type InvokeFn = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -27,6 +28,7 @@ export function useDesktopNotifications() {
     let cancelled = false;
 
     (async () => {
+      if (!hasTauriRuntime()) return;
       try {
         const core = await import("@tauri-apps/api/core");
         if (cancelled) return;

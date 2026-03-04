@@ -75,7 +75,7 @@ test.describe("BudAgent Cron/Scheduled Tasks", () => {
     await page.getByTestId("cron-form-name").fill("E2E Test Task");
     await page
       .getByTestId("cron-form-prompt")
-      .fill("Check HEARTBEAT.md for any pending tasks");
+      .fill("Check for any pending tasks");
 
     // Submit the form
     const submitButton = page.getByTestId("cron-form-submit");
