@@ -390,7 +390,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "workspace_read",
     description:
-      "Read a workspace file by path. Workspace files are persistent documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, MEMORY.md, and HEARTBEAT.md.",
+      "Read a workspace file by path. Workspace files are persistent documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, and MEMORY.md.",
     category: "remote",
     requiresApproval: false,
     parameters: [
@@ -406,7 +406,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "workspace_write",
     description:
-      "Create or update a workspace file. Use this to persist documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, MEMORY.md, or HEARTBEAT.md.",
+      "Create or update a workspace file. Use this to persist documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, and MEMORY.md.",
     category: "remote",
     requiresApproval: false,
     parameters: [

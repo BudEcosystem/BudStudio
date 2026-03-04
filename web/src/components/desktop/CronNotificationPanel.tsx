@@ -7,11 +7,9 @@ import { useTheme } from "next-themes";
 function formatSkipReason(reason: string | null): string {
   if (!reason) return "Skipped";
   const map: Record<string, string> = {
-    "empty-heartbeat-file": "HEARTBEAT.md is empty",
-    "heartbeat-unchanged": "No changes since last run",
     "already-in-progress": "Already running",
     "one-shot-completed": "One-shot already completed",
-    "heartbeat-ok": "Nothing needs attention",
+    "no-action-needed": "Nothing needs attention",
     "duplicate-response": "Same as previous response",
     "session-busy": "User session is active",
   };

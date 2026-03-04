@@ -133,7 +133,6 @@ def _handle_add(
             cron_expression=args.get("cron_expression"),
             interval_seconds=args.get("interval_seconds"),
             one_shot_at=one_shot_at,
-            is_heartbeat=args.get("is_heartbeat", False),
         )
     except ValueError as e:
         return f"Error creating cron job: {e}"
@@ -196,8 +195,6 @@ def _handle_update(
         kwargs["enabled"] = args["enabled"]
     if "payload_message" in args:
         kwargs["payload_message"] = args["payload_message"]
-    if "is_heartbeat" in args:
-        kwargs["is_heartbeat"] = args["is_heartbeat"]
     if "cron_expression" in args:
         kwargs["cron_expression"] = args["cron_expression"]
     if "interval_seconds" in args:

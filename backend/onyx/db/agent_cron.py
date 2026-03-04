@@ -1,6 +1,5 @@
 """Database operations for agent cron jobs and executions."""
 
-import re
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -70,7 +69,6 @@ def create_cron_job(
     one_shot_at: datetime | None = None,
     workspace_path: str | None = None,
     model: str | None = None,
-    is_heartbeat: bool = False,
 ) -> AgentCronJob:
     """Create a new cron job with validated schedule.
 
@@ -110,7 +108,6 @@ def create_cron_job(
         payload_message=payload_message,
         workspace_path=workspace_path,
         model=model,
-        is_heartbeat=is_heartbeat,
         next_run_at=next_run,
     )
     db_session.add(job)
@@ -168,7 +165,7 @@ def update_cron_job(
     allowed_fields = {
         "name", "description", "enabled", "schedule_type",
         "cron_expression", "interval_seconds", "one_shot_at",
-        "payload_message", "workspace_path", "model", "is_heartbeat",
+        "payload_message", "workspace_path", "model",
     }
 
     for key, value in kwargs.items():
@@ -392,7 +389,7 @@ def get_pending_notifications(
     """Get unread terminal executions for a user (notifications).
 
     Includes COMPLETED, FAILED, and SKIPPED executions so users
-    get feedback on all cron job runs, including skipped heartbeats.
+    get feedback on all cron job runs, including skipped ones.
     """
     stmt = (
         select(AgentCronExecution)
@@ -469,32 +466,3 @@ def acknowledge_all_notifications(
     return result.rowcount  # type: ignore[union-attr]
 
 
-def is_heartbeat_content_empty(content: str) -> bool:
-    """Check if HEARTBEAT.md content is effectively empty.
-
-    Returns True if the content contains ONLY:
-    - Whitespace
-    - Markdown headers (# ...)
-    - Empty markdown list items (- , * , - [ ] )
-    - HTML comments (<!-- ... -->)
-    """
-    if not content:
-        return True
-
-    # Remove HTML comments
-    cleaned = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
-
-    for line in cleaned.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        # Skip markdown headers
-        if stripped.startswith("#"):
-            continue
-        # Skip empty list items
-        if stripped in ("-", "*", "- [ ]", "- [x]", "* [ ]", "* [x]"):
-            continue
-        # Found substantive content
-        return False
-
-    return True

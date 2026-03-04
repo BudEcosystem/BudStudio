@@ -8,7 +8,6 @@ The orchestrator:
 5. Local tools are bridged to the desktop via Redis
 """
 
-import json
 import queue
 import re
 import threading
@@ -18,38 +17,22 @@ from typing import cast
 from uuid import UUID
 
 import redis
-from agents import Agent
-from agents import FunctionTool
 from agents import RawResponsesStreamEvent
-from agents import RunConfig
 from agents import ToolCallItem
-from agents.models.openai_provider import OpenAIProvider
-from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
-from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
+from onyx.agents.bud_agent.agent_context import AgentExecutionMode
+from onyx.agents.bud_agent.agent_context import build_agent_run_context
+from onyx.agents.bud_agent.agent_context import build_message_history
+from onyx.agents.bud_agent.agent_context import compact_session
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
-from onyx.agents.bud_agent.connector_service import create_connector_tools
-from onyx.agents.bud_agent.cron_service import create_cron_tools
-from onyx.agents.bud_agent.inbox_service import create_inbox_tools
-from onyx.agents.bud_agent.memory_service import create_memory_tools
-from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
-from onyx.agents.bud_agent.web_search_service import create_web_search_tools
-from onyx.agents.bud_agent.workspace_service import create_workspace_tools
-from onyx.agents.bud_agent.workspace_service import ensure_default_workspace_files
 from onyx.db.agent import add_session_message
-from onyx.db.agent import create_compacted_session
-from onyx.db.agent import get_session
-from onyx.db.agent import get_session_messages
-from onyx.db.agent import get_workspace_files_as_dict
-from onyx.db.agent import mark_session_compacted
 from onyx.db.agent import update_session_stats
 from onyx.db.agent import update_session_status
 from onyx.db.enums import AgentMessageRole
 from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import User
-from onyx.llm.factory import get_default_llms
 from onyx.server.query_and_chat.streaming_models import AgentDone
 from onyx.server.query_and_chat.streaming_models import AgentSessionCompacted
 from onyx.server.query_and_chat.streaming_models import AgentStopped
@@ -59,7 +42,6 @@ from onyx.server.query_and_chat.streaming_models import MessageDelta
 from onyx.server.query_and_chat.streaming_models import MessageStart
 from onyx.server.query_and_chat.streaming_models import OverallStop
 from onyx.server.query_and_chat.streaming_models import Packet
-from onyx.server.query_and_chat.streaming_models import PacketException
 from onyx.server.query_and_chat.streaming_models import ReasoningDelta
 from onyx.server.query_and_chat.streaming_models import ReasoningStart
 from onyx.server.query_and_chat.streaming_models import SectionEnd
@@ -72,8 +54,6 @@ logger = setup_logger()
 
 MAX_TOOL_CALLS = 50
 KEEPALIVE_INTERVAL_SECONDS = 15
-# History truncation: ~4 chars per token, limit to ~100K tokens
-MAX_HISTORY_CHARS = 400_000
 # Compaction threshold: trigger compaction before the hard truncation limit
 COMPACTION_THRESHOLD_CHARS = 300_000
 
@@ -267,31 +247,7 @@ class BudAgentOrchestrator:
                     "Failed to set Redis running key", exc_info=True
                 )
 
-            # 1. Build the system prompt with memory + context
-            ensure_default_workspace_files(
-                db_session=self._db_session,
-                user=self._user,
-                timezone=self._timezone,
-            )
-
-            db_context = get_workspace_files_as_dict(
-                db_session=self._db_session,
-                user_id=self._user.id,
-                paths=[
-                    "AGENTS.md", "SOUL.md", "IDENTITY.md",
-                    "USER.md", "MEMORY.md", "HEARTBEAT.md",
-                ],
-            )
-
-            current_session = get_session(
-                db_session=self._db_session,
-                session_id=self._session_id,
-            )
-            compaction_summary = (
-                current_session.compaction_summary if current_session else None
-            )
-
-            # 2. Build tools — local tools bridge to the desktop via Redis
+            # 1. Build local tools (needs orchestrator reference)
             local_bridge = LocalToolBridge(
                 session_id=str(self._session_id),
                 packet_queue=self._packet_queue,
@@ -300,94 +256,43 @@ class BudAgentOrchestrator:
                 orchestrator=self,
                 user_id=self._user.id,
             )
-            local_tools = local_bridge.create_all_local_tools()
-
-            # Remote tools — execute directly on the backend
-            memory_tools = create_memory_tools(
-                db_session=self._db_session,
-                user_id=self._user.id,
-                session_id=self._session_id,
-            )
-            workspace_tools = create_workspace_tools(
-                db_session=self._db_session,
-                user_id=self._user.id,
-            )
-            connector_tools = create_connector_tools(
-                db_session=self._db_session,
-                user=self._user,
-                session_id=self._session_id,
-                packet_queue=self._packet_queue,
-                redis_client=self._redis_client,
-                step_number_fn=lambda: self.close_open_section_for_tool(),
-            )
-
-            cron_tools = create_cron_tools(
-                db_session=self._db_session,
-                user_id=self._user.id,
-            )
-
-            inbox_tools = create_inbox_tools(
-                db_session=self._db_session,
-                user_id=self._user.id,
-                tenant_id=self._tenant_id,
-            )
-
-            # Web search tools — reuse EXA/SERPER providers with citation tracking
-            search_context = BudAgentSearchContext()
 
             def _increment_step() -> None:
                 self._step_number += 1
 
-            web_search_tools = create_web_search_tools(
+            # 2. Build the full agent context
+            ctx = build_agent_run_context(
+                session_id=self._session_id,
+                user=self._user,
                 db_session=self._db_session,
+                user_message=user_message,
+                mode=AgentExecutionMode.INTERACTIVE,
+                local_tools=local_bridge.create_all_local_tools(),
+                redis_client=self._redis_client,
+                tenant_id=self._tenant_id,
+                workspace_path=self._workspace_path,
+                model=self._model,
+                timezone=self._timezone,
                 packet_queue=self._packet_queue,
-                search_context=search_context,
                 step_number_fn=lambda: self.close_open_section_for_tool(),
                 step_increment_fn=_increment_step,
-                session_id=self._session_id,
             )
 
-            all_tools: list[FunctionTool] = (
-                local_tools
-                + memory_tools
-                + workspace_tools
-                + connector_tools
-                + web_search_tools
-                + cron_tools
-                + inbox_tools
+            search_context = ctx.search_context
+
+            logger.info(
+                "Creating agent with model=%s, total_tools=%d, "
+                "connector_tools=%d, tool_names=%s",
+                ctx.model_name,
+                len(ctx.agent.tools),
+                len(ctx.connector_tool_names),
+                [t.name for t in ctx.agent.tools],
             )
 
-            connector_tool_names = [t.name for t in connector_tools]
+            # 3. Build the message history for the agent
+            messages = self._build_messages(ctx.system_prompt)
 
-            context_builder = BudAgentContextBuilder(
-                workspace_path=self._workspace_path,
-                context_files=db_context,
-                user_timezone=self._timezone,
-                compaction_summary=compaction_summary,
-            )
-            system_prompt = context_builder.build(
-                db_session=self._db_session,
-                user_id=self._user.id,
-                user_message=user_message,
-                connector_tool_names=connector_tool_names,
-            )
-
-            # 3. Resolve the LLM model and build RunConfig with credentials
-            llm, _ = get_default_llms(user=self._user)
-            # "auto" is a DB placeholder for Bud Foundry — always use the
-            # resolved model from get_default_llms instead.
-            model_name: str = (
-                llm.config.model_name
-                if (not self._model or self._model == "auto")
-                else self._model
-            )
-
-            run_config = self._build_run_config(llm, model_name)
-
-            # 4. Build the message history for the agent
-            messages = self._build_messages(system_prompt)
-
-            # 4a. Check if history exceeds compaction threshold
+            # 3a. Check if history exceeds compaction threshold
             history_chars = sum(
                 len(str(m.get("content", "")))
                 for m in messages
@@ -397,31 +302,28 @@ class BudAgentOrchestrator:
                 try:
                     new_session_id = self._compact_session(
                         user_message=user_message,
-                        llm=llm,
+                        llm=ctx.llm,
                     )
                     if new_session_id is not None:
-                        new_session = get_session(
-                            db_session=self._db_session,
+                        # Rebuild context for the new session
+                        ctx = build_agent_run_context(
                             session_id=new_session_id,
-                        )
-                        context_builder = BudAgentContextBuilder(
-                            workspace_path=self._workspace_path,
-                            context_files=db_context,
-                            user_timezone=self._timezone,
-                            compaction_summary=(
-                                new_session.compaction_summary
-                                if new_session
-                                else None
-                            ),
-                        )
-                        system_prompt = context_builder.build(
+                            user=self._user,
                             db_session=self._db_session,
-                            user_id=self._user.id,
                             user_message=user_message,
-                            connector_tool_names=connector_tool_names,
+                            mode=AgentExecutionMode.INTERACTIVE,
+                            local_tools=local_bridge.create_all_local_tools(),
+                            redis_client=self._redis_client,
+                            tenant_id=self._tenant_id,
+                            workspace_path=self._workspace_path,
+                            model=self._model,
+                            timezone=self._timezone,
+                            packet_queue=self._packet_queue,
+                            step_number_fn=lambda: self.close_open_section_for_tool(),
+                            step_increment_fn=_increment_step,
                         )
-                        messages = self._build_messages(system_prompt)
-
+                        search_context = ctx.search_context
+                        messages = self._build_messages(ctx.system_prompt)
                         local_bridge._session_id = str(new_session_id)
                 except Exception:
                     logger.warning(
@@ -430,24 +332,7 @@ class BudAgentOrchestrator:
                         exc_info=True,
                     )
 
-            # 5. Create the agent
-            logger.info(
-                "Creating agent with model=%s, total_tools=%d, "
-                "connector_tools=%d, web_search_tools=%d, tool_names=%s",
-                model_name,
-                len(all_tools),
-                len(connector_tools),
-                len(web_search_tools),
-                [t.name for t in all_tools],
-            )
-            agent = Agent(
-                name="BudAgent",
-                model=model_name,
-                tools=all_tools,
-                tool_use_behavior="stop_on_first_tool",
-            )
-
-            # 6. Set up citation processing for web search results
+            # 4. Set up citation processing for web search results
             # Regex patterns for detecting citations in streamed text
             _citation_pattern = re.compile(
                 r"(\[\[\d+\]\])|(\[\d+(?:, ?\d+)*\])"
@@ -556,7 +441,7 @@ class BudAgentOrchestrator:
 
                 return result, new_citations
 
-            # 7. Run the iterative agent loop
+            # 5. Run the iterative agent loop
             last_call_is_final = False
 
             while not last_call_is_final and not self._is_stopped():
@@ -569,10 +454,10 @@ class BudAgentOrchestrator:
                     break
 
                 stream = SyncAgentStream(
-                    agent=agent,
+                    agent=ctx.agent,
                     input=messages,
                     context=None,
-                    run_config=run_config,
+                    run_config=ctx.run_config,
                 )
 
                 has_tool_calls = False
@@ -842,154 +727,43 @@ class BudAgentOrchestrator:
         user_message: str,
         llm: Any,
     ) -> UUID | None:
-        """Compact the current session by summarizing it and creating a new linked session."""
-        previous_messages = get_session_messages(
+        """Compact session using shared compaction logic."""
+        result = compact_session(
             db_session=self._db_session,
             session_id=self._session_id,
-        )
-
-        if not previous_messages:
-            return None
-
-        conversation_text = []
-        for msg in previous_messages:
-            role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
-            content = msg.content or ""
-            if content:
-                conversation_text.append(f"[{role}]: {content}")
-
-        conversation_str = "\n".join(conversation_text)
-        if len(conversation_str) > 100_000:
-            conversation_str = (
-                conversation_str[:70_000]
-                + "\n\n... (middle truncated) ...\n\n"
-                + conversation_str[-25_000:]
-            )
-
-        summarization_prompt = (
-            "You are a concise summarization assistant. Below is a conversation "
-            "between a user and an AI agent. Summarize the key topics discussed, "
-            "decisions made, tasks completed, and any important context that would "
-            "help continue the conversation seamlessly. Be concise but comprehensive. "
-            "Focus on facts, outcomes, and ongoing tasks.\n\n"
-            f"Conversation:\n{conversation_str}\n\n"
-            "Summary:"
-        )
-
-        summary_response = llm.invoke(summarization_prompt)
-        summary = str(summary_response.content).strip()
-
-        if not summary:
-            logger.warning("Compaction produced empty summary, skipping")
-            return None
-
-        mark_session_compacted(
-            db_session=self._db_session,
-            session_id=self._session_id,
-        )
-
-        new_session = create_compacted_session(
-            db_session=self._db_session,
-            user_id=self._user.id,
-            parent_session_id=self._session_id,
-            compaction_summary=summary,
+            user=self._user,
+            user_message=user_message,
+            llm=llm,
             workspace_path=self._workspace_path,
         )
+        if result is None:
+            return None
 
-        add_session_message(
-            db_session=self._db_session,
-            session_id=new_session.id,
-            role=AgentMessageRole.USER,
-            content=user_message,
-        )
+        new_session_id, summary = result
 
-        # Emit as a Packet
+        # Emit compaction packet for frontend redirect
         self._emit(
             AgentSessionCompacted(
-                new_session_id=str(new_session.id),
+                new_session_id=str(new_session_id),
                 summary=summary,
             )
         )
 
         old_session_id = self._session_id
-        self._session_id = new_session.id
+        self._session_id = new_session_id
         self._stop_redis_key = f"bud_agent_stop:{self._session_id}"
 
         logger.info(
             "Compacted session %s -> new session %s",
             old_session_id,
-            new_session.id,
+            new_session_id,
         )
+        return new_session_id
 
-        return new_session.id
-
-    @staticmethod
-    def _build_run_config(
-        llm: Any,
-        model_name: str,
-    ) -> RunConfig:
-        """Build an Agents SDK RunConfig from Onyx's LLM configuration."""
-        api_key = llm.config.api_key or "not-needed"
-        api_base = llm.config.api_base
-
-        extra_headers: dict[str, str] = {}
-        if hasattr(llm, "_model_kwargs"):
-            extra_headers = llm._model_kwargs.get("extra_headers", {})
-
-        client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=api_base,
-            default_headers=extra_headers if extra_headers else None,
-        )
-        provider = OpenAIProvider(
-            openai_client=client,
-            use_responses=False,
-        )
-        return RunConfig(model_provider=provider)
-
-    def _build_messages(
-        self,
-        system_prompt: str,
-    ) -> list[dict[str, Any]]:
-        """Build the message list for the Agents SDK from stored session history."""
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-        ]
-
-        previous_messages = get_session_messages(
+    def _build_messages(self, system_prompt: str) -> list[dict[str, Any]]:
+        """Build message list using shared history builder."""
+        return build_message_history(
             db_session=self._db_session,
             session_id=self._session_id,
+            system_prompt=system_prompt,
         )
-
-        history: list[dict[str, Any]] = []
-        for msg in previous_messages:
-            if msg.role == AgentMessageRole.USER:
-                history.append({"role": "user", "content": msg.content or ""})
-            elif msg.role == AgentMessageRole.ASSISTANT:
-                history.append(
-                    {"role": "assistant", "content": msg.content or ""}
-                )
-            # NOTE: TOOL messages are persisted for history reconstruction
-            # (packet_utils.py) but are NOT included in the LLM message
-            # history because they lack matching tool_calls on the
-            # assistant message, which would violate the OpenAI API format.
-
-        system_chars = len(system_prompt)
-        budget = MAX_HISTORY_CHARS - system_chars
-        if budget < 0:
-            budget = 50_000
-
-        total_chars = sum(len(str(m.get("content", ""))) for m in history)
-        if total_chars > budget:
-            logger.info(
-                "Truncating history for session %s: %d chars > %d budget",
-                self._session_id,
-                total_chars,
-                budget,
-            )
-            while history and total_chars > budget:
-                dropped = history.pop(0)
-                total_chars -= len(str(dropped.get("content", "")))
-
-        messages.extend(history)
-        return messages

@@ -13,10 +13,10 @@ from onyx.configs.constants import OnyxCeleryPriority
 from onyx.configs.constants import OnyxCeleryQueues
 from onyx.configs.constants import OnyxCeleryTask
 from onyx.configs.constants import OnyxRedisLocks
+from onyx.db.agent import add_session_message
 from onyx.db.agent import create_cron_session
 from onyx.db.agent import get_active_session_for_user
-from onyx.db.agent import get_workspace_file
-from onyx.db.agent import is_session_busy
+from onyx.db.agent import update_session_status
 from onyx.db.agent_cron import advance_cron_job_schedule
 from onyx.db.agent_cron import clear_suspension_state
 from onyx.db.agent_cron import create_cron_execution
@@ -25,12 +25,13 @@ from onyx.db.agent_cron import get_cron_job
 from onyx.db.agent_cron import get_due_cron_jobs
 from onyx.db.agent_cron import get_last_completed_execution
 from onyx.db.agent_cron import has_active_execution_for_job
-from onyx.db.agent_cron import is_heartbeat_content_empty
 from onyx.db.agent_cron import update_cron_execution_status
 from onyx.db.agent_cron import suspend_cron_execution
 from onyx.db.engine.sql_engine import get_session_with_current_tenant
 from onyx.db.enums import AgentCronExecutionStatus
 from onyx.db.enums import AgentCronScheduleType
+from onyx.db.enums import AgentMessageRole
+from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import User
 from onyx.redis.event_publisher import publish_event
 from onyx.redis.redis_pool import get_redis_client
@@ -177,25 +178,7 @@ def execute_agent_cron_job(
             )
             return None
 
-        # Heartbeat-specific skip checks
-        if job.is_heartbeat:
-            # Skip check 1: empty HEARTBEAT.md
-            heartbeat_file = get_workspace_file(
-                db_session, user.id, "HEARTBEAT.md"
-            )
-            heartbeat_content = heartbeat_file.content if heartbeat_file else ""
-            if is_heartbeat_content_empty(heartbeat_content):
-                update_cron_execution_status(
-                    db_session, execution.id,
-                    AgentCronExecutionStatus.SKIPPED,
-                    skip_reason="empty-heartbeat-file",
-                )
-                task_logger.info(
-                    f"Skipped execution {execution_id}: empty-heartbeat-file"
-                )
-                return None
-
-        # Skip check 5: one-shot already completed
+        # Skip check: one-shot already completed
         if job.schedule_type == AgentCronScheduleType.ONE_SHOT:
             last_completed = get_last_completed_execution(db_session, job.id)
             if (
@@ -216,43 +199,17 @@ def execute_agent_cron_job(
 
         # --- Passed all skip checks, proceed with execution ---
 
-        # Skip check: session-busy — if the user is actively chatting,
-        # skip to avoid corrupting the in-flight conversation.
-        redis_client = get_redis_client(tenant_id=tenant_id)
-        active_session = get_active_session_for_user(
-            db_session, user.id
+        # Always create an isolated cron session so we never touch
+        # the user's interactive session.
+        session = create_cron_session(
+            db_session=db_session,
+            user_id=user.id,
+            title=f"Cron: {job.name or job.id}",
+            workspace_path=job.workspace_path,
         )
-        if active_session is not None and is_session_busy(
-            redis_client, active_session.id
-        ):
-            update_cron_execution_status(
-                db_session, execution.id,
-                AgentCronExecutionStatus.SKIPPED,
-                skip_reason="session-busy",
-            )
-            task_logger.info(
-                f"Skipped execution {execution_id}: session-busy"
-            )
-            return None
-
-        # Determine which session to use:
-        # - If the user has an active (idle) session, inject into it
-        # - Otherwise, create a fallback cron session
-        if active_session is not None:
-            session = active_session
-            task_logger.info(
-                f"Reusing active session {session.id} for cron execution {execution_id}"
-            )
-        else:
-            session = create_cron_session(
-                db_session=db_session,
-                user_id=user.id,
-                title=f"Cron: {job.name}",
-                workspace_path=job.workspace_path,
-            )
-            task_logger.info(
-                f"Created fallback cron session {session.id} for execution {execution_id}"
-            )
+        task_logger.info(
+            f"Created cron session {session.id} for execution {execution_id}"
+        )
 
         # Mark execution as RUNNING
         update_cron_execution_status(
@@ -339,6 +296,51 @@ def execute_agent_cron_job(
             task_logger.info(
                 f"Cron execution {execution_id} completed successfully"
             )
+
+        # Inject meaningful output into the user's active interactive session
+        if (
+            not run_result.skipped
+            and not run_result.error
+            and run_result.response_text
+            and not run_result.suspended
+        ):
+            try:
+                active_session = get_active_session_for_user(
+                    db_session, user.id
+                )
+                if active_session and active_session.id != session.id:
+                    add_session_message(
+                        db_session=db_session,
+                        session_id=active_session.id,
+                        role=AgentMessageRole.ASSISTANT,
+                        content=(
+                            f"[Scheduled: {job.name or job.id}] "
+                            f"{run_result.response_text}"
+                        ),
+                    )
+                    # Publish event so frontend can show the message
+                    _redis = get_redis_client(tenant_id=tenant_id)
+                    _redis.publish(
+                        f"session_message:{active_session.id}",
+                        "new_message",
+                    )
+            except Exception:
+                task_logger.warning(
+                    "Failed to inject cron output into user's main session",
+                    exc_info=True,
+                )
+
+        # Mark the isolated cron session as completed
+        if not run_result.suspended:
+            try:
+                update_session_status(
+                    db_session, session.id, AgentSessionStatus.COMPLETED
+                )
+            except Exception:
+                task_logger.warning(
+                    f"Failed to mark cron session {session.id} as completed",
+                    exc_info=True,
+                )
 
     return None
 
@@ -477,5 +479,54 @@ def resume_agent_cron_execution(
             task_logger.info(
                 f"Resumed execution {execution_id} completed successfully"
             )
+
+        # Inject meaningful output into the user's active interactive session
+        if (
+            not run_result.skipped
+            and not run_result.error
+            and run_result.response_text
+            and not run_result.suspended
+        ):
+            try:
+                active_session = get_active_session_for_user(
+                    db_session, user.id
+                )
+                if (
+                    active_session
+                    and session_id is not None
+                    and active_session.id != session_id
+                ):
+                    add_session_message(
+                        db_session=db_session,
+                        session_id=active_session.id,
+                        role=AgentMessageRole.ASSISTANT,
+                        content=(
+                            f"[Scheduled: {job.name or job.id}] "
+                            f"{run_result.response_text}"
+                        ),
+                    )
+                    # Publish event so frontend can show the message
+                    _redis = get_redis_client(tenant_id=tenant_id)
+                    _redis.publish(
+                        f"session_message:{active_session.id}",
+                        "new_message",
+                    )
+            except Exception:
+                task_logger.warning(
+                    "Failed to inject cron output into user's main session",
+                    exc_info=True,
+                )
+
+        # Mark the isolated cron session as completed
+        if not run_result.suspended and session_id is not None:
+            try:
+                update_session_status(
+                    db_session, session_id, AgentSessionStatus.COMPLETED
+                )
+            except Exception:
+                task_logger.warning(
+                    f"Failed to mark cron session {session_id} as completed",
+                    exc_info=True,
+                )
 
     return None

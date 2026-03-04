@@ -84,7 +84,6 @@ interface JobForm {
   interval_preset: string;
   one_shot_at: string;
   payload_message: string;
-  is_heartbeat: boolean;
 }
 
 const INTERVAL_PRESETS: { label: string; value: string }[] = [
@@ -107,7 +106,6 @@ const EMPTY_FORM: JobForm = {
   interval_preset: "3600",
   one_shot_at: "",
   payload_message: "",
-  is_heartbeat: false,
 };
 
 function formFromJob(job: CronJob): JobForm {
@@ -125,7 +123,6 @@ function formFromJob(job: CronJob): JobForm {
       ? new Date(job.one_shot_at).toISOString().slice(0, 16)
       : "",
     payload_message: job.payload_message,
-    is_heartbeat: job.is_heartbeat,
   };
 }
 
@@ -276,25 +273,11 @@ function JobFormFields({
             setForm((f) => ({ ...f, payload_message: e.target.value }))
           }
           className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm h-24 resize-none"
-          placeholder="Check HEARTBEAT.md for pending tasks..."
+          placeholder="Check for any pending tasks..."
           data-testid="cron-form-prompt"
         />
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="is_heartbeat"
-          checked={form.is_heartbeat}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, is_heartbeat: e.target.checked }))
-          }
-          className="rounded border-border"
-        />
-        <label htmlFor="is_heartbeat" className="text-sm">
-          Heartbeat job (reads HEARTBEAT.md)
-        </label>
-      </div>
     </div>
   );
 }
@@ -343,7 +326,6 @@ export function CronJobsView() {
       name: form.name.trim(),
       schedule_type: form.schedule_type,
       payload_message: form.payload_message.trim(),
-      is_heartbeat: form.is_heartbeat,
     };
 
     if (form.schedule_type === "cron") {
@@ -560,14 +542,7 @@ export function CronJobsView() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium truncate">{job.name}</span>
-                        {job.is_heartbeat && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20 shrink-0">
-                            heartbeat
-                          </span>
-                        )}
-                      </div>
+                      <span className="font-medium truncate">{job.name}</span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground truncate">
                       {formatSchedule(job)}
