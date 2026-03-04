@@ -314,7 +314,7 @@ def execute_agent_cron_job(
                         session_id=active_session.id,
                         role=AgentMessageRole.ASSISTANT,
                         content=(
-                            f"[Scheduled: {job.name or 'cron'}] "
+                            f"[Scheduled: {job.name or job.id}] "
                             f"{run_result.response_text}"
                         ),
                     )
@@ -501,7 +501,7 @@ def resume_agent_cron_execution(
                         session_id=active_session.id,
                         role=AgentMessageRole.ASSISTANT,
                         content=(
-                            f"[Scheduled: {job.name or 'cron'}] "
+                            f"[Scheduled: {job.name or job.id}] "
                             f"{run_result.response_text}"
                         ),
                     )
