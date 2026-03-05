@@ -1,7 +1,7 @@
 """InboxAgentOrchestrator — non-SSE agent orchestrator for inbox message processing.
 
 Similar to CronAgentOrchestrator but tailored for processing incoming
-inter-agent messages. Includes the ``notify_user`` tool for escalation
+inter-agent messages. Includes the ``escalate_to_user`` tool for escalation
 and tracks whether the agent sent a reply or escalated.
 """
 
@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 from onyx.agents.bud_agent.agent_context import AgentExecutionMode
 from onyx.agents.bud_agent.agent_context import build_agent_run_context
 from onyx.agents.bud_agent.agent_context import run_sync_agent_loop
-from onyx.agents.bud_agent.inbox_service import create_notify_user_tool
+from onyx.agents.bud_agent.inbox_service import create_complete_goal_tool
+from onyx.agents.bud_agent.inbox_service import create_escalate_to_user_tool
 from onyx.agents.bud_agent.inbox_service import create_reply_tool
 from onyx.db.agent import add_session_message
 from onyx.db.agent import update_session_stats
@@ -48,7 +49,7 @@ class InboxAgentOrchestrator:
     """Orchestrates agent execution for incoming inbox messages.
 
     Accumulates results in memory. Includes send_message (for replying)
-    and notify_user (for escalation) tools.
+    and escalate_to_user (for escalation) tools.
     """
 
     def __init__(
@@ -85,13 +86,17 @@ class InboxAgentOrchestrator:
                 tenant_id=self._tenant_id,
                 skip_dispatch=self._message.sender_type == _IST.USER,
             )
-            notify_tools = create_notify_user_tool(
+            notify_tools = create_escalate_to_user_tool(
                 db_session=self._db_session,
                 user_id=self._user.id,
                 conversation_id=self._message.conversation_id,
             )
+            goal_tools = create_complete_goal_tool(
+                db_session=self._db_session,
+                conversation_id=self._message.conversation_id,
+            )
 
-            # Track whether send_message or notify_user was called
+            # Track whether send_message or escalate_to_user was called
             original_inbox_handler = reply_tools[0].on_invoke_tool
             original_notify_handler = notify_tools[0].on_invoke_tool
 
@@ -103,7 +108,7 @@ class InboxAgentOrchestrator:
                     result.replied = True
                 return resp
 
-            async def _tracked_notify_user(
+            async def _tracked_escalate_to_user(
                 ctx: Any, json_string: str
             ) -> str:
                 resp = await original_notify_handler(ctx, json_string)
@@ -132,7 +137,7 @@ class InboxAgentOrchestrator:
                 name=notify_tools[0].name,
                 description=notify_tools[0].description,
                 params_json_schema=notify_tools[0].params_json_schema,
-                on_invoke_tool=_tracked_notify_user,
+                on_invoke_tool=_tracked_escalate_to_user,
             )
 
             # 2. Build full agent context
@@ -144,7 +149,7 @@ class InboxAgentOrchestrator:
                 mode=AgentExecutionMode.INBOX,
                 local_tools=[],
                 inbox_tools=reply_tools,
-                extra_tools=notify_tools,
+                extra_tools=notify_tools + goal_tools,
                 tenant_id=self._tenant_id,
                 model=self._model,
             )

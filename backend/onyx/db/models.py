@@ -4423,6 +4423,10 @@ class InboxConversation(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
+    goal: Mapped[str] = mapped_column(Text, nullable=False)
+    goal_status: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="active"
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

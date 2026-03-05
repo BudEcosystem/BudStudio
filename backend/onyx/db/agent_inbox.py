@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import Session
 
 from onyx.db.enums import InboxAgentProcessingStatus
+from onyx.db.enums import InboxGoalStatus
 from onyx.db.enums import InboxSenderType
 from onyx.db.models import InboxConversation
 from onyx.db.models import InboxConversationParticipant
@@ -30,6 +31,7 @@ def find_or_create_conversation(
     db_session: Session,
     user_a_id: UUID,
     user_b_id: UUID,
+    goal: str = "General conversation",
 ) -> InboxConversation:
     """Find an existing 1:1 conversation between two users, or create one.
 
@@ -80,7 +82,7 @@ def find_or_create_conversation(
         return existing
 
     # Create new conversation with both participants
-    conversation = InboxConversation()
+    conversation = InboxConversation(goal=goal)
     db_session.add(conversation)
     db_session.flush()  # Get the conversation ID
 
@@ -103,13 +105,14 @@ def create_conversation(
     db_session: Session,
     user_a_id: UUID,
     user_b_id: UUID,
+    goal: str = "General conversation",
 ) -> InboxConversation:
     """Always create a new 1:1 conversation between two users.
 
     Use this when starting a new topic/task so messages don't get mixed
     into an existing thread.
     """
-    conversation = InboxConversation()
+    conversation = InboxConversation(goal=goal)
     db_session.add(conversation)
     db_session.flush()
 
@@ -229,6 +232,7 @@ def list_conversations_for_user(
                 select(func.count(InboxMessage.id)).where(unread_filter)
             ) or 0
 
+        conversation = participant.conversation
         results.append(
             {
                 "conversation_id": convo_id,
@@ -241,6 +245,10 @@ def list_conversations_for_user(
                 "last_message_preview": latest_message.content[:200],
                 "last_message_at": latest_message.created_at,
                 "unread_count": unread_count,
+                "goal": conversation.goal if conversation else "",
+                "goal_status": conversation.goal_status
+                if conversation
+                else "active",
             }
         )
 
@@ -447,6 +455,20 @@ def get_unread_messages_for_context(
     return list(db_session.scalars(stmt).unique().all())
 
 
+def update_conversation_goal_status(
+    db_session: Session,
+    conversation_id: UUID,
+    status: InboxGoalStatus,
+) -> InboxConversation | None:
+    """Update the goal_status of a conversation."""
+    conversation = db_session.get(InboxConversation, conversation_id)
+    if conversation is None:
+        return None
+    conversation.goal_status = status.value
+    db_session.commit()
+    return conversation
+
+
 def resolve_user(
     db_session: Session,
     identifier: str,
@@ -481,6 +503,26 @@ def resolve_user(
     if len(matches) > 1:
         return None, (
             f"Multiple users match the name '{identifier}'. "
+            "Please use their email address instead."
+        )
+
+    # Fall back to partial/prefix match on personal_name
+    partial_matches = list(
+        db_session.scalars(
+            select(User).where(
+                func.lower(User.personal_name).startswith(
+                    func.lower(identifier.strip())
+                )
+            )
+        ).unique().all()
+    )
+
+    if len(partial_matches) == 1:
+        return partial_matches[0], None
+
+    if len(partial_matches) > 1:
+        return None, (
+            f"Multiple users match '{identifier}'. "
             "Please use their email address instead."
         )
 

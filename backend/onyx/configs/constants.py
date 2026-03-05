@@ -160,7 +160,7 @@ TMP_DRALPHA_PERSONA_NAME = "KG Beta"
 
 # Inbox agent safety cap — hard limit on consecutive agent messages
 # in a single conversation to prevent infinite agent ping-pong loops.
-INBOX_AGENT_SAFETY_CAP = 10
+INBOX_AGENT_SAFETY_CAP = 4
 
 
 class DocumentSource(str, Enum):

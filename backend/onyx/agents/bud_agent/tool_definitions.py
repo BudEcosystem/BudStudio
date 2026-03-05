@@ -697,6 +697,15 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                         "following up on an ongoing topic."
                     ),
                 },
+                "goal": {
+                    "type": "string",
+                    "description": (
+                        "Optional. The goal/objective for this conversation. "
+                        "Only used when creating a new conversation (i.e. when "
+                        "conversation_id is not provided). Describes what the "
+                        "conversation should achieve."
+                    ),
+                },
             },
             "required": ["recipient", "message"],
         },

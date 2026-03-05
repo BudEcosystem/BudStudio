@@ -22,7 +22,9 @@ interface UseInboxPollingResult {
   fetchConversationDetail: (conversationId: string) => Promise<void>;
   markRead: (conversationId: string) => Promise<void>;
   sendReply: (conversationId: string, text: string) => Promise<InboxMessageSnapshot | null>;
-  sendNewMessage: (recipient: string, text: string) => Promise<InboxMessageSnapshot | null>;
+  sendNewMessage: (recipient: string, text: string, goal: string) => Promise<InboxMessageSnapshot | null>;
+  completeGoal: (conversationId: string) => Promise<boolean>;
+  cancelGoal: (conversationId: string) => Promise<boolean>;
   fetchSettings: () => Promise<void>;
   updateSettings: (settings: InboxSettings) => Promise<void>;
 }
@@ -129,13 +131,13 @@ export function useInboxPolling(
   );
 
   const sendNewMessage = useCallback(
-    async (recipient: string, text: string): Promise<InboxMessageSnapshot | null> => {
+    async (recipient: string, text: string, goal: string): Promise<InboxMessageSnapshot | null> => {
       try {
         setIsLoading(true);
         const response = await fetch("/api/agent/inbox/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recipient, message: text }),
+          body: JSON.stringify({ recipient, message: text, goal }),
         });
         if (!response.ok) return null;
         const msg: InboxMessageSnapshot = await response.json();
@@ -149,6 +151,44 @@ export function useInboxPolling(
       }
     },
     [fetchConversations, fetchUnreadCount]
+  );
+
+  const completeGoal = useCallback(
+    async (conversationId: string): Promise<boolean> => {
+      try {
+        const response = await fetch(
+          `/api/agent/inbox/conversations/${conversationId}/complete`,
+          { method: "POST" }
+        );
+        if (response.ok) {
+          await fetchConversations();
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    [fetchConversations]
+  );
+
+  const cancelGoal = useCallback(
+    async (conversationId: string): Promise<boolean> => {
+      try {
+        const response = await fetch(
+          `/api/agent/inbox/conversations/${conversationId}/cancel`,
+          { method: "POST" }
+        );
+        if (response.ok) {
+          await fetchConversations();
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    [fetchConversations]
   );
 
   const fetchSettings = useCallback(async () => {
@@ -215,6 +255,8 @@ export function useInboxPolling(
     markRead,
     sendReply,
     sendNewMessage,
+    completeGoal,
+    cancelGoal,
     fetchSettings,
     updateSettings,
   };

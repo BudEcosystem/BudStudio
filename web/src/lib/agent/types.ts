@@ -238,6 +238,8 @@ export interface ConversationListItem {
   last_message_preview: string | null;
   last_message_at: string | null;
   unread_count: number;
+  goal: string;
+  goal_status: string;
 }
 
 export interface ConversationDetail {
@@ -248,6 +250,8 @@ export interface ConversationDetail {
     email: string | null;
   }>;
   messages: InboxMessageSnapshot[];
+  goal: string;
+  goal_status: string;
 }
 
 export interface InboxSettings {
