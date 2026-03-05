@@ -521,9 +521,8 @@ def resolve_user(
         return partial_matches[0], None
 
     if len(partial_matches) > 1:
-        names = [u.personal_name or u.email for u in partial_matches]
         return None, (
-            f"Multiple users match '{identifier}': {', '.join(names)}. "
+            f"Multiple users match '{identifier}'. "
             "Please use their email address instead."
         )
 

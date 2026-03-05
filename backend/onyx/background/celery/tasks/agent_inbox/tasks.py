@@ -297,7 +297,7 @@ def process_inbox_message(
 
         payload_message = (
             f"You are acting as {receiver_name}'s agent in this conversation "
-            f"with {other_name}. So take action only to the messages {receiver_name} have to respond.\n\n"
+            f"with {other_name}. Your role is to assist {receiver_name}, so you should only act on messages that require a response from them.\n\n"
             f"{goal_context}"
             f"{conversation_context}"
             f"New message from {sender_label} ({sender_email}):\n\n"
@@ -329,7 +329,7 @@ def process_inbox_message(
             f"information that was explicitly requested and without which "
             f"the answer has no value\n"
             f"   Do NOT reply just to ask for more granular details or "
-            f"evidence if it's required for the goal and the {receiver_name}. If the core question has been answered, escalate.\n\n"
+            f"evidence if it's required for the goal. If the core question has been answered, escalate.\n\n"
             "3. **Do nothing**: Use when the message adds NO new information "
             "— pure acknowledgments ('thanks', 'ok', 'sounds good', 'noted', "
             "'see you then'), confirmations of something already known, or "

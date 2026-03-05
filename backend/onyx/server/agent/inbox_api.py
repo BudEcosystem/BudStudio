@@ -443,6 +443,26 @@ def send_message(
     return _message_to_snapshot(message)
 
 
+def _update_goal_status(
+    db_session: Session,
+    user: User | None,
+    conversation_id: UUID,
+    status: InboxGoalStatus,
+) -> dict[str, str]:
+    """Shared helper for updating a conversation's goal status."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    _verify_user_is_participant(db_session, user.id, conversation_id)
+    conversation = update_conversation_goal_status(
+        db_session, conversation_id, status
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return {"status": "ok", "goal_status": status.value}
+
+
 @router.post("/conversations/{conversation_id}/complete")
 def complete_conversation_goal(
     conversation_id: UUID,
@@ -450,17 +470,7 @@ def complete_conversation_goal(
     db_session: Session = Depends(get_session),
 ) -> dict[str, str]:
     """Mark the conversation's goal as completed."""
-    if user is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    _verify_user_is_participant(db_session, user.id, conversation_id)
-    conversation = update_conversation_goal_status(
-        db_session, conversation_id, InboxGoalStatus.COMPLETED
-    )
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    return {"status": "ok", "goal_status": "completed"}
+    return _update_goal_status(db_session, user, conversation_id, InboxGoalStatus.COMPLETED)
 
 
 @router.post("/conversations/{conversation_id}/cancel")
@@ -470,17 +480,7 @@ def cancel_conversation_goal(
     db_session: Session = Depends(get_session),
 ) -> dict[str, str]:
     """Mark the conversation's goal as cancelled."""
-    if user is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    _verify_user_is_participant(db_session, user.id, conversation_id)
-    conversation = update_conversation_goal_status(
-        db_session, conversation_id, InboxGoalStatus.CANCELLED
-    )
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    return {"status": "ok", "goal_status": "cancelled"}
+    return _update_goal_status(db_session, user, conversation_id, InboxGoalStatus.CANCELLED)
 
 
 @router.get("/unread-count")
