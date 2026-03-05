@@ -24,9 +24,12 @@ from onyx.db.agent_inbox import get_unread_count_for_user
 from onyx.db.agent_inbox import list_conversations_for_user
 from onyx.db.agent_inbox import mark_conversation_read
 from onyx.db.agent_inbox import resolve_user
+from onyx.db.agent_inbox import update_conversation_goal_status
 from onyx.db.engine.sql_engine import get_session
 from onyx.db.enums import InboxAgentProcessingStatus
+from onyx.db.enums import InboxGoalStatus
 from onyx.db.enums import InboxSenderType
+from onyx.db.models import InboxConversation
 from onyx.db.models import InboxConversationParticipant
 from onyx.db.models import InboxMessage
 from onyx.db.models import User
@@ -66,17 +69,22 @@ class ConversationListItem(BaseModel):
     last_message_preview: str | None
     last_message_at: datetime | None
     unread_count: int
+    goal: str
+    goal_status: str
 
 
 class ConversationDetailResponse(BaseModel):
     conversation_id: str
     participants: list[dict]
     messages: list[InboxMessageSnapshot]
+    goal: str
+    goal_status: str
 
 
 class SendMessageRequest(BaseModel):
     recipient: str
     message: str
+    goal: str
 
 
 class ReplyRequest(BaseModel):
@@ -242,6 +250,8 @@ def list_conversations(
             last_message_preview=row["last_message_preview"],
             last_message_at=row["last_message_at"],
             unread_count=row["unread_count"],
+            goal=row.get("goal", ""),
+            goal_status=row.get("goal_status", "active"),
         )
         for row in rows
     ]
@@ -288,10 +298,15 @@ def get_conversation(
         db_session, conversation_id, limit=limit
     )
 
+    # Load conversation for goal info
+    conversation = db_session.get(InboxConversation, conversation_id)
+
     return ConversationDetailResponse(
         conversation_id=str(conversation_id),
         participants=participants,
         messages=[_message_to_snapshot(m) for m in messages],
+        goal=conversation.goal if conversation else "",
+        goal_status=conversation.goal_status if conversation else "active",
     )
 
 
@@ -396,7 +411,7 @@ def send_message(
         )
 
     conversation = create_conversation(
-        db_session, user.id, recipient_user.id
+        db_session, user.id, recipient_user.id, goal=request.goal
     )
 
     message = add_message_to_conversation(
@@ -426,6 +441,46 @@ def send_message(
     )
 
     return _message_to_snapshot(message)
+
+
+@router.post("/conversations/{conversation_id}/complete")
+def complete_conversation_goal(
+    conversation_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> dict[str, str]:
+    """Mark the conversation's goal as completed."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    _verify_user_is_participant(db_session, user.id, conversation_id)
+    conversation = update_conversation_goal_status(
+        db_session, conversation_id, InboxGoalStatus.COMPLETED
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return {"status": "ok", "goal_status": "completed"}
+
+
+@router.post("/conversations/{conversation_id}/cancel")
+def cancel_conversation_goal(
+    conversation_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> dict[str, str]:
+    """Mark the conversation's goal as cancelled."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    _verify_user_is_participant(db_session, user.id, conversation_id)
+    conversation = update_conversation_goal_status(
+        db_session, conversation_id, InboxGoalStatus.CANCELLED
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return {"status": "ok", "goal_status": "cancelled"}
 
 
 @router.get("/unread-count")

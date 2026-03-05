@@ -37,6 +37,8 @@ export function InboxView() {
     selectConversation,
     sendReply,
     sendNewMessage,
+    completeGoal,
+    cancelGoal,
     fetchConversations,
     fetchSettings,
     updateSettings,
@@ -49,6 +51,7 @@ export function InboxView() {
   const [showSettings, setShowSettings] = useState(false);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [newRecipient, setNewRecipient] = useState("");
+  const [newGoal, setNewGoal] = useState("");
   const [newMessageText, setNewMessageText] = useState("");
   const [localSettings, setLocalSettings] = useState<InboxSettings>(settings);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -73,16 +76,34 @@ export function InboxView() {
   }, [selectedConversationId, replyText, sendReply]);
 
   const handleSendNew = useCallback(async () => {
-    if (!newRecipient.trim() || !newMessageText.trim()) return;
-    const msg = await sendNewMessage(newRecipient.trim(), newMessageText.trim());
+    if (!newRecipient.trim() || !newGoal.trim() || !newMessageText.trim()) return;
+    const msg = await sendNewMessage(newRecipient.trim(), newMessageText.trim(), newGoal.trim());
     if (msg) {
       setNewRecipient("");
+      setNewGoal("");
       setNewMessageText("");
       setShowNewMessage(false);
       await fetchConversations();
       await selectConversation(msg.conversation_id);
     }
-  }, [newRecipient, newMessageText, sendNewMessage, fetchConversations, selectConversation]);
+  }, [newRecipient, newGoal, newMessageText, sendNewMessage, fetchConversations, selectConversation]);
+
+  const handleCompleteGoal = useCallback(async () => {
+    if (!selectedConversationId) return;
+    const ok = await completeGoal(selectedConversationId);
+    if (ok && conversationDetail) {
+      // Refresh detail to pick up new status
+      await selectConversation(selectedConversationId);
+    }
+  }, [selectedConversationId, completeGoal, conversationDetail, selectConversation]);
+
+  const handleCancelGoal = useCallback(async () => {
+    if (!selectedConversationId) return;
+    const ok = await cancelGoal(selectedConversationId);
+    if (ok && conversationDetail) {
+      await selectConversation(selectedConversationId);
+    }
+  }, [selectedConversationId, cancelGoal, conversationDetail, selectConversation]);
 
   const handleSaveSettings = useCallback(async () => {
     await updateSettings(localSettings);
@@ -183,6 +204,16 @@ export function InboxView() {
                 isDark ? "bg-white/10 border-white/20" : "bg-white border-gray-300"
               )}
             />
+            <input
+              type="text"
+              placeholder="Goal (what should this conversation achieve?)"
+              value={newGoal}
+              onChange={(e) => setNewGoal(e.target.value)}
+              className={cn(
+                "px-3 py-2 text-sm rounded-lg border",
+                isDark ? "bg-white/10 border-white/20" : "bg-white border-gray-300"
+              )}
+            />
             <textarea
               placeholder="Message..."
               value={newMessageText}
@@ -195,7 +226,7 @@ export function InboxView() {
             />
             <button
               onClick={handleSendNew}
-              disabled={!newRecipient.trim() || !newMessageText.trim()}
+              disabled={!newRecipient.trim() || !newGoal.trim() || !newMessageText.trim()}
               className="self-start px-4 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
             >
               Send
@@ -241,9 +272,15 @@ export function InboxView() {
                         "text-sm truncate",
                         conv.unread_count > 0 ? "font-semibold" : "font-medium"
                       )}>
-                        {conv.other_participant_name || conv.other_participant_email || "Unknown"}
+                        {conv.goal || conv.other_participant_name || conv.other_participant_email || "Unknown"}
                       </span>
                       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        {conv.goal_status === "completed" && (
+                          <span className="text-xs text-green-500">done</span>
+                        )}
+                        {conv.goal_status === "cancelled" && (
+                          <span className="text-xs text-red-400">cancelled</span>
+                        )}
                         {conv.unread_count > 0 && (
                           <span className="w-2 h-2 rounded-full bg-purple-500" />
                         )}
@@ -253,7 +290,8 @@ export function InboxView() {
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {conv.last_message_preview || "No messages"}
+                      {conv.other_participant_name || conv.other_participant_email || "Unknown"}
+                      {conv.last_message_preview ? ` — ${conv.last_message_preview}` : ""}
                     </p>
                   </div>
                 </div>
@@ -279,17 +317,61 @@ export function InboxView() {
                 "px-6 py-3 border-b flex-shrink-0",
                 isDark ? "border-white/10" : "border-gray-200"
               )}>
-                {conversationDetail.participants
-                  .filter((p) => p.user_id !== conversationDetail.participants[0]?.user_id || conversationDetail.participants.length === 1)
-                  .slice(0, 1)
-                  .map((p) => (
-                    <div key={p.user_id}>
-                      <span className="font-medium text-sm">{p.name || p.email || "Unknown"}</span>
-                      {p.email && p.name && (
-                        <span className="text-xs text-muted-foreground ml-2">{p.email}</span>
-                      )}
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm truncate">
+                        {conversationDetail.goal || "No goal"}
+                      </span>
+                      <span className={cn(
+                        "text-xs px-1.5 py-0.5 rounded-full flex-shrink-0",
+                        conversationDetail.goal_status === "completed"
+                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                          : conversationDetail.goal_status === "cancelled"
+                            ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                      )}>
+                        {conversationDetail.goal_status}
+                      </span>
                     </div>
-                  ))}
+                    {conversationDetail.participants
+                      .filter((p) => p.user_id !== conversationDetail.participants[0]?.user_id || conversationDetail.participants.length === 1)
+                      .slice(0, 1)
+                      .map((p) => (
+                        <div key={p.user_id} className="mt-0.5">
+                          <span className="text-xs text-muted-foreground">
+                            with {p.name || p.email || "Unknown"}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  {conversationDetail.goal_status === "active" && (
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={handleCompleteGoal}
+                        className={cn(
+                          "px-2.5 py-1 text-xs rounded-lg transition-colors",
+                          isDark
+                            ? "bg-green-600/20 hover:bg-green-600/30 text-green-400"
+                            : "bg-green-100 hover:bg-green-200 text-green-700"
+                        )}
+                      >
+                        Complete
+                      </button>
+                      <button
+                        onClick={handleCancelGoal}
+                        className={cn(
+                          "px-2.5 py-1 text-xs rounded-lg transition-colors",
+                          isDark
+                            ? "bg-red-600/20 hover:bg-red-600/30 text-red-400"
+                            : "bg-red-100 hover:bg-red-200 text-red-700"
+                        )}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Messages */}

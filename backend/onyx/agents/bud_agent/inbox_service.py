@@ -21,6 +21,8 @@ from onyx.db.agent_inbox import count_consecutive_agent_messages
 from onyx.db.agent_inbox import create_conversation
 from onyx.db.agent_inbox import get_conversation_messages
 from onyx.db.agent_inbox import resolve_user
+from onyx.db.agent_inbox import update_conversation_goal_status
+from onyx.db.enums import InboxGoalStatus
 from onyx.db.enums import InboxSenderType
 from onyx.db.models import User
 from onyx.redis.event_publisher import publish_event
@@ -58,6 +60,7 @@ def create_inbox_tools(
             recipient_str = args.get("recipient", "").strip()
             message_text = args.get("message", "").strip()
             conversation_id_str = args.get("conversation_id", "").strip()
+            goal_str = args.get("goal", "").strip()
 
             if not recipient_str:
                 return "Error: 'recipient' is required."
@@ -109,7 +112,10 @@ def create_inbox_tools(
                     return "Error: Conversation not found."
             else:
                 conversation = create_conversation(
-                    db_session, user_id, recipient.id
+                    db_session,
+                    user_id,
+                    recipient.id,
+                    goal=goal_str or "General conversation",
                 )
 
             # Add message as AGENT type — no processing status needed
@@ -343,12 +349,12 @@ def create_reply_tool(
     return [tool]
 
 
-def create_notify_user_tool(
+def create_escalate_to_user_tool(
     db_session: Session,
     user_id: UUID,
     conversation_id: UUID,
 ) -> list[Any]:
-    """Create a ``notify_user`` FunctionTool for inbox message processing.
+    """Create an ``escalate_to_user`` FunctionTool for inbox message processing.
 
     Adds an escalation message to the conversation thread so the human
     user can see why the agent needs help.
@@ -356,7 +362,7 @@ def create_notify_user_tool(
     from agents import FunctionTool
     from agents import RunContextWrapper
 
-    async def _handle_notify_user(
+    async def _handle_escalate_to_user(
         _ctx: RunContextWrapper[Any], json_string: str
     ) -> str:
         try:
@@ -377,11 +383,11 @@ def create_notify_user_tool(
                 "The message is now awaiting their input."
             )
         except Exception as e:
-            logger.exception("notify_user failed")
+            logger.exception("escalate_to_user failed")
             return f"Error: {e}"
 
     tool = FunctionTool(
-        name="notify_user",
+        name="escalate_to_user",
         description=(
             "Escalate an incoming message to your user when you cannot "
             "answer it from your knowledge, memory, or available tools. "
@@ -399,7 +405,50 @@ def create_notify_user_tool(
             },
             "required": [],
         },
-        on_invoke_tool=_handle_notify_user,
+        on_invoke_tool=_handle_escalate_to_user,
+    )
+
+    return [tool]
+
+
+def create_complete_goal_tool(
+    db_session: Session,
+    conversation_id: UUID,
+) -> list[Any]:
+    """Create a ``complete_goal`` FunctionTool for inbox message processing.
+
+    Allows the agent to mark the conversation's goal as completed when it
+    determines the objective has been achieved.
+    """
+    from agents import FunctionTool
+    from agents import RunContextWrapper
+
+    async def _handle_complete_goal(
+        _ctx: RunContextWrapper[Any], json_string: str
+    ) -> str:
+        try:
+            conversation = update_conversation_goal_status(
+                db_session, conversation_id, InboxGoalStatus.COMPLETED
+            )
+            if conversation is None:
+                return "Error: Conversation not found."
+            return "Goal marked as completed."
+        except Exception as e:
+            logger.exception("complete_goal failed")
+            return f"Error: {e}"
+
+    tool = FunctionTool(
+        name="complete_goal",
+        description=(
+            "Mark this conversation's goal as completed. Use this when "
+            "the objective of the conversation has been fully achieved."
+        ),
+        params_json_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+        on_invoke_tool=_handle_complete_goal,
     )
 
     return [tool]

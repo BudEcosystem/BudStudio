@@ -28,7 +28,9 @@ interface InboxContextType {
   isLoading: boolean;
   selectConversation: (conversationId: string | null) => Promise<void>;
   sendReply: (conversationId: string, text: string) => Promise<InboxMessageSnapshot | null>;
-  sendNewMessage: (recipient: string, text: string) => Promise<InboxMessageSnapshot | null>;
+  sendNewMessage: (recipient: string, text: string, goal: string) => Promise<InboxMessageSnapshot | null>;
+  completeGoal: (conversationId: string) => Promise<boolean>;
+  cancelGoal: (conversationId: string) => Promise<boolean>;
   markRead: (conversationId: string) => Promise<void>;
   fetchConversations: () => Promise<void>;
   fetchSettings: () => Promise<void>;
@@ -104,6 +106,8 @@ export function InboxProvider({ children }: InboxProviderProps) {
         selectConversation,
         sendReply: polling.sendReply,
         sendNewMessage: polling.sendNewMessage,
+        completeGoal: polling.completeGoal,
+        cancelGoal: polling.cancelGoal,
         markRead: polling.markRead,
         fetchConversations: polling.fetchConversations,
         fetchSettings: polling.fetchSettings,
@@ -128,6 +132,8 @@ export function useInbox(): InboxContextType {
       selectConversation: async () => {},
       sendReply: async () => null,
       sendNewMessage: async () => null,
+      completeGoal: async () => false,
+      cancelGoal: async () => false,
       markRead: async () => {},
       fetchConversations: async () => {},
       fetchSettings: async () => {},

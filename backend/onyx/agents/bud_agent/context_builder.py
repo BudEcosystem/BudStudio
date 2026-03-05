@@ -143,75 +143,87 @@ class BudAgentContextBuilder:
             logger.warning("Failed to search memories for context", exc_info=True)
 
         # Inbox messages — pending messages from other users' agents
+        # Skip in inbox mode: the agent is already processing an inbox message
         inbox_messages = ""
-        try:
-            unread = get_unread_messages_for_context(
-                db_session=db_session,
-                user_id=user_id,
-                limit=5,
-            )
-            if unread:
-                escalation_lines: list[str] = []
-                other_lines: list[str] = []
-                for msg in unread:
-                    sender_name = "Unknown"
-                    if msg.sender:
-                        sender_name = (
-                            msg.sender.personal_name
-                            or msg.sender.email
-                            or "Unknown"
+        if self._mode != "inbox":
+            try:
+                unread = get_unread_messages_for_context(
+                    db_session=db_session,
+                    user_id=user_id,
+                    limit=5,
+                )
+                if unread:
+                    escalation_lines: list[str] = []
+                    other_lines: list[str] = []
+                    for msg in unread:
+                        sender_name = "Unknown"
+                        if msg.sender:
+                            sender_name = (
+                                msg.sender.personal_name
+                                or msg.sender.email
+                                or "Unknown"
+                            )
+                        sender_type = (
+                            msg.sender_type.value
+                            if hasattr(msg.sender_type, "value")
+                            else str(msg.sender_type)
                         )
-                    sender_type = (
-                        msg.sender_type.value
-                        if hasattr(msg.sender_type, "value")
-                        else str(msg.sender_type)
-                    )
-                    line = (
-                        f"- From {sender_name} ({sender_type}) in "
-                        f"conversation {msg.conversation_id}: "
-                        f'"{msg.content}"'
-                    )
-                    if (
-                        msg.content
-                        and msg.content.startswith("I need my user's help:")
-                    ):
-                        escalation_lines.append(line)
-                    else:
-                        other_lines.append(line)
+                        line = (
+                            f"- From {sender_name} ({sender_type}) in "
+                            f"conversation {msg.conversation_id}: "
+                            f'"{msg.content}"'
+                        )
+                        if (
+                            msg.content
+                            and msg.content.startswith(
+                                "I need my user's help:"
+                            )
+                        ):
+                            escalation_lines.append(line)
+                        else:
+                            other_lines.append(line)
 
-                parts: list[str] = []
-                if escalation_lines:
-                    parts.append(
-                        "URGENT — Your agent escalated the following and "
-                        "is waiting for your input:\n"
-                        + "\n".join(escalation_lines)
-                        + "\nReply using send_message with the "
-                        "conversation_id, or ask your user what to do."
+                    parts: list[str] = []
+                    if escalation_lines:
+                        parts.append(
+                            "URGENT — Your agent escalated the following "
+                            "and is waiting for your input:\n"
+                            + "\n".join(escalation_lines)
+                            + "\nReply using send_message with the "
+                            "conversation_id, or ask your user what to do."
+                        )
+                    if other_lines:
+                        label = (
+                            "Other unread messages:"
+                            if escalation_lines
+                            else "You have unread messages from other "
+                            "users' agents. Consider responding using "
+                            "send_message."
+                        )
+                        parts.append(
+                            label + "\n" + "\n".join(other_lines)
+                        )
+                    inbox_messages = (
+                        "## Inbox Messages\n\n"
+                        + "\n\n".join(parts)
                     )
-                if other_lines:
-                    label = (
-                        "Other unread messages:"
-                        if escalation_lines
-                        else "You have unread messages from other users' "
-                        "agents. Consider responding using send_message."
-                    )
-                    parts.append(label + "\n" + "\n".join(other_lines))
-                inbox_messages = "\n\n".join(parts)
-        except Exception:
-            logger.warning(
-                "Failed to fetch inbox messages for context", exc_info=True
-            )
+            except Exception:
+                logger.warning(
+                    "Failed to fetch inbox messages for context",
+                    exc_info=True,
+                )
 
         # Workspace info (optional — only when a local path is configured)
+        # Skip in inbox mode: the agent doesn't have desktop/local access
         workspace_info = ""
-        if self._workspace_path:
+        if self._workspace_path and self._mode != "inbox":
             os_info = f"{platform.system()} {platform.release()}"
             workspace_info = (
                 "## Workspace\n\n"
                 f"- Path: {self._workspace_path}\n"
                 f"- Platform: {os_info}\n"
-                "Treat this directory as the workspace for file operations "
-                "unless explicitly instructed otherwise."
+                "Treat this directory as the single global workspace for "
+                "file operations unless explicitly instructed otherwise."
             )
 
         # Build compaction summary section if present
@@ -258,8 +270,10 @@ class BudAgentContextBuilder:
             identity_content=identity_content or "(not set)",
             user_content=user_content or "(not set)",
             memory_md_content=memory_md_content or "(not set)",
-            memories=memories or "No relevant memories found.",
-            inbox_messages=inbox_messages or "No pending inbox messages.",
+            memories=(
+                "## Relevant Memories\n\n" + memories
+            ) if memories else "",
+            inbox_messages=inbox_messages,
             workspace_info=workspace_info,
             compaction_summary=compaction_summary_section,
             connector_tools_section=connector_tools_section,

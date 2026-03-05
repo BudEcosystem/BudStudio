@@ -276,6 +276,12 @@ class AgentCronExecutionStatus(str, PyEnum):
         return self in terminal_states
 
 
+class InboxGoalStatus(str, PyEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class InboxSenderType(str, PyEnum):
     USER = "user"
     AGENT = "agent"

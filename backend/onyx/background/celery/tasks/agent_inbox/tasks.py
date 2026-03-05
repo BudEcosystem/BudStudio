@@ -179,7 +179,20 @@ def process_inbox_message(
         message.session_id = session.id
         db_session.commit()
 
-        # 8. Build prompt with conversation history
+        # 8. Load conversation goal
+        from onyx.db.models import InboxConversation
+
+        conversation_obj = db_session.get(
+            InboxConversation, message.conversation_id
+        )
+        conversation_goal = (
+            conversation_obj.goal if conversation_obj else "General conversation"
+        )
+        conversation_goal_status = (
+            conversation_obj.goal_status if conversation_obj else "active"
+        )
+
+        # Build prompt with conversation history
         from onyx.db.agent_inbox import get_conversation_messages
 
         conv_messages = get_conversation_messages(
@@ -264,7 +277,7 @@ def process_inbox_message(
                 f"This message was written by {sender_name} personally "
                 f"(not by their agent). Human messages that answer a question, "
                 f"provide requested information, or make a decision should "
-                f"almost always be escalated to {receiver_name} via notify_user "
+                f"almost always be escalated to {receiver_name} via escalate_to_user "
                 f"so they see the response. Only 'do nothing' for pure "
                 f"pleasantries with zero informational content.\n"
             )
@@ -272,9 +285,20 @@ def process_inbox_message(
             sender_label = f"{sender_name}'s agent"
             extra_guidance = ""
 
+        # Goal context
+        goal_context = (
+            f"## GOAL\n"
+            f"This conversation exists to achieve: \"{conversation_goal}\"\n"
+            f"Current goal status: {conversation_goal_status}\n"
+            f"Every action you take should drive toward this goal.\n"
+            f"If the goal has been achieved, use the complete_goal tool.\n"
+            f"If the goal is no longer relevant, do nothing.\n\n"
+        )
+
         payload_message = (
             f"You are acting as {receiver_name}'s agent in this conversation "
-            f"with {other_name}.\n\n"
+            f"with {other_name}. So take action only to the messages {receiver_name} have to respond.\n\n"
+            f"{goal_context}"
             f"{conversation_context}"
             f"New message from {sender_label} ({sender_email}):\n\n"
             f'"{message.content}"\n\n'
@@ -287,20 +311,36 @@ def process_inbox_message(
             "stated in the history.\n\n"
             "## How to respond\n\n"
             "Pick ONE of three actions:\n\n"
-            f"1. **Escalate** (notify_user): Use when the message contains "
-            f"NEW information {receiver_name} needs to see — an answer to a "
-            f"question, a confirmed time/date/decision, or a request needing "
-            f"{receiver_name}'s input. Also use when you genuinely need "
-            f"{receiver_name}'s decision to proceed.\n\n"
-            f"2. **Reply** (send_message): Use to reply to {other_name} "
-            f"when the message contains a question you can answer or when "
-            "you need to follow up for more details. "
-            f"If {other_name}'s answer is vague, follow up with THEM — "
-            f"do not ask {receiver_name}.\n\n"
+            f"1. **Escalate** (escalate_to_user) — THIS IS THE DEFAULT "
+            f"when the message contains useful information. Use when:\n"
+            f"   - The message contains substantive information that "
+            f"{receiver_name} would find useful (status updates, dates, "
+            f"times, decisions, deliverables, answers to questions)\n"
+            f"   - You need {receiver_name}'s input or decision to "
+            f"proceed — something you cannot resolve on your own\n"
+            f"   - The conversation has produced enough information to "
+            f"give {receiver_name} a useful summary of what was discussed\n"
+            f"   Even a partial or approximate answer is worth escalating "
+            f"— don't hold back waiting for perfection.\n\n"
+            f"2. **Reply** (send_message): Use ONLY when:\n"
+            f"   - {other_name} asked a direct question you can answer "
+            f"from context or your knowledge\n"
+            f"   - The response is truly incomplete — missing critical "
+            f"information that was explicitly requested and without which "
+            f"the answer has no value\n"
+            f"   Do NOT reply just to ask for more granular details or "
+            f"evidence if it's required for the goal and the {receiver_name}. If the core question has been answered, escalate.\n\n"
             "3. **Do nothing**: Use when the message adds NO new information "
             "— pure acknowledgments ('thanks', 'ok', 'sounds good', 'noted', "
             "'see you then'), confirmations of something already known, or "
-            "summaries of what was already said.\n\n"
+            "summaries of what was already said.\n"
+            "- If the message is not actionable to the {receiver_name}, do nothing.\n\n"
+            "## ESCALATE OVER REPLY\n"
+            f"When in doubt between escalating and replying, ALWAYS "
+            f"escalate. {receiver_name} would rather get an 80% answer "
+            f"now than wait for a 100% answer after 5 more back-and-forth "
+            f"messages. Summarize what you know and let {receiver_name} "
+            f"decide if they need more detail.\n\n"
             "## AVOIDING DUPLICATES\n"
             "Before escalating or replying, check the conversation history "
             "for messages from yourself (marked as "

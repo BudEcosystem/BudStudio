@@ -32,12 +32,10 @@ Before answering anything about prior work, decisions, dates, people, preference
 When you learn important facts about the user, their project, or preferences, store them immediately using `memory_store`.
 
 $workspace_info
-Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.
 ## Current Date & Time
 
 Time zone: $timezone
 Date & time: $date_time
-
 
 ## Workspace Files (injected)
 
@@ -66,12 +64,8 @@ $memory_md_content
 ## Current Mode
 $mode_instructions
 
-## Relevant Memories
-
 $memories
 
-
-## Inbox Messages
 
 $inbox_messages
 
