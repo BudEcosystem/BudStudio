@@ -39,6 +39,7 @@ REMOTE_TOOLS: set[str] = {
     "open_url",
     "manage_cron",
     "send_message",
+    "use_skill",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -661,6 +662,29 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["action"],
+        },
+    },
+    "use_skill": {
+        "name": "use_skill",
+        "description": (
+            "Activate a skill to get detailed step-by-step instructions for "
+            "a specific task. Call this when a user's request matches one of "
+            "the available skills listed in your system prompt. The skill "
+            "will return instructions that you should then follow using your "
+            "existing tools."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "skill_slug": {
+                    "type": "string",
+                    "description": (
+                        "The slug of the skill to activate "
+                        "(from the Available Skills list in your system prompt)."
+                    ),
+                },
+            },
+            "required": ["skill_slug"],
         },
     },
     "send_message": {

@@ -39,6 +39,7 @@ export {
   useInbox,
 } from "./InboxContext";
 export { InboxView } from "./InboxView";
+export { SkillsView } from "./SkillsView";
 export {
   EventStreamProvider,
   useEventStreamContext,

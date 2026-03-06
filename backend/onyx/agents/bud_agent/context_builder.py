@@ -102,6 +102,7 @@ class BudAgentContextBuilder:
         user_id: UUID,
         user_message: str,
         connector_tool_names: list[str] | None = None,
+        skills_catalog: str = "",
     ) -> str:
         """Build the complete system prompt by rendering system.md."""
 
@@ -141,6 +142,10 @@ class BudAgentContextBuilder:
             memories = format_memories_for_prompt(mem_results)
         except Exception:
             logger.warning("Failed to search memories for context", exc_info=True)
+            try:
+                db_session.rollback()
+            except Exception:
+                pass
 
         # Inbox messages — pending messages from other users' agents
         # Skip in inbox mode: the agent is already processing an inbox message
@@ -212,6 +217,12 @@ class BudAgentContextBuilder:
                     "Failed to fetch inbox messages for context",
                     exc_info=True,
                 )
+                # Rollback to prevent poisoned transaction from blocking
+                # subsequent queries on the same session.
+                try:
+                    db_session.rollback()
+                except Exception:
+                    pass
 
         # Workspace info (optional — only when a local path is configured)
         # Skip in inbox mode: the agent doesn't have desktop/local access
@@ -277,5 +288,6 @@ class BudAgentContextBuilder:
             workspace_info=workspace_info,
             compaction_summary=compaction_summary_section,
             connector_tools_section=connector_tools_section,
+            skills_catalog=skills_catalog,
             mode_instructions=mode_instructions or "No mode specified.",
         )

@@ -66,6 +66,17 @@ BUD_FOUNDRY_API_BASE = os.environ.get("BUD_FOUNDRY_API_BASE")
 BUD_FOUNDRY_APP_BASE = os.environ.get("BUD_FOUNDRY_APP_BASE")
 # MCP gateway URL for connector tool discovery & execution
 BUD_MCP_GATEWAY_URL = os.environ.get("BUD_MCP_GATEWAY_URL")
+# Comma-separated list of default MCP servers to sync at startup.
+# Format: name=url,name=url  (e.g. "taskgraph=http://bud-taskgraph:8484/mcp")
+_BUD_DEFAULT_MCP_SERVERS_RAW = os.environ.get("BUD_DEFAULT_MCP_SERVERS", "")
+BUD_DEFAULT_MCP_SERVERS: list[tuple[str, str]] = []
+if _BUD_DEFAULT_MCP_SERVERS_RAW.strip():
+    for entry in _BUD_DEFAULT_MCP_SERVERS_RAW.split(","):
+        entry = entry.strip()
+        if "=" in entry:
+            name, url = entry.split("=", 1)
+            if name.strip() and url.strip():
+                BUD_DEFAULT_MCP_SERVERS.append((name.strip(), url.strip()))
 
 # Override the auto-detection of LLM max context length
 GEN_AI_MAX_TOKENS = int(os.environ.get("GEN_AI_MAX_TOKENS") or 0) or None

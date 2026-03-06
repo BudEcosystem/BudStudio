@@ -286,6 +286,102 @@ def setup_vespa(
     return False
 
 
+def sync_default_mcp_servers(db_session: Session) -> None:
+    """Sync default MCP servers from env var to DB at startup.
+
+    Reads BUD_DEFAULT_MCP_SERVERS, creates/updates MCPServer + Tool records.
+    Never raises — logs warnings on failure.
+    """
+    from onyx.configs.model_configs import BUD_DEFAULT_MCP_SERVERS
+    from onyx.db.enums import MCPAuthenticationPerformer
+    from onyx.db.enums import MCPAuthenticationType
+    from onyx.db.enums import MCPTransport
+    from onyx.db.mcp import create_mcp_server__no_commit
+    from onyx.db.mcp import get_all_mcp_servers
+    from onyx.db.mcp import get_all_mcp_tools_for_server
+    from onyx.db.mcp import SYSTEM_MCP_OWNER
+    from onyx.db.mcp import upsert_default_mcp_tools
+    from onyx.tools.tool_implementations.mcp.mcp_client import discover_mcp_tools
+
+    if not BUD_DEFAULT_MCP_SERVERS:
+        return
+
+    logger.notice("Syncing %d default MCP server(s)...", len(BUD_DEFAULT_MCP_SERVERS))
+
+    try:
+        # Get all existing system MCP servers
+        all_servers = get_all_mcp_servers(db_session)
+        system_servers = {
+            s.server_url: s for s in all_servers if s.owner == SYSTEM_MCP_OWNER
+        }
+        configured_urls: set[str] = set()
+
+        for name, url in BUD_DEFAULT_MCP_SERVERS:
+            configured_urls.add(url)
+
+            # Create or get existing server
+            if url in system_servers:
+                server = system_servers[url]
+                if server.name != name:
+                    server.name = name
+            else:
+                server = create_mcp_server__no_commit(
+                    owner_email=SYSTEM_MCP_OWNER,
+                    name=name,
+                    description=f"System default MCP server: {name}",
+                    server_url=url,
+                    auth_type=MCPAuthenticationType.NONE,
+                    transport=MCPTransport.STREAMABLE_HTTP,
+                    auth_performer=MCPAuthenticationPerformer.ADMIN,
+                    db_session=db_session,
+                )
+                logger.notice("Created system MCP server: %s -> %s", name, url)
+
+            # Discover and sync tools
+            try:
+                mcp_tools = discover_mcp_tools(server_url=url)
+                upsert_default_mcp_tools(
+                    mcp_server_id=server.id,
+                    discovered_tools=mcp_tools,
+                    db_session=db_session,
+                )
+                logger.notice(
+                    "Synced %d tool(s) from MCP server '%s'",
+                    len(mcp_tools),
+                    name,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to discover tools from MCP server '%s' (%s) — "
+                    "server registered but tools not synced",
+                    name,
+                    url,
+                    exc_info=True,
+                )
+
+        # Clean up system servers whose URLs are no longer configured
+        for url, server in system_servers.items():
+            if url not in configured_urls:
+                logger.notice(
+                    "Removing stale system MCP server: %s (%s)",
+                    server.name,
+                    url,
+                )
+                # Delete tools first, then server
+                stale_tools = get_all_mcp_tools_for_server(server.id, db_session)
+                for tool in stale_tools:
+                    db_session.delete(tool)
+                db_session.delete(server)
+
+        db_session.commit()
+
+    except Exception:
+        logger.warning(
+            "Failed to sync default MCP servers — continuing startup",
+            exc_info=True,
+        )
+
+
 def setup_postgres(db_session: Session) -> None:
     logger.notice("Verifying default connector/credential exist.")
     create_initial_public_credential(db_session)
@@ -371,6 +467,8 @@ def setup_postgres(db_session: Session) -> None:
                 update_default_provider(
                     provider_id=new_provider.id, db_session=db_session
                 )
+
+    sync_default_mcp_servers(db_session)
 
 
 def update_default_multipass_indexing(db_session: Session) -> None:

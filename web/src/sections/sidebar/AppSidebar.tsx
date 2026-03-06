@@ -71,6 +71,7 @@ import SvgSparkle from "@/icons/sparkle";
 import SvgClock from "@/icons/clock";
 import SvgPlug from "@/icons/plug";
 import SvgInbox from "@/icons/inbox";
+import SvgLightbulbSimple from "@/icons/lightbulb-simple";
 import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
 import { useInbox } from "@/components/desktop/InboxContext";
 import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
@@ -495,6 +496,15 @@ function AppSidebarInner() {
                       </span>
                     )}
                   </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgLightbulbSimple}
+                    onClick={() => setAgentView("skills")}
+                    active={agentView === "skills"}
+                    folded
+                    testId="sidebar-skills-tab"
+                  >
+                    Skills
+                  </SidebarTab>
                     </>
                   ) : (
                     <>
@@ -631,6 +641,14 @@ function AppSidebarInner() {
                             {inboxUnreadCount}
                           </span>
                         )}
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgLightbulbSimple}
+                        onClick={() => setAgentView("skills")}
+                        active={agentView === "skills"}
+                        testId="sidebar-skills-tab"
+                      >
+                        Skills
                       </SidebarTab>
                     </SidebarSection>
                   </>

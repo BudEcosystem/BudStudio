@@ -66,6 +66,7 @@ from onyx.db.enums import (
     AgentToolPermissionLevel,
     EmbeddingPrecision,
     InboxAgentProcessingStatus,
+    InboxGoalStatus,
     InboxSenderType,
     IndexingMode,
     SyncType,
@@ -2574,6 +2575,40 @@ class Tool(Base):
     )
 
 
+class Skill(Base):
+    """Reusable instruction packages that teach the agent how to accomplish tasks.
+
+    Built-in skills are seeded from code (.md files) with ``builtin=True``.
+    Admin-created skills live in the DB with ``builtin=False``.
+    A DB skill with the same ``slug`` as a built-in one overrides it.
+    """
+
+    __tablename__ = "skill"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)
+    requires_tools: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(String), server_default="{}", nullable=False
+    )
+    modes: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(String), server_default="{}", nullable=False
+    )
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class OAuthConfig(Base):
     """OAuth provider configuration that can be shared across multiple tools"""
 
@@ -4424,8 +4459,10 @@ class InboxConversation(Base):
         PGUUID(as_uuid=True), primary_key=True, default=uuid4
     )
     goal: Mapped[str] = mapped_column(Text, nullable=False)
-    goal_status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="active"
+    goal_status: Mapped[InboxGoalStatus] = mapped_column(
+        Enum(InboxGoalStatus, native_enum=False),
+        nullable=False,
+        server_default="ACTIVE",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

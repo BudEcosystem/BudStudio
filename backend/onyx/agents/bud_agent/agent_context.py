@@ -30,7 +30,9 @@ from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.cron_service import create_cron_tools
 from onyx.agents.bud_agent.inbox_service import create_inbox_tools
+from onyx.agents.bud_agent.mcp_service import create_default_mcp_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
+from onyx.agents.bud_agent.skill_service import create_skill_tools
 from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
 from onyx.agents.bud_agent.web_search_service import create_web_search_tools
 from onyx.agents.bud_agent.workspace_service import create_workspace_tools
@@ -191,6 +193,12 @@ def build_agent_run_context(
         redis_client=resolved_redis,
         step_number_fn=resolved_step_number_fn,
     )
+    default_mcp_tools = create_default_mcp_tools(
+        db_session=db_session,
+        session_id=session_id,
+        packet_queue=resolved_packet_queue,
+        step_number_fn=resolved_step_number_fn,
+    )
     web_search_tools = create_web_search_tools(
         db_session=db_session,
         packet_queue=resolved_packet_queue,
@@ -227,14 +235,27 @@ def build_agent_run_context(
         + memory_tools
         + workspace_tools
         + connector_tools
+        + default_mcp_tools
         + web_search_tools
         + cron_tools
         + resolved_inbox_tools
         + resolved_extra_tools
     )
 
+    # Step 10b: skill tools (use_skill FunctionTool + catalog for prompt)
+    available_tool_names: set[str] = {t.name for t in all_tools}
+    skill_tools, skills_catalog = create_skill_tools(
+        db_session=db_session,
+        available_tools=available_tool_names,
+        mode=mode.value,
+    )
+    all_tools.extend(skill_tools)
+
     # Step 11: connector tool names
-    connector_tool_names: list[str] = [t.name for t in connector_tools]
+    connector_tool_names: list[str] = (
+        [t.name for t in connector_tools]
+        + [t.name for t in default_mcp_tools]
+    )
 
     # Step 12: build system prompt
     context_builder = BudAgentContextBuilder(
@@ -249,6 +270,7 @@ def build_agent_run_context(
         user_id=user.id,
         user_message=user_message,
         connector_tool_names=connector_tool_names,
+        skills_catalog=skills_catalog,
     )
 
     # Step 13: resolve LLM and model name

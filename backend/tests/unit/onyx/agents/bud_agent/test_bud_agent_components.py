@@ -151,7 +151,8 @@ class TestToolDefinitions:
         assert is_remote_tool("memory_store") is True
         assert is_remote_tool("memory_search") is True
         assert is_remote_tool("read_file") is False
-        assert is_remote_tool("unknown_tool") is False
+        # Unknown tools are treated as remote (dynamic MCP/connector tools)
+        assert is_remote_tool("unknown_tool") is True
 
     def test_remote_tool_schemas_complete(self) -> None:
         from onyx.agents.bud_agent.tool_definitions import REMOTE_TOOL_SCHEMAS
@@ -508,7 +509,7 @@ class TestContextBuilder:
         user_id = uuid4()
 
         result = builder.build(db_session, user_id, "hello")
-        assert "## Available Tools" in result
+        assert "## Tooling" in result
         assert "read_file" in result
         assert "bash" in result
 
@@ -760,7 +761,8 @@ class TestLocalToolBridge:
 
     def test_wait_for_approval_emits_approval_packet(self) -> None:
         from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
-        from onyx.agents.bud_agent.streaming_models import BudAgentApprovalRequired
+        from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
+        from onyx.server.query_and_chat.streaming_models import Packet
 
         mock_queue: MagicMock = MagicMock()
         mock_redis: MagicMock = MagicMock()
@@ -779,9 +781,10 @@ class TestLocalToolBridge:
         # Verify an approval-required packet was put on the queue
         mock_queue.put.assert_called_once()
         emitted_packet = mock_queue.put.call_args[0][0]
-        assert isinstance(emitted_packet, BudAgentApprovalRequired)
-        assert emitted_packet.tool_name == "bash"
-        assert emitted_packet.tool_call_id == "call-200"
+        assert isinstance(emitted_packet, Packet)
+        assert isinstance(emitted_packet.obj, AgentApprovalRequired)
+        assert emitted_packet.obj.tool_name == "bash"
+        assert emitted_packet.obj.tool_call_id == "call-200"
 
     def test_wait_for_tool_result_redis_key_format(self) -> None:
         from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
@@ -1587,7 +1590,6 @@ EXPECTED_TEMPLATE_FILES = [
     "agents",
     "identity",
     "user",
-    "tools",
     "system",
 ]
 
@@ -1794,3 +1796,266 @@ class TestWorkspaceService:
 
         workspace_tools = {"workspace_read", "workspace_write", "workspace_list"}
         assert workspace_tools.issubset(REMOTE_TOOLS)
+
+
+# ==============================================================================
+# MCP Schema Sanitization Tests
+# ==============================================================================
+
+
+class TestSanitizeSchema:
+    """Test the _sanitize_schema function from mcp_service."""
+
+    def test_adds_items_to_array_without_items(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        schema: dict[str, Any] = {"type": "array"}
+        result = _sanitize_schema(schema)
+        assert result["items"] == {}
+
+    def test_preserves_existing_items(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        schema: dict[str, Any] = {"type": "array", "items": {"type": "string"}}
+        result = _sanitize_schema(schema)
+        assert result["items"] == {"type": "string"}
+
+    def test_non_array_type_unchanged(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        schema: dict[str, Any] = {"type": "object", "properties": {}}
+        result = _sanitize_schema(schema)
+        assert "items" not in result
+
+    def test_nested_array_in_properties(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "subtasks": {"type": "array"},
+            },
+        }
+        result = _sanitize_schema(schema)
+        assert result["properties"]["subtasks"]["items"] == {}
+
+    def test_deeply_nested_array(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "outer": {
+                    "type": "object",
+                    "properties": {
+                        "inner_list": {"type": "array"},
+                    },
+                },
+            },
+        }
+        result = _sanitize_schema(schema)
+        assert result["properties"]["outer"]["properties"]["inner_list"]["items"] == {}
+
+    def test_array_inside_allof(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        schema: dict[str, Any] = {
+            "allOf": [
+                {"type": "array"},
+            ],
+        }
+        result = _sanitize_schema(schema)
+        assert result["allOf"][0]["items"] == {}
+
+    def test_non_dict_schema_returned_as_is(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        result = _sanitize_schema("not a dict")  # type: ignore[arg-type]
+        assert result == "not a dict"
+
+    def test_empty_dict_unchanged(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _sanitize_schema
+
+        result = _sanitize_schema({})
+        assert result == {}
+
+
+# ==============================================================================
+# Skill System Tests
+# ==============================================================================
+
+
+class TestSkillParsing:
+    """Test the skill markdown parsing from skills/__init__.py."""
+
+    def test_parse_valid_skill(self) -> None:
+        from onyx.agents.bud_agent.skills import parse_skill_md
+
+        md = (
+            "---\n"
+            "slug: test_skill\n"
+            "name: Test Skill\n"
+            "description: A test skill.\n"
+            "requires_tools:\n"
+            "  - bash\n"
+            "modes:\n"
+            "  - interactive\n"
+            "enabled: true\n"
+            "---\n"
+            "Do the thing step by step."
+        )
+        skill = parse_skill_md(md)
+        assert skill is not None
+        assert skill.slug == "test_skill"
+        assert skill.name == "Test Skill"
+        assert skill.description == "A test skill."
+        assert skill.instructions == "Do the thing step by step."
+        assert skill.requires_tools == ["bash"]
+        assert skill.modes == ["interactive"]
+        assert skill.enabled is True
+
+    def test_parse_missing_frontmatter(self) -> None:
+        from onyx.agents.bud_agent.skills import parse_skill_md
+
+        result = parse_skill_md("No frontmatter here")
+        assert result is None
+
+    def test_parse_missing_closing_delimiter(self) -> None:
+        from onyx.agents.bud_agent.skills import parse_skill_md
+
+        result = parse_skill_md("---\nslug: x\nname: X\n")
+        assert result is None
+
+    def test_parse_missing_required_fields(self) -> None:
+        from onyx.agents.bud_agent.skills import parse_skill_md
+
+        md = "---\nslug: x\n---\nBody"
+        result = parse_skill_md(md)
+        assert result is None
+
+    def test_parse_empty_body(self) -> None:
+        from onyx.agents.bud_agent.skills import parse_skill_md
+
+        md = "---\nslug: x\nname: X\ndescription: Desc\n---\n"
+        result = parse_skill_md(md)
+        assert result is None
+
+    def test_parse_string_requires_tools(self) -> None:
+        from onyx.agents.bud_agent.skills import parse_skill_md
+
+        md = (
+            "---\n"
+            "slug: s\nname: S\ndescription: D\n"
+            "requires_tools: bash\n"
+            "---\n"
+            "Instructions"
+        )
+        skill = parse_skill_md(md)
+        assert skill is not None
+        assert skill.requires_tools == ["bash"]
+
+
+class TestSkillCatalog:
+    """Test skill catalog formatting."""
+
+    def test_format_empty_catalog(self) -> None:
+        from onyx.agents.bud_agent.skills import format_skill_catalog
+
+        assert format_skill_catalog([]) == ""
+
+    def test_format_catalog_with_skills(self) -> None:
+        from onyx.agents.bud_agent.skills import format_skill_catalog
+        from onyx.agents.bud_agent.skills import SkillDefinition
+
+        skills = [
+            SkillDefinition(
+                slug="planner",
+                name="Planner",
+                description="Break down goals.",
+                instructions="Step 1: plan things.",
+            ),
+        ]
+        result = format_skill_catalog(skills)
+        assert "## Available Skills" in result
+        assert "planner" in result
+        assert "Break down goals." in result
+
+
+class TestGetActiveSkills:
+    """Test skill resolution logic."""
+
+    def test_builtin_skill_loads(self) -> None:
+        from onyx.agents.bud_agent.skills import get_active_skills
+
+        # planner requires taskgraph tools — provide them
+        available = {
+            "taskgraph_project_create",
+            "taskgraph_task_create",
+        }
+        skills = get_active_skills(
+            db_session=None,
+            available_tools=available,
+            mode="interactive",
+        )
+        slugs = [s.slug for s in skills]
+        assert "planner" in slugs
+
+    def test_skill_filtered_by_missing_tool(self) -> None:
+        from onyx.agents.bud_agent.skills import get_active_skills
+
+        # Don't provide required tools
+        skills = get_active_skills(
+            db_session=None,
+            available_tools=set(),
+            mode="interactive",
+        )
+        slugs = [s.slug for s in skills]
+        assert "planner" not in slugs
+
+    def test_skill_filtered_by_mode(self) -> None:
+        from onyx.agents.bud_agent.skills import get_active_skills
+
+        # Provide required tools but wrong mode
+        available = {
+            "taskgraph_project_create",
+            "taskgraph_task_create",
+        }
+        skills = get_active_skills(
+            db_session=None,
+            available_tools=available,
+            mode="cron",
+        )
+        slugs = [s.slug for s in skills]
+        # planner has modes: [interactive], so shouldn't be in cron
+        assert "planner" not in slugs
+
+
+class TestCreateSkillTools:
+    """Test the create_skill_tools function."""
+
+    def test_returns_empty_when_no_skills(self) -> None:
+        from onyx.agents.bud_agent.skill_service import create_skill_tools
+
+        tools, catalog = create_skill_tools(
+            db_session=None,
+            available_tools=set(),
+            mode="cron",
+        )
+        assert tools == []
+        assert catalog == ""
+
+    def test_returns_use_skill_tool_when_skills_available(self) -> None:
+        from onyx.agents.bud_agent.skill_service import create_skill_tools
+
+        available = {
+            "taskgraph_project_create",
+            "taskgraph_task_create",
+        }
+        tools, catalog = create_skill_tools(
+            db_session=None,
+            available_tools=available,
+            mode="interactive",
+        )
+        assert len(tools) == 1
+        assert tools[0].name == "use_skill"
+        assert "planner" in catalog
