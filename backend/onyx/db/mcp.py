@@ -1,3 +1,4 @@
+from typing import Any
 from typing import cast
 from uuid import UUID
 
@@ -326,3 +327,69 @@ def delete_user_connection_configs_for_server(
         db_session.delete(config)
 
     db_session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Default MCP server tool sync
+# ---------------------------------------------------------------------------
+
+SYSTEM_MCP_OWNER = "system@onyx.internal"
+
+
+def upsert_default_mcp_tools(
+    mcp_server_id: int,
+    discovered_tools: list[Any],
+    db_session: Session,
+) -> None:
+    """Sync discovered MCP tools to the DB for a default (system) MCP server.
+
+    Creates new Tool records, updates changed ones, removes stale ones.
+    All tools are enabled by default (unlike user-added MCP tools).
+    """
+    from onyx.db.tools import create_tool__no_commit
+
+    # Get existing tools for this server
+    existing_tools = get_all_mcp_tools_for_server(mcp_server_id, db_session)
+    existing_by_name: dict[str, Any] = {t.name: t for t in existing_tools}
+    seen_names: set[str] = set()
+
+    for tool in discovered_tools:
+        tool_name = tool.name
+        if not tool_name:
+            continue
+
+        seen_names.add(tool_name)
+        description = tool.description or ""
+        annotations_title = tool.annotations.title if tool.annotations else None
+        display_name = tool.title or annotations_title or tool_name
+        input_schema = tool.inputSchema
+
+        if existing_tool := existing_by_name.get(tool_name):
+            # Update if changed
+            if existing_tool.description != description:
+                existing_tool.description = description
+            if existing_tool.display_name != display_name:
+                existing_tool.display_name = display_name
+            if existing_tool.mcp_input_schema != input_schema:
+                existing_tool.mcp_input_schema = input_schema
+            continue
+
+        # Create new tool — enabled by default for system MCP servers
+        new_tool = create_tool__no_commit(
+            name=tool_name,
+            description=description,
+            openapi_schema=None,
+            custom_headers=None,
+            user_id=None,
+            db_session=db_session,
+            passthrough_auth=False,
+            mcp_server_id=mcp_server_id,
+            enabled=True,
+        )
+        new_tool.display_name = display_name
+        new_tool.mcp_input_schema = input_schema
+
+    # Remove stale tools (no longer exposed by MCP server)
+    for name, tool in existing_by_name.items():
+        if name not in seen_names:
+            db_session.delete(tool)

@@ -51,6 +51,10 @@
     "@sentry/tracing": "^7.120.3",
     "@stripe/stripe-js": "^4.6.0",
     "@tanstack/react-table": "^8.21.3",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.0",
     "autoprefixer": "^10.4.14",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
@@ -99,10 +103,7 @@
     "uuid": "^9.0.1",
     "vaul": "^1.1.1",
     "yup": "^1.4.0",
-    "zustand": "^5.0.7",
-    "@tauri-apps/plugin-notification": "^2.0.0",
-    "@tauri-apps/plugin-updater": "^2.0.0",
-    "@tauri-apps/plugin-process": "^2.0.0"
+    "zustand": "^5.0.7"
   },
   "devDependencies": {
     "@chromatic-com/playwright": "^0.10.2",

@@ -246,7 +246,7 @@ def list_conversations_for_user(
                 "last_message_at": latest_message.created_at,
                 "unread_count": unread_count,
                 "goal": conversation.goal if conversation else "",
-                "goal_status": conversation.goal_status
+                "goal_status": conversation.goal_status.value
                 if conversation
                 else "active",
             }
@@ -464,7 +464,7 @@ def update_conversation_goal_status(
     conversation = db_session.get(InboxConversation, conversation_id)
     if conversation is None:
         return None
-    conversation.goal_status = status.value
+    conversation.goal_status = status
     db_session.commit()
     return conversation
 

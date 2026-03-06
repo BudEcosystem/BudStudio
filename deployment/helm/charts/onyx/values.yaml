@@ -978,6 +978,7 @@ configMap:
 
   BUD_FOUNDRY_API_BASE: "https://gateway.dev.bud.studio"
   BUD_FOUNDRY_APP_BASE: "https://app.dev.bud.studio"
+  BUD_DEFAULT_MCP_SERVERS: ""
 
 # Traefik IngressRoute Configuration
 # Enable this to expose Onyx through Traefik ingress controller
