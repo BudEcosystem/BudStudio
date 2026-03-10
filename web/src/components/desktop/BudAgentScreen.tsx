@@ -440,7 +440,7 @@ export function BudAgentScreen() {
           });
         },
 
-        onApprovalRequired: async (toolName, toolInput, toolCallId) => {
+        onApprovalRequired: async (toolName, toolInput, toolCallId, gatewayId) => {
           // Update the tool call status to show it's awaiting approval
           toolCallsRef.current = updateToolCallApprovalRequired(
             toolCallsRef.current,
@@ -532,6 +532,7 @@ export function BudAgentScreen() {
             toolName,
             toolInput,
             operationHash,
+            gatewayId,
           });
         },
 
@@ -626,14 +627,30 @@ export function BudAgentScreen() {
       // Persist "always allow" to the DB so it survives across sessions.
       // For local tools (bash, write_file, edit_file) we use the "__local__"
       // sentinel as the gateway_id in the shared AgentToolPermission table.
+      // For connector tools, use the gateway_id from the approval packet.
       // Look up the tool name from toolCallsRef (stable) instead of
       // bottomApproval (state that could be swapped by a new SSE packet).
       if (alwaysAllow) {
-        const toolName = toolCallsRef.current.find((tc) => tc.id === toolCallId)?.name;
+        // toolCallsRef lookup works for local tools (agent_local_tool_request has
+        // a tool_call_id) but NOT for connector tools (custom_tool_start has no id).
+        // Fall back to bottomApproval which always has the correct toolName.
+        const toolName = toolCallsRef.current.find((tc) => tc.id === toolCallId)?.name
+          ?? bottomApproval?.toolName;
         if (toolName && LOCAL_APPROVAL_TOOLS.has(toolName)) {
           setToolPermission(LOCAL_GATEWAY_ID, toolName, "always_allow").catch(
             (err) => console.error("Failed to persist tool permission:", err)
           );
+        } else if (toolName) {
+          // Connector tool — persist via gateway_id and mark for session auto-approval
+          const gwId = bottomApproval?.gatewayId;
+          if (gwId) {
+            setToolPermission(gwId, toolName, "always_allow").catch(
+              (err) => console.error("Failed to persist connector tool permission:", err)
+            );
+          }
+          // Also add to session-level auto-approval so the same tool with
+          // different params doesn't re-ask within the current session.
+          setAlwaysAllowTool(toolName);
         }
       }
 
@@ -659,7 +676,7 @@ export function BudAgentScreen() {
       // Clear bottom approval UI
       setBottomApproval(null);
     },
-    [currentSessionId, setAlwaysAllowOperation]
+    [currentSessionId, setAlwaysAllowOperation, bottomApproval, setAlwaysAllowTool]
   );
 
   /**

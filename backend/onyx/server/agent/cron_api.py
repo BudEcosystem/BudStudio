@@ -346,7 +346,7 @@ def get_pending(
                 id=str(n.id),
                 cron_job_id=str(n.cron_job_id),
                 cron_job_name=job_name,
-                status=n.status.value if hasattr(n.status, "value") else str(n.status),
+                status=(n.status.value if hasattr(n.status, "value") else str(n.status)).lower(),
                 result_summary=n.result_summary,
                 error_message=n.error_message,
                 skip_reason=n.skip_reason,

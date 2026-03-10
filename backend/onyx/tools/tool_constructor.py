@@ -199,7 +199,7 @@ def construct_tools(
     """Constructs tools based on persona configuration and available APIs.
 
     Will simply skip tools that are not allowed/available."""
-    from onyx.llm.factory import _get_fresh_oauth_token
+    from onyx.llm.factory import get_fresh_oauth_token
 
     tool_dict: dict[int, list[Tool]] = {}
 
@@ -207,7 +207,7 @@ def construct_tools(
     # Get user's OAuth token if available - fetch fresh from DB
     user_oauth_token = None
     if user:
-        user_oauth_token = _get_fresh_oauth_token(user)
+        user_oauth_token = get_fresh_oauth_token(user)
 
     for db_tool_model in persona.tools:
         # If allowed_tool_ids is specified, skip tools not in the allowed list

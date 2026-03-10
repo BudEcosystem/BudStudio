@@ -40,7 +40,7 @@ def _sanitize_schema(schema: dict[str, Any]) -> dict[str, Any]:
     if schema.get("type") == "array" and "items" not in schema:
         schema["items"] = {}
 
-    for key in ("properties", "definitions"):
+    for key in ("properties", "definitions", "$defs"):
         if key in schema and isinstance(schema[key], dict):
             for prop_name, prop_schema in schema[key].items():
                 if isinstance(prop_schema, dict):
@@ -58,6 +58,43 @@ def _sanitize_schema(schema: dict[str, Any]) -> dict[str, Any]:
             ]
 
     return schema
+
+
+def _needs_non_strict(schema: dict[str, Any]) -> bool:
+    """Return True if *schema* contains free-form objects (``additionalProperties: true``
+    without explicit ``properties``) that are incompatible with the Agents SDK
+    strict mode.  Strict mode forces ``additionalProperties: false`` which
+    would prevent the LLM from sending arbitrary key-value pairs.
+    """
+    if not isinstance(schema, dict):
+        return False
+
+    if (
+        schema.get("type") == "object"
+        and schema.get("additionalProperties")
+    ):
+        return True
+
+    for key in ("properties", "definitions", "$defs"):
+        sub = schema.get(key)
+        if isinstance(sub, dict):
+            for v in sub.values():
+                if isinstance(v, dict) and _needs_non_strict(v):
+                    return True
+
+    for key in ("items", "additionalProperties"):
+        sub = schema.get(key)
+        if isinstance(sub, dict) and _needs_non_strict(sub):
+            return True
+
+    for key in ("allOf", "anyOf", "oneOf"):
+        sub = schema.get(key)
+        if isinstance(sub, list):
+            for item in sub:
+                if isinstance(item, dict) and _needs_non_strict(item):
+                    return True
+
+    return False
 
 
 # Type alias matching the Agents SDK on_invoke_tool signature
@@ -124,6 +161,7 @@ def create_default_mcp_tools(
                     packet_queue=packet_queue,
                     step_number_fn=step_number_fn,
                 ),
+                strict_json_schema=not _needs_non_strict(params_schema),
             )
             tools.append(tool)
 

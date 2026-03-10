@@ -22,6 +22,7 @@ export interface BottomApprovalState {
   toolName: string;
   toolInput: Record<string, unknown>;
   operationHash: string;
+  gatewayId: string | null;
 }
 
 /**

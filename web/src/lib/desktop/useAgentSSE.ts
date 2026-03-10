@@ -37,7 +37,8 @@ export interface AgentEventCallbacks {
   onApprovalRequired?: (
     toolName: string,
     toolInput: Record<string, unknown>,
-    toolCallId: string
+    toolCallId: string,
+    gatewayId: string | null
   ) => void;
   /** Called when streaming completes (stop packet) */
   onComplete?: (content: string) => void;
@@ -251,11 +252,13 @@ function handlePacket(
         tool_name: string;
         tool_input: Record<string, unknown> | null;
         tool_call_id: string;
+        gateway_id: string | null;
       };
       callbacks.onApprovalRequired?.(
         approvalObj.tool_name,
         approvalObj.tool_input || {},
-        approvalObj.tool_call_id
+        approvalObj.tool_call_id,
+        approvalObj.gateway_id ?? null
       );
       break;
     }

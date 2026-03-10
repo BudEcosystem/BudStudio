@@ -248,7 +248,7 @@ def list_conversations_for_user(
                 "goal": conversation.goal if conversation else "",
                 "goal_status": conversation.goal_status.value
                 if conversation
-                else "active",
+                else "ACTIVE",
             }
         )
 

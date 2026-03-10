@@ -187,14 +187,18 @@ class WebSearchProviderType(str, PyEnum):
 
 
 class AgentSessionStatus(str, PyEnum):
-    """Status of an agent session"""
+    """Status of an agent session.
 
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    STOPPED = "stopped"
-    COMPACTED = "compacted"
-    SUSPENDED = "suspended"
+    Values must be UPPERCASE to match what SQLAlchemy stores with
+    ``Enum(..., native_enum=False)`` (it persists ``.name``, not ``.value``).
+    """
+
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    STOPPED = "STOPPED"
+    COMPACTED = "COMPACTED"
+    SUSPENDED = "SUSPENDED"
 
     def is_terminal(self) -> bool:
         terminal_states = {
@@ -260,12 +264,12 @@ class AgentInboxMessageStatus(str, PyEnum):
 class AgentCronExecutionStatus(str, PyEnum):
     """Status of an agent cron job execution"""
 
-    PENDING = "pending"
-    RUNNING = "running"
-    SUSPENDED = "suspended"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUSPENDED = "SUSPENDED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
 
     def is_terminal(self) -> bool:
         terminal_states = {
@@ -277,18 +281,18 @@ class AgentCronExecutionStatus(str, PyEnum):
 
 
 class InboxGoalStatus(str, PyEnum):
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class InboxSenderType(str, PyEnum):
-    USER = "user"
-    AGENT = "agent"
+    USER = "USER"
+    AGENT = "AGENT"
 
 
 class InboxAgentProcessingStatus(str, PyEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"

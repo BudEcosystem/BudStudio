@@ -183,6 +183,7 @@ class AgentApprovalRequired(BaseObj):
     tool_name: str
     tool_input: dict | None = None
     tool_call_id: str
+    gateway_id: str | None = None
 
 
 class AgentSessionCompacted(BaseObj):
