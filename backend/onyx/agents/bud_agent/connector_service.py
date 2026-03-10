@@ -1,10 +1,10 @@
 """Connector service for BudAgent — discovers and wraps BudApp MCP tools.
 
 Provides FunctionTool factories that:
-1. Discover tools from the BudApp global MCP endpoint
-2. Filter by user-enabled connectors
+1. List tools per connector via the BudApp REST API
+2. Discover tool schemas from the MCP gateway
 3. Apply per-tool permission levels (always_allow / need_approval / blocked)
-4. Execute tools via the existing ``mcp_client.py`` helpers
+4. Execute tools via the MCP gateway
 """
 
 import json
@@ -16,11 +16,15 @@ from typing import Coroutine
 from uuid import UUID
 
 import redis
+from httpx import HTTPStatusError
+from httpx import RequestError
 
 from agents import FunctionTool
 from agents import RunContextWrapper
 
+from onyx.agents.bud_agent.budapp_client import fetch_tools_rest
 from onyx.agents.bud_agent.budapp_client import list_connectors
+from onyx.agents.bud_agent.mcp_service import _needs_non_strict
 from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
 from onyx.server.query_and_chat.streaming_models import CustomToolStart
@@ -30,10 +34,9 @@ from onyx.configs.model_configs import BUD_MCP_GATEWAY_URL
 from onyx.db.agent_connector import get_all_tool_permissions
 from onyx.db.agent_connector import get_connector_default_permissions
 from onyx.db.agent_connector import get_enabled_connector_ids
-from onyx.db.agent_connector import get_enabled_connector_slug_map
 from onyx.db.enums import AgentToolPermissionLevel
 from onyx.db.models import User
-from onyx.llm.factory import _get_fresh_oauth_token
+from onyx.llm.factory import get_fresh_oauth_token
 from onyx.tools.tool_implementations.mcp.mcp_client import call_mcp_tool
 from onyx.tools.tool_implementations.mcp.mcp_client import discover_mcp_tools
 from onyx.utils.logger import setup_logger
@@ -67,15 +70,17 @@ def create_connector_tools(
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
     step_number_fn: Callable[[], int] | None = None,
+    auto_approve: bool = False,
 ) -> list[FunctionTool]:
     """Create FunctionTool objects for all enabled BudApp connector tools.
 
     Steps:
     1. Get user's enabled gateway IDs from DB
-    2. Get user's tool permissions from DB
-    3. Discover all tools from the BudApp MCP endpoint
-    4. Filter to enabled gateways only
-    5. Create FunctionTool for each non-blocked tool with appropriate permission handling
+    2. Cross-check against BudApp's active connector list
+    3. For each valid connector, fetch its tool names via BudApp REST API
+       to build an exact tool_name → gateway_id mapping
+    4. Discover tool schemas from the MCP gateway
+    5. Create FunctionTool for each tool with appropriate permissions
 
     Returns an empty list if BudApp is unreachable or not configured.
     """
@@ -83,7 +88,7 @@ def create_connector_tools(
         return []
 
     # 1. Get OAuth token (needed for both BudApp REST and MCP calls)
-    access_token = _get_fresh_oauth_token(user)
+    access_token = get_fresh_oauth_token(user)
     if not access_token:
         logger.warning("No OAuth token available for connector tools")
         return []
@@ -94,14 +99,12 @@ def create_connector_tools(
         return []
 
     # 3. Cross-check against BudApp's active connector list.
-    #    Only include connectors that BudApp still reports as available.
     try:
         remote_connectors = list_connectors(access_token)
         remote_ids = {
             c.get("id", c.get("gateway_id", ""))
             for c in remote_connectors
         }
-        # Intersect: only keep locally enabled IDs that BudApp still knows about
         valid_ids = [gid for gid in enabled_ids if gid in remote_ids]
         if not valid_ids:
             logger.info(
@@ -125,19 +128,34 @@ def create_connector_tools(
             exc_info=True,
         )
 
-    # 4. Get slug -> gateway_id mapping (for matching MCP tool name prefixes)
-    #    Filter to only valid (BudApp-confirmed) IDs.
-    slug_map = get_enabled_connector_slug_map(db_session, user.id)
-    enabled_set = set(enabled_ids)
-    slug_map = {
-        slug: gid for slug, gid in slug_map.items() if gid in enabled_set
-    }
+    # 4. For each valid connector, fetch its tool names via BudApp REST API.
+    #    This gives us an exact tool_name → gateway_id mapping — no slug
+    #    parsing needed.
+    tool_to_gateway: dict[str, str] = {}
+    for gw_id in enabled_ids:
+        try:
+            rest_tools = fetch_tools_rest(access_token, gw_id)
+            for rt in rest_tools:
+                tname = rt.get("name") or rt.get("tool_name") or ""
+                if tname:
+                    tool_to_gateway[tname] = gw_id
+        except (RequestError, HTTPStatusError):
+            logger.warning(
+                "Failed to fetch tool list for connector %s", gw_id,
+                exc_info=True,
+            )
+
+    logger.info(
+        "Fetched %d tool names from %d connector(s) via REST API",
+        len(tool_to_gateway),
+        len(enabled_ids),
+    )
 
     # 5. Get tool permissions and connector-level defaults
     permissions = get_all_tool_permissions(db_session, user.id)
     connector_defaults = get_connector_default_permissions(db_session, user.id)
 
-    # 6. Discover tools from BudApp MCP
+    # 6. Discover tool schemas from MCP gateway
     mcp_url = _get_mcp_url()
     headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -155,19 +173,42 @@ def create_connector_tools(
 
     for mcp_tool in mcp_tools:
         tool_name = mcp_tool.name
-        # Match tool name to a gateway via slug mapping or direct ID match
-        gateway_id = _extract_gateway_id(tool_name, enabled_set, slug_map)
-        if gateway_id is None:
-            continue
+        gateway_id = tool_to_gateway.get(tool_name)
 
-        # Three-tier permission resolution:
+        # Permission resolution:
         # 1. Per-tool override  2. Connector default  3. Global fallback
-        perm_key = f"{gateway_id}:{tool_name}"
-        perm_level = permissions.get(perm_key)
-        if perm_level is None:
-            perm_level = connector_defaults.get(gateway_id)
+        # When REST→MCP name mapping misses, search all enabled gateways.
+        perm_level: AgentToolPermissionLevel | None = None
+        if gateway_id is not None:
+            perm_key = f"{gateway_id}:{tool_name}"
+            perm_level = permissions.get(perm_key)
+            if perm_level is None:
+                perm_level = connector_defaults.get(gateway_id)
+        else:
+            # REST API didn't list this tool — search permissions across
+            # all enabled gateways by tool_name.
+            for gw_id in enabled_ids:
+                perm_level = permissions.get(f"{gw_id}:{tool_name}")
+                if perm_level is not None:
+                    gateway_id = gw_id
+                    break
+            # Fall back to connector-level defaults
+            if perm_level is None:
+                for gw_id in enabled_ids:
+                    perm_level = connector_defaults.get(gw_id)
+                    if perm_level is not None:
+                        gateway_id = gw_id
+                        break
+            # If still no gateway, default to the sole enabled gateway
+            # so the frontend can persist permissions later.
+            if gateway_id is None and len(enabled_ids) == 1:
+                gateway_id = enabled_ids[0]
         if perm_level is None:
             perm_level = AgentToolPermissionLevel.NEED_APPROVAL
+        # In headless modes (cron, inbox) there's no frontend to approve,
+        # so auto-approve all non-blocked tools.
+        if auto_approve and perm_level == AgentToolPermissionLevel.NEED_APPROVAL:
+            perm_level = AgentToolPermissionLevel.ALWAYS_ALLOW
         if perm_level == AgentToolPermissionLevel.BLOCKED:
             continue
 
@@ -182,6 +223,7 @@ def create_connector_tools(
             name=tool_name,
             description=mcp_tool.description or f"Connector tool: {tool_name}",
             params_json_schema=params_schema,
+            strict_json_schema=not _needs_non_strict(params_schema),
             on_invoke_tool=_make_invoke_handler(
                 tool_name=tool_name,
                 mcp_url=mcp_url,
@@ -191,6 +233,7 @@ def create_connector_tools(
                 packet_queue=packet_queue,
                 redis_client=redis_client,
                 step_number_fn=step_number_fn,
+                gateway_id=gateway_id,
             ),
         )
         tools.append(tool)
@@ -204,37 +247,6 @@ def create_connector_tools(
     return tools
 
 
-def _extract_gateway_id(
-    tool_name: str,
-    enabled_ids: set[str],
-    slug_map: dict[str, str] | None = None,
-) -> str | None:
-    """Try to match a tool name to an enabled gateway ID.
-
-    BudApp MCP tool names are prefixed with the connector slug (e.g.
-    ``github-list-issues``).  The ``slug_map`` maps connector slugs
-    (like ``github``) to their hex-UUID gateway IDs stored in the DB.
-
-    Falls back to direct gateway ID prefix matching for backward
-    compatibility.
-    """
-    # Primary: match via slug map (slug is the tool name prefix, lowercased)
-    if slug_map:
-        for sep in ("-", "__", "_"):
-            parts = tool_name.split(sep, 1)
-            if len(parts) > 1 and parts[0].lower() in slug_map:
-                gw_id = slug_map[parts[0].lower()]
-                if gw_id in enabled_ids:
-                    return gw_id
-
-    # Fallback: direct gateway ID match (if IDs happen to be prefixes)
-    for gw_id in enabled_ids:
-        if tool_name.startswith(gw_id):
-            return gw_id
-
-    return None
-
-
 def _make_invoke_handler(
     tool_name: str,
     mcp_url: str,
@@ -244,6 +256,7 @@ def _make_invoke_handler(
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
     step_number_fn: Callable[[], int] | None = None,
+    gateway_id: str | None = None,
 ) -> InvokeHandler:
     """Create an async handler for a connector tool."""
 
@@ -257,7 +270,7 @@ def _make_invoke_handler(
     ) -> str:
         tool_call_id = str(uuid.uuid4())
         tool_input: dict[str, Any] = (
-            json.loads(json_string) if json_string else {}
+            json.loads(json_string) if json_string and json_string.strip() else {}
         )
 
         # Strip empty/null optional args that LLMs often hallucinate.
@@ -281,6 +294,7 @@ def _make_invoke_handler(
                 packet_queue=packet_queue,
                 redis_client=redis_client,
                 step_number_fn=step_number_fn,
+                gateway_id=gateway_id,
             )
             if not approved:
                 error_msg = f"Tool '{tool_name}' was denied by the user."
@@ -334,12 +348,14 @@ def _wait_for_approval(
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
     step_number_fn: Callable[[], int] | None = None,
+    gateway_id: str | None = None,
 ) -> bool:
     """Emit approval request and block until user responds via Redis."""
     approval_obj = AgentApprovalRequired(
         tool_name=tool_name,
         tool_input=tool_input,
         tool_call_id=tool_call_id,
+        gateway_id=gateway_id,
     )
     ind = step_number_fn() if step_number_fn else 0
     packet_queue.put(Packet(ind=ind, obj=approval_obj))

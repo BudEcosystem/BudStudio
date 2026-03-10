@@ -6,6 +6,8 @@ from typing import Union
 from agents import FunctionTool
 from agents import RunContextWrapper
 
+from onyx.agents.bud_agent.mcp_service import _needs_non_strict
+
 from onyx.agents.agent_search.dr.models import IterationAnswer
 from onyx.agents.agent_search.dr.models import IterationInstructions
 from onyx.chat.turn.models import ChatTurnContext
@@ -97,10 +99,12 @@ async def _tool_run_wrapper(
 
 
 def custom_or_mcp_tool_to_function_tool(tool: Tool) -> FunctionTool:
+    raw_schema = tool.tool_definition()["function"]["parameters"]
     return FunctionTool(
         name=tool.name,
         description=tool.description,
-        params_json_schema=tool.tool_definition()["function"]["parameters"],
+        params_json_schema=raw_schema,
+        strict_json_schema=not _needs_non_strict(raw_schema),
         on_invoke_tool=lambda context, json_string: _tool_run_wrapper(
             context, tool, json_string
         ),

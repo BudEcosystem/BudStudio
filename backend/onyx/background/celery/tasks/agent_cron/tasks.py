@@ -298,6 +298,16 @@ def execute_agent_cron_job(
             )
 
         # Inject meaningful output into the user's active interactive session
+        _inject_conditions = {
+            "skipped": run_result.skipped,
+            "error": run_result.error,
+            "has_response_text": bool(run_result.response_text),
+            "response_text_len": len(run_result.response_text) if run_result.response_text else 0,
+            "suspended": run_result.suspended,
+        }
+        task_logger.info(
+            f"Cron injection check for {execution_id}: {_inject_conditions}"
+        )
         if (
             not run_result.skipped
             and not run_result.error
@@ -306,9 +316,14 @@ def execute_agent_cron_job(
         ):
             try:
                 active_session = get_active_session_for_user(
-                    db_session, user.id
+                    db_session, user.id,
+                    exclude_session_id=session.id,
                 )
-                if active_session and active_session.id != session.id:
+                task_logger.info(
+                    f"Cron injection: active_session={active_session.id if active_session else None}, "
+                    f"cron_session={session.id}, user={user.id}"
+                )
+                if active_session:
                     add_session_message(
                         db_session=db_session,
                         session_id=active_session.id,
@@ -323,6 +338,14 @@ def execute_agent_cron_job(
                     _redis.publish(
                         f"session_message:{active_session.id}",
                         "new_message",
+                    )
+                    task_logger.info(
+                        f"Cron injection: message added to session {active_session.id} "
+                        f"and Redis event published"
+                    )
+                else:
+                    task_logger.info(
+                        f"Cron injection: skipped — no active session found for user {user.id}"
                     )
             except Exception:
                 task_logger.warning(

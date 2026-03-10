@@ -345,7 +345,7 @@ export function InboxView() {
                         </div>
                       ))}
                   </div>
-                  {conversationDetail.goal_status === "active" && (
+                  {(conversationDetail.goal_status === "active" || conversationDetail.goal_status === "ACTIVE") && (
                     <div className="flex gap-1.5 flex-shrink-0">
                       <button
                         onClick={handleCompleteGoal}

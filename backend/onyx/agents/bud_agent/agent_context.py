@@ -192,6 +192,7 @@ def build_agent_run_context(
         packet_queue=resolved_packet_queue,
         redis_client=resolved_redis,
         step_number_fn=resolved_step_number_fn,
+        auto_approve=mode in (AgentExecutionMode.CRON, AgentExecutionMode.INBOX),
     )
     default_mcp_tools = create_default_mcp_tools(
         db_session=db_session,

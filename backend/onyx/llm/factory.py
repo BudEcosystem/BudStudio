@@ -34,7 +34,7 @@ from onyx.utils.long_term_log import LongTermLogger
 logger = setup_logger()
 
 
-def _get_fresh_oauth_token(user: User) -> str | None:
+def get_fresh_oauth_token(user: User) -> str | None:
     """Fetch fresh OAuth access token from database, refreshing if expired.
 
     The user object loaded from session may have stale oauth_accounts data.
@@ -113,7 +113,7 @@ def _sync_bud_foundry_models_to_db(user: User, api_base: str) -> None:
     from onyx.db.llm import update_bud_foundry_model_configurations
 
     # Fetch fresh token from database
-    access_token = _get_fresh_oauth_token(user)
+    access_token = get_fresh_oauth_token(user)
     if not access_token:
         logger.warning("No access token available for Bud Foundry model sync")
         return
@@ -314,7 +314,7 @@ def _resolve_bud_foundry_model(
         return None
 
     # Get access token for API calls - fetch fresh from DB
-    user_oauth_token = _get_fresh_oauth_token(user)
+    user_oauth_token = get_fresh_oauth_token(user)
     if not user_oauth_token:
         logger.warning("No access token available for Bud Foundry model resolution")
         return None
@@ -413,7 +413,7 @@ def get_llms_for_persona(
     # Get user's OAuth token for Bud Foundry provider - fetch fresh from DB
     user_oauth_token = None
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user:
-        user_oauth_token = _get_fresh_oauth_token(user)
+        user_oauth_token = get_fresh_oauth_token(user)
 
     # Resolve "auto" model for Bud Foundry provider
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME:
@@ -449,7 +449,7 @@ def get_llms_for_persona(
     if is_bud_foundry and user and llm_provider.api_base:
         _ensure_bud_foundry_initialized(user)
         # Re-fetch token — initialization may have refreshed it on 401
-        user_oauth_token = _get_fresh_oauth_token(user)
+        user_oauth_token = get_fresh_oauth_token(user)
 
     def _create_llm(model: str) -> LLM:
         # For Bud Foundry, use OAuth token as api_key since litellm requires it
@@ -545,7 +545,7 @@ def get_llm_model_and_settings_for_persona(
     api_key = llm_provider.api_key
     if is_bud_foundry and user:
         _ensure_bud_foundry_initialized(user)
-        user_oauth_token = _get_fresh_oauth_token(user)
+        user_oauth_token = get_fresh_oauth_token(user)
         if user_oauth_token:
             api_key = user_oauth_token
 
@@ -722,7 +722,7 @@ def get_default_llms(
     # Get user's OAuth token for Bud Foundry provider - fetch fresh from DB
     user_oauth_token = None
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user:
-        user_oauth_token = _get_fresh_oauth_token(user)
+        user_oauth_token = get_fresh_oauth_token(user)
 
     # Resolve "auto" model for Bud Foundry provider
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and model_name == "auto":
@@ -762,7 +762,7 @@ def get_default_llms(
     if is_bud_foundry and user and llm_provider.api_base:
         _ensure_bud_foundry_initialized(user)
         # Re-fetch token — initialization may have refreshed it on 401
-        user_oauth_token = _get_fresh_oauth_token(user)
+        user_oauth_token = get_fresh_oauth_token(user)
 
     def _create_llm(model: str) -> LLM:
         return llm_from_provider(

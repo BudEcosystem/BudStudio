@@ -5,7 +5,10 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from httpx import HTTPStatusError
+from httpx import RequestError
 from pydantic import BaseModel
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
 from onyx.agents.bud_agent.budapp_client import disconnect_oauth
@@ -23,8 +26,9 @@ from onyx.db.agent_connector import upsert_connector_preference
 from onyx.db.agent_connector import upsert_tool_permission
 from onyx.db.engine.sql_engine import get_session
 from onyx.db.enums import AgentToolPermissionLevel
+from onyx.db.models import AgentConnectorPreference
 from onyx.db.models import User
-from onyx.llm.factory import _get_fresh_oauth_token
+from onyx.llm.factory import get_fresh_oauth_token
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -61,7 +65,7 @@ def list_agent_connectors(
     db_session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
     """List connectors from BudApp merged with user preferences."""
-    token = _get_fresh_oauth_token(user)
+    token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
@@ -76,19 +80,51 @@ def list_agent_connectors(
     prefs = get_connector_preferences(db_session, user.id)
     prefs_by_gw: dict[str, Any] = {p.gateway_id: p for p in prefs}
 
-    # Merge
+    # Verify actual per-user token status with BudApp.
+    # The list endpoint's oauth_connected is workspace-level (not per-user),
+    # so we must check each connector's token-status individually.
+    token_status_cache: dict[str, bool] = {}
+    for connector in remote_connectors:
+        gw_id = connector.get("id", connector.get("gateway_id", ""))
+        auth_type = str(connector.get("auth_type", "") or "").upper()
+        if auth_type == "NONE":
+            token_status_cache[gw_id] = True
+            continue
+        try:
+            status = get_token_status(token, gw_id)
+            token_status_cache[gw_id] = bool(status.get("connected", False))
+        except (RequestError, HTTPStatusError):
+            logger.debug(
+                "Token status check failed for %s, falling back to DB", gw_id
+            )
+            token_status_cache[gw_id] = False
+
+    # Merge remote connectors with local preferences.
+    # Track whether any DB updates are needed so we can batch-commit.
+    dirty = False
     result: list[dict[str, Any]] = []
     for connector in remote_connectors:
         gw_id = connector.get("id", connector.get("gateway_id", ""))
         gw_name = connector.get("name", "")
         pref = prefs_by_gw.get(gw_id)
 
-        # Determine OAuth status:
-        # - If the user has a DB preference, trust it (they may have disconnected)
-        # - If no preference exists, fall back to BudApp's reported status
-        budapp_oauth = bool(connector.get("oauth_connected", False))
-        if pref:
-            oauth_done = pref.oauth_completed
+        # Use verified token status from BudApp
+        oauth_done = token_status_cache.get(gw_id, False)
+
+        # Sync our DB oauth_completed with actual BudApp status.
+        # Only update the flag — don't touch enabled or other fields.
+        if pref and pref.oauth_completed != oauth_done:
+            logger.debug(
+                "Syncing oauth_completed for %s (%s): DB=%s -> BudApp=%s",
+                gw_name, gw_id, pref.oauth_completed, oauth_done,
+            )
+            db_session.execute(
+                sa_update(AgentConnectorPreference)  # type: ignore[arg-type]
+                .where(AgentConnectorPreference.id == pref.id)
+                .values(oauth_completed=oauth_done)
+            )
+            pref.oauth_completed = oauth_done
+            dirty = True
             # Backfill gateway_name if it was missing
             if gw_name and not pref.gateway_name:
                 upsert_connector_preference(
@@ -97,18 +133,6 @@ def list_agent_connectors(
                     gateway_id=gw_id,
                     gateway_name=gw_name,
                     enabled=pref.enabled,
-                )
-        else:
-            oauth_done = budapp_oauth
-            # Seed a preference row so future toggles preserve OAuth state
-            if budapp_oauth:
-                upsert_connector_preference(
-                    db_session=db_session,
-                    user_id=user.id,
-                    gateway_id=gw_id,
-                    gateway_name=gw_name,
-                    enabled=False,
-                    oauth_completed=True,
                 )
 
         default_perm = (
@@ -124,6 +148,27 @@ def list_agent_connectors(
             "oauth_completed": oauth_done,
             "default_permission": default_perm,
         })
+
+    # Clean up stale preferences for connectors no longer in BudApp.
+    # Disable them so they don't pollute tool discovery.
+    remote_ids = {
+        c.get("id", c.get("gateway_id", "")) for c in remote_connectors
+    }
+    for gw_id, pref in prefs_by_gw.items():
+        if gw_id not in remote_ids and (pref.enabled or pref.oauth_completed):
+            logger.info(
+                "Disabling stale connector %s (%s) — removed from BudApp",
+                pref.gateway_name, gw_id,
+            )
+            db_session.execute(
+                sa_update(AgentConnectorPreference)  # type: ignore[arg-type]
+                .where(AgentConnectorPreference.id == pref.id)
+                .values(enabled=False, oauth_completed=False)
+            )
+            dirty = True
+
+    if dirty:
+        db_session.commit()
 
     return result
 
@@ -190,7 +235,7 @@ def initiate_connector_oauth(
     db_session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Start the OAuth flow for a connector."""
-    token = _get_fresh_oauth_token(user)
+    token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
@@ -219,7 +264,7 @@ def get_connector_oauth_status(
     db_session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Check the OAuth token status for a connector."""
-    token = _get_fresh_oauth_token(user)
+    token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
@@ -248,7 +293,7 @@ def complete_connector_oauth(
     Verifies with BudApp that the token is actually active before marking
     in our DB (prevents the frontend from falsely claiming success).
     """
-    token = _get_fresh_oauth_token(user)
+    token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
@@ -279,7 +324,7 @@ def disconnect_connector_oauth(
     db_session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Disconnect / revoke OAuth for a connector."""
-    token = _get_fresh_oauth_token(user)
+    token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
@@ -305,7 +350,7 @@ def list_connector_tools(
     db_session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
     """List tools for a connector with user permission levels."""
-    token = _get_fresh_oauth_token(user)
+    token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 

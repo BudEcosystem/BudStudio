@@ -695,7 +695,7 @@ def get_bud_foundry_available_models(
     This endpoint uses the user's Keycloak/OIDC token to authenticate with
     the Bud Foundry API, which returns only the models the user has access to.
     """
-    from onyx.llm.factory import _get_fresh_oauth_token
+    from onyx.llm.factory import get_fresh_oauth_token
 
     # Get user's OAuth token - fetch fresh from database
     if not user:
@@ -704,7 +704,7 @@ def get_bud_foundry_available_models(
             detail="User must be authenticated with OAuth to fetch Bud Foundry models",
         )
 
-    user_oauth_token = _get_fresh_oauth_token(user)
+    user_oauth_token = get_fresh_oauth_token(user)
     if not user_oauth_token:
         raise HTTPException(
             status_code=401,

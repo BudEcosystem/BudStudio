@@ -231,7 +231,6 @@ async def _call_mcp_client_function_async(
 
 def process_mcp_result(call_tool_result: CallToolResult) -> str:
     """Flatten MCP CallToolResult->text (prefers text content blocks)."""
-    # TODO: use structured_content if available
     parts = []
     for content_block in call_tool_result.content:
         if content_block.type == ContentBlockTypes.TEXT.value:
@@ -239,21 +238,48 @@ def process_mcp_result(call_tool_result: CallToolResult) -> str:
         if content_block.type == ContentBlockTypes.RESOURCE.value:
             if isinstance(content_block.resource, TextResourceContents):
                 parts.append(content_block.resource.text or "")
-            # TODO: handle blob resource content
         if content_block.type == ContentBlockTypes.RESOURCE_LINK.value:
             parts.append(
                 f"link: {content_block.uri} title: {content_block.title} description: {content_block.description}"
             )
-        # TODO: handle other content block types
 
-    return "\n\n".join(p for p in parts if p) or str(call_tool_result.structuredContent)
+    joined = "\n\n".join(p for p in parts if p)
+    if joined:
+        return joined
+
+    # Fall back to structuredContent if text content blocks were empty
+    if call_tool_result.structuredContent:
+        return str(call_tool_result.structuredContent)
+
+    # No content at all — log for debugging and return a clear message
+    logger.warning(
+        "MCP tool returned empty result: content_blocks=%d, isError=%s",
+        len(call_tool_result.content),
+        call_tool_result.isError,
+    )
+    if call_tool_result.isError:
+        return "Tool returned an error with no details."
+    return "Tool returned an empty response (no data)."
 
 
 def _call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> MCPClientFunction[str]:
     async def call_tool(session: ClientSession) -> str:
         await session.initialize()
         result = await session.call_tool(tool_name, arguments)
-        return process_mcp_result(result)
+        processed = process_mcp_result(result)
+        if not processed or processed == "Tool returned an empty response (no data).":
+            logger.warning(
+                "MCP tool '%s' returned empty/no-data. "
+                "content=%r, structuredContent=%r, isError=%s",
+                tool_name,
+                [
+                    {"type": cb.type, "text": getattr(cb, "text", None)}
+                    for cb in result.content
+                ],
+                result.structuredContent,
+                result.isError,
+            )
+        return processed
 
     return call_tool
 
