@@ -5,6 +5,8 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from httpx import HTTPStatusError
+from httpx import RequestError
 from pydantic import BaseModel
 from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
@@ -91,7 +93,7 @@ def list_agent_connectors(
         try:
             status = get_token_status(token, gw_id)
             token_status_cache[gw_id] = bool(status.get("connected", False))
-        except Exception:
+        except (RequestError, HTTPStatusError):
             logger.debug(
                 "Token status check failed for %s, falling back to DB", gw_id
             )

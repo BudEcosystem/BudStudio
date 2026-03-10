@@ -16,6 +16,8 @@ from typing import Coroutine
 from uuid import UUID
 
 import redis
+from httpx import HTTPStatusError
+from httpx import RequestError
 
 from agents import FunctionTool
 from agents import RunContextWrapper
@@ -137,7 +139,7 @@ def create_connector_tools(
                 tname = rt.get("name") or rt.get("tool_name") or ""
                 if tname:
                     tool_to_gateway[tname] = gw_id
-        except Exception:
+        except (RequestError, HTTPStatusError):
             logger.warning(
                 "Failed to fetch tool list for connector %s", gw_id,
                 exc_info=True,
