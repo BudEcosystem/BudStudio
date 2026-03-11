@@ -217,7 +217,11 @@ def format_skill_catalog(skills: list[SkillDefinition]) -> str:
 
     lines = [
         "## Available Skills",
-        "Use `use_skill` to activate a skill when it matches the user's request.",
+        "IMPORTANT: When a user's request matches a skill below, you MUST call "
+        "`use_skill` with the skill slug FIRST before using the underlying tools "
+        "directly. Skills provide the correct workflow and best practices. "
+        "Give higher priority to skills over tools. If a skill matches the "
+        "user's intent, use the skill when the complexity is higher than a single tool call.",
         "",
     ]
     for skill in skills:

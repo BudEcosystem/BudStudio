@@ -539,6 +539,14 @@ class BudAgentOrchestrator:
                     if isinstance(getattr(ev, "item", None), ToolCallItem):
                         has_tool_calls = True
                         self._tool_call_count += 1
+                        raw = getattr(ev.item, "raw_item", None)
+                        tool_name = getattr(raw, "name", None) or (raw.get("name") if isinstance(raw, dict) else None) or "unknown"
+                        logger.info(
+                            "Tool call #%d: %s (session %s)",
+                            self._tool_call_count,
+                            tool_name,
+                            self._session_id,
+                        )
 
                 if stream.streamed is None:
                     break

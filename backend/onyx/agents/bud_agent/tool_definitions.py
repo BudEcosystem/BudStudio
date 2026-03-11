@@ -589,8 +589,9 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "manage_cron": {
         "name": "manage_cron",
         "description": (
-            "Manage your scheduled cron jobs. You can create, list, update, "
-            "and delete recurring tasks that run automatically on a schedule."
+            "Low-level cron job management. IMPORTANT: Before calling this tool, "
+            "you MUST first call use_skill with skill_slug='schedule' to get the "
+            "correct workflow. Do NOT call manage_cron directly."
         ),
         "parameters": {
             "type": "object",
