@@ -36,7 +36,7 @@ import SvgCopy from "@/icons/copy";
 import SvgCheck from "@/icons/check";
 import SvgArrowWallRight from "@/icons/arrow-wall-right";
 import SvgSearchMenu from "@/icons/search-menu";
-import SvgEdit from "@/icons/edit";
+import SvgRefreshCw from "@/icons/refresh-cw";
 import Text from "@/refresh-components/texts/Text";
 import { ChatDocumentDisplay } from "@/app/chat/components/documentSidebar/ChatDocumentDisplay";
 import { removeDuplicateDocs } from "@/lib/documentUtils";
@@ -236,6 +236,7 @@ export function BudAgentScreen() {
     addMessage,
     updateMessage,
     clearCurrentSession,
+    createSession,
     deleteSession,
     sessionPreferences,
     setAlwaysAllowTool,
@@ -818,7 +819,7 @@ export function BudAgentScreen() {
    * Stops any in-progress agent, deletes the session on the backend,
    * and resets local state back to the welcome screen.
    */
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
     // Stop any running agent first
     if (isProcessing) {
       abort();
@@ -838,7 +839,27 @@ export function BudAgentScreen() {
 
     // Reset all chat interaction state
     resetAll();
-  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession, resetAll]);
+
+    // Create a new backend session so the next message has a valid sessionId
+    try {
+      const resp = await fetch("/api/agent/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: null, workspace_path: null }),
+      });
+      if (resp.ok) {
+        const data = (await resp.json()) as { session_id?: string };
+        if (data.session_id) {
+          createSession(data.session_id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create new session after clear:", err);
+    }
+    // If session creation failed, the user will see the welcome screen.
+    // The next handleSubmit call will log "No active session available"
+    // and the user can retry or reload.
+  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession, resetAll, createSession]);
 
   return (
     <div
@@ -874,8 +895,8 @@ export function BudAgentScreen() {
       {messages.length > 0 && (
         <div className="absolute top-3 right-3 z-30">
           <IconButton
-            icon={SvgEdit}
-            tooltip="New Chat"
+            icon={SvgRefreshCw}
+            tooltip="Clear Session"
             tertiary
             onClick={handleNewChat}
           />
