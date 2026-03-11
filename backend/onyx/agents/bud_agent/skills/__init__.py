@@ -221,7 +221,7 @@ def format_skill_catalog(skills: list[SkillDefinition]) -> str:
         "`use_skill` with the skill slug FIRST before using the underlying tools "
         "directly. Skills provide the correct workflow and best practices. "
         "Give higher priority to skills over tools. If a skill matches the "
-        "user's intent, use the skill when the complexity is higher than a single tool call.",
+        "user's intent, you MUST use the skill.",
         "",
     ]
     for skill in skills:
