@@ -852,6 +852,8 @@ export function BudAgentScreen() {
         if (data.session_id) {
           createSession(data.session_id);
         }
+      } else {
+        console.error(`Failed to create new session. Status: ${resp.status}`, await resp.text());
       }
     } catch (err) {
       console.error("Failed to create new session after clear:", err);
