@@ -23,6 +23,7 @@ from onyx.db.mcp import SYSTEM_MCP_OWNER
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
 from onyx.server.query_and_chat.streaming_models import CustomToolStart
 from onyx.server.query_and_chat.streaming_models import Packet
+from onyx.server.query_and_chat.streaming_models import SectionEnd
 from onyx.tools.tool_implementations.mcp.mcp_client import call_mcp_tool
 from onyx.utils.logger import setup_logger
 
@@ -214,6 +215,7 @@ def _make_invoke_handler(
                 response_type="error",
                 data=error_msg,
             ))
+            _emit(SectionEnd())
             return error_msg
 
         _emit(CustomToolDelta(
@@ -221,6 +223,7 @@ def _make_invoke_handler(
             response_type="text",
             data=result,
         ))
+        _emit(SectionEnd())
         return result
 
     return handler

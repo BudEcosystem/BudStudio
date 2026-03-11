@@ -29,6 +29,7 @@ from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
 from onyx.server.query_and_chat.streaming_models import CustomToolStart
 from onyx.server.query_and_chat.streaming_models import Packet
+from onyx.server.query_and_chat.streaming_models import SectionEnd
 from onyx.configs.model_configs import BUD_FOUNDRY_APP_BASE
 from onyx.configs.model_configs import BUD_MCP_GATEWAY_URL
 from onyx.db.agent_connector import get_all_tool_permissions
@@ -305,6 +306,7 @@ def _make_invoke_handler(
                         data=error_msg,
                     )
                 )
+                _emit(SectionEnd())
                 return error_msg
 
         # Execute via MCP
@@ -325,6 +327,7 @@ def _make_invoke_handler(
                     data=error_msg,
                 )
             )
+            _emit(SectionEnd())
             return error_msg
 
         # Emit result
@@ -335,6 +338,7 @@ def _make_invoke_handler(
                 data=result,
             )
         )
+        _emit(SectionEnd())
         return result
 
     return handler
