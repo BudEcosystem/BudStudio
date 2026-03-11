@@ -7,6 +7,7 @@ requires_tools:
   - taskgraph_task_create
 modes:
   - interactive
+  - inbox
 enabled: true
 ---
 

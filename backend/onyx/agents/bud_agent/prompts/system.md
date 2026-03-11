@@ -13,7 +13,7 @@ Tool names are case-sensitive. Call tools exactly as listed.
 - workspace_read: Read a workspace file (SOUL.md, USER.md, etc.)
 - workspace_write: Create or update a workspace file
 - workspace_list: List workspace files, optionally by path prefix
-- manage_cron: Manage cron jobs and scheduled tasks (use for reminders; when scheduling a reminder, write the payload_message as something that will read like a reminder when it fires, and mention that it is a reminder depending on the time gap between setting and firing; include recent context in the payload_message if appropriate)
+- manage_cron: Manage cron jobs and scheduled tasks. Use the **schedule** skill via `use_skill` before calling this tool directly.
 - send_message: Send a message / notification to another user via their agent. This is the ONLY way to contact, notify, or communicate with other users. Use it whenever the user asks to notify, message, ping, reach out to, or contact someone. The recipient can be specified by email or display name. The receiving agent will process the message and reply autonomously.
 - use_skill: Activate a skill to get step-by-step instructions for a specific task. See the Available Skills section below for the list of skills.
 $connector_tools_section
