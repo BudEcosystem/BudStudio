@@ -7,6 +7,7 @@ overhead — tool definitions come from Postgres.
 
 import copy
 import json
+import uuid
 from queue import Queue
 from typing import Any
 from typing import Callable
@@ -17,6 +18,8 @@ from agents import FunctionTool
 from agents import RunContextWrapper
 from sqlalchemy.orm import Session
 
+from onyx.db.agent import add_tool_message
+from onyx.db.agent import update_tool_message_result
 from onyx.db.mcp import get_all_mcp_tools_for_server
 from onyx.db.mcp import get_mcp_servers_by_owner
 from onyx.db.mcp import SYSTEM_MCP_OWNER
@@ -161,6 +164,8 @@ def create_default_mcp_tools(
                     server_url=server.server_url,
                     packet_queue=packet_queue,
                     step_number_fn=step_number_fn,
+                    db_session=db_session,
+                    session_id=session_id,
                 ),
                 strict_json_schema=not _needs_non_strict(params_schema),
             )
@@ -179,16 +184,21 @@ def _make_invoke_handler(
     server_url: str,
     packet_queue: Queue[Any],
     step_number_fn: Callable[[], int] | None = None,
+    db_session: Session | None = None,
+    session_id: UUID | None = None,
 ) -> InvokeHandler:
     """Create an async handler that executes an MCP tool call."""
-
-    def _emit(obj: Any) -> None:
-        ind = step_number_fn() if step_number_fn else 0
-        packet_queue.put(Packet(ind=ind, obj=obj))
 
     async def handler(
         _ctx: RunContextWrapper[Any], json_string: str
     ) -> str:
+        # Get the step number once for this entire tool call so all
+        # packets share the same ind.
+        tool_step = step_number_fn() if step_number_fn else 0
+
+        def _emit(obj: Any) -> None:
+            packet_queue.put(Packet(ind=tool_step, obj=obj))
+
         tool_input: dict[str, Any] = (
             json.loads(json_string) if json_string else {}
         )
@@ -198,7 +208,24 @@ def _make_invoke_handler(
             if v is not None and v != ""
         }
 
+        tool_call_id = str(uuid.uuid4())
         _emit(CustomToolStart(tool_name=tool_name))
+
+        # Persist tool message to DB
+        if db_session and session_id:
+            try:
+                add_tool_message(
+                    db_session=db_session,
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    tool_call_id=tool_call_id,
+                    step_number=tool_step,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to persist MCP tool message", exc_info=True
+                )
 
         try:
             result = call_mcp_tool(
@@ -216,6 +243,19 @@ def _make_invoke_handler(
                 data=error_msg,
             ))
             _emit(SectionEnd())
+            # Update DB with error
+            if db_session and session_id:
+                try:
+                    update_tool_message_result(
+                        db_session=db_session,
+                        session_id=session_id,
+                        tool_call_id=tool_call_id,
+                        tool_error=error_msg,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to update MCP tool error", exc_info=True
+                    )
             return error_msg
 
         _emit(CustomToolDelta(
@@ -224,6 +264,21 @@ def _make_invoke_handler(
             data=result,
         ))
         _emit(SectionEnd())
+
+        # Update DB with result
+        if db_session and session_id:
+            try:
+                update_tool_message_result(
+                    db_session=db_session,
+                    session_id=session_id,
+                    tool_call_id=tool_call_id,
+                    tool_output={"output": result},
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to update MCP tool result", exc_info=True
+                )
+
         return result
 
     return handler

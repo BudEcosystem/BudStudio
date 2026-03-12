@@ -1006,7 +1006,10 @@ export function BudAgentScreen() {
                               <MultiToolRenderer
                                 packetGroups={groupPacketsByInd(msg.packets)}
                                 chatState={minimalChatState}
-                                isComplete={msg.status === "complete" || msg.status === "error" || msg.status === "stopped"}
+                                isComplete={
+                                  msg.status === "complete" || msg.status === "error" || msg.status === "stopped" ||
+                                  msg.packets.some((p) => p.obj?.type === "message_start")
+                                }
                                 isFinalAnswerComing={msg.packets.some((p) => p.obj?.type === "message_start")}
                                 stopPacketSeen={msg.packets.some((p) => p.obj?.type === "stop")}
                               />

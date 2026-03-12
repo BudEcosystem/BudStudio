@@ -178,7 +178,16 @@ async def refresh_oauth_token(
         return False
 
     provider = oauth_account.oauth_name
-    if provider not in REFRESH_ENDPOINTS:
+
+    # Resolve the token endpoint
+    if provider in REFRESH_ENDPOINTS:
+        token_url = REFRESH_ENDPOINTS[provider]
+    elif provider == "oidc":
+        token_url = _get_oidc_token_endpoint_sync()
+        if not token_url:
+            logger.warning("OIDC token endpoint not available for refresh")
+            return False
+    else:
         logger.warning(f"Refresh endpoint not configured for provider: {provider}")
         return False
 
@@ -187,7 +196,7 @@ async def refresh_oauth_token(
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                REFRESH_ENDPOINTS[provider],
+                token_url,
                 data={
                     "client_id": app_configs.OAUTH_CLIENT_ID,
                     "client_secret": app_configs.OAUTH_CLIENT_SECRET,

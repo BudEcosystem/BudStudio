@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from "react";
-import { FiExternalLink, FiDownload, FiTool } from "react-icons/fi";
+import { FiTool, FiAlertCircle } from "react-icons/fi";
 import {
   PacketType,
   CustomToolPacket,
@@ -8,7 +8,84 @@ import {
   SectionEnd,
 } from "../../../services/streamingModels";
 import { MessageRenderer, RenderType } from "../interfaces";
-import { buildImgUrl } from "../../../components/files/images/utils";
+import { BlinkingDot } from "../../BlinkingDot";
+
+const MAX_PREVIEW_LENGTH = 200;
+
+/**
+ * Build a human-readable preview string from the tool response data.
+ */
+function formatDataPreview(data: unknown, responseType: string | null): string {
+  if (data === null || data === undefined) return "";
+
+  if (responseType === "error") {
+    const msg = typeof data === "string" ? data : JSON.stringify(data);
+    return msg.length > MAX_PREVIEW_LENGTH
+      ? msg.slice(0, MAX_PREVIEW_LENGTH) + "…"
+      : msg;
+  }
+
+  if (typeof data === "string") {
+    if (data.length === 0) return "";
+    // Try to detect JSON strings and pretty-summarize them
+    const trimmed = data.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return summarizeJson(parsed);
+      } catch {
+        // Not valid JSON — fall through to text preview
+      }
+    }
+    return data.length > MAX_PREVIEW_LENGTH
+      ? data.slice(0, MAX_PREVIEW_LENGTH) + "…"
+      : data;
+  }
+
+  if (Array.isArray(data)) {
+    return summarizeJson(data);
+  }
+
+  if (typeof data === "object") {
+    return summarizeJson(data);
+  }
+
+  return String(data);
+}
+
+/**
+ * Summarize a parsed JSON value into a brief description.
+ */
+function summarizeJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    const count = value.length;
+    if (count === 0) return "Empty list";
+    // Show first item preview
+    const firstPreview =
+      typeof value[0] === "object" && value[0] !== null
+        ? Object.keys(value[0]).slice(0, 4).join(", ")
+        : String(value[0]).slice(0, 60);
+    return count === 1
+      ? `1 item: { ${firstPreview} }`
+      : `${count} items — first: { ${firstPreview} }`;
+  }
+
+  if (typeof value === "object" && value !== null) {
+    const keys = Object.keys(value);
+    if (keys.length === 0) return "Empty object";
+    const preview = keys.slice(0, 5).join(", ");
+    const suffix = keys.length > 5 ? ` +${keys.length - 5} more` : "";
+    return `{ ${preview}${suffix} }`;
+  }
+
+  const s = String(value);
+  return s.length > MAX_PREVIEW_LENGTH
+    ? s.slice(0, MAX_PREVIEW_LENGTH) + "…"
+    : s;
+}
 
 function constructCustomToolState(packets: CustomToolPacket[]) {
   const toolStart = packets.find(
@@ -56,6 +133,7 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
 
   const status = useMemo(() => {
     if (isComplete) {
+      if (responseType === "error") return `${toolName} failed`;
       if (responseType === "image") return `${toolName} returned images`;
       if (responseType === "csv") return `${toolName} returned a file`;
       return `${toolName} completed`;
@@ -64,63 +142,41 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
     return null;
   }, [toolName, responseType, isComplete, isRunning]);
 
-  const icon = FiTool;
+  const dataPreview = useMemo(() => {
+    if (!isComplete || data === undefined || data === null) return null;
+    return formatDataPreview(data, responseType);
+  }, [isComplete, data, responseType]);
 
+  const icon = responseType === "error" ? FiAlertCircle : FiTool;
+
+  // HIGHLIGHT mode — compact, shown during streaming
   if (renderType === RenderType.HIGHLIGHT) {
     return children({
       icon,
-      status: status,
+      status,
       content: (
-        <div className="text-sm text-muted-foreground">
-          {isRunning && `${toolName} running...`}
-          {isComplete && `${toolName} completed`}
+        <div className="text-sm text-text-600">
+          {isRunning && <BlinkingDot />}
         </div>
       ),
     });
   }
 
+  // FULL mode — expanded view with response preview
+  const isError = responseType === "error";
   return children({
     icon,
     status,
     content: (
-      <div className="flex flex-col gap-3">
-        {/* File responses */}
-        {fileIds && fileIds.length > 0 && (
-          <div className="text-sm text-muted-foreground flex flex-col gap-2">
-            {fileIds.map((fid, idx) => (
-              <div key={fid} className="flex items-center gap-2 flex-wrap">
-                <span className="whitespace-nowrap">File {idx + 1}</span>
-                <a
-                  href={buildImgUrl(fid)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline whitespace-nowrap"
-                >
-                  <FiExternalLink className="w-3 h-3" /> Open
-                </a>
-                <a
-                  href={buildImgUrl(fid)}
-                  download
-                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline whitespace-nowrap"
-                >
-                  <FiDownload className="w-3 h-3" /> Download
-                </a>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* JSON/Text responses */}
-        {data !== undefined && data !== null && (
-          <div className="text-xs bg-gray-50 dark:bg-gray-800 p-3 rounded border max-h-96 overflow-y-auto font-mono whitespace-pre-wrap break-all">
-            {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
-          </div>
-        )}
-
-        {/* Show placeholder if no response data yet */}
-        {!fileIds && (data === undefined || data === null) && isRunning && (
-          <div className="text-xs text-gray-500 italic">
-            Waiting for response...
+      <div className="mt-0.5">
+        {isRunning && <BlinkingDot />}
+        {isComplete && dataPreview && (
+          <div
+            className={`text-xs leading-relaxed line-clamp-3 ${
+              isError ? "text-red-400" : "text-text-500"
+            }`}
+          >
+            {dataPreview}
           </div>
         )}
       </div>
