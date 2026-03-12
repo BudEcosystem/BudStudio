@@ -98,6 +98,7 @@ class BudAgentOrchestrator:
         self._step_number = 0
         self._message_started = False
         self._reasoning_started = False
+        self._last_tool_step: int | None = None
         self._iteration_texts: list[str] = []
         self._current_iteration_text = ""
         self._stop_redis_key = f"bud_agent_stop:{self._session_id}"
@@ -119,6 +120,9 @@ class BudAgentOrchestrator:
         the tool section gets its own step index separate from the preceding
         text/reasoning section.
 
+        When multiple tools are called in sequence, each tool gets its own
+        step number by detecting that a previous tool section was active.
+
         NOTE: This may be called from the background async thread (tool
         functions) before the main thread has finished processing streaming
         events.  The main loop's iteration-end block is the authoritative
@@ -138,6 +142,11 @@ class BudAgentOrchestrator:
                 self._iteration_texts.append(self._current_iteration_text)
             self._current_iteration_text = ""
             self._reasoning_started = False
+        elif self._last_tool_step is not None and self._step_number <= self._last_tool_step:
+            # A previous tool already used this step number (or a lower one);
+            # increment so the new tool gets its own step.
+            self._step_number = self._last_tool_step + 1
+        self._last_tool_step = self._step_number
         return self._step_number
 
     def run(self, user_message: str) -> Generator[str, None, None]:
@@ -503,7 +512,9 @@ class BudAgentOrchestrator:
                                 # if it was started
                                 if self._reasoning_started:
                                     self._emit(SectionEnd())
-                                    self._step_number += 1
+                                # Always start a new step for the message
+                                # so it doesn't share an ind with tool packets
+                                self._step_number += 1
                                 self._emit(
                                     MessageStart(
                                         content="",

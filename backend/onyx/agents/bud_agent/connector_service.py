@@ -25,10 +25,13 @@ from agents import RunContextWrapper
 from onyx.agents.bud_agent.budapp_client import fetch_tools_rest
 from onyx.agents.bud_agent.budapp_client import list_connectors
 from onyx.agents.bud_agent.mcp_service import _needs_non_strict
+from onyx.db.agent import add_tool_message
+from onyx.db.agent import update_tool_message_result
 from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
 from onyx.server.query_and_chat.streaming_models import CustomToolStart
 from onyx.server.query_and_chat.streaming_models import Packet
+from onyx.server.query_and_chat.streaming_models import SectionEnd
 from onyx.configs.model_configs import BUD_FOUNDRY_APP_BASE
 from onyx.configs.model_configs import BUD_MCP_GATEWAY_URL
 from onyx.db.agent_connector import get_all_tool_permissions
@@ -234,6 +237,7 @@ def create_connector_tools(
                 redis_client=redis_client,
                 step_number_fn=step_number_fn,
                 gateway_id=gateway_id,
+                db_session=db_session,
             ),
         )
         tools.append(tool)
@@ -257,17 +261,22 @@ def _make_invoke_handler(
     redis_client: redis.Redis,  # type: ignore[type-arg]
     step_number_fn: Callable[[], int] | None = None,
     gateway_id: str | None = None,
+    db_session: Any | None = None,
 ) -> InvokeHandler:
     """Create an async handler for a connector tool."""
-
-    def _emit(obj: Any) -> None:
-        """Put a streaming object on the queue wrapped in a Packet."""
-        ind = step_number_fn() if step_number_fn else 0
-        packet_queue.put(Packet(ind=ind, obj=obj))
 
     async def handler(
         _ctx: RunContextWrapper[Any], json_string: str
     ) -> str:
+        # Get the step number once for this entire tool call so all
+        # packets share the same ind.  step_number_fn() also closes any
+        # open message/reasoning section and increments the step counter.
+        tool_step = step_number_fn() if step_number_fn else 0
+
+        def _emit(obj: Any) -> None:
+            """Put a streaming object on the queue wrapped in a Packet."""
+            packet_queue.put(Packet(ind=tool_step, obj=obj))
+
         tool_call_id = str(uuid.uuid4())
         tool_input: dict[str, Any] = (
             json.loads(json_string) if json_string and json_string.strip() else {}
@@ -284,6 +293,23 @@ def _make_invoke_handler(
         # Emit tool_start (using CustomToolStart which is in the Packet union)
         _emit(CustomToolStart(tool_name=tool_name))
 
+        # Persist tool message to DB
+        if db_session:
+            try:
+                add_tool_message(
+                    db_session=db_session,
+                    session_id=UUID(session_id),
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    tool_call_id=tool_call_id,
+                    step_number=tool_step,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to persist connector tool message",
+                    exc_info=True,
+                )
+
         # Handle approval if needed
         if permission_level == AgentToolPermissionLevel.NEED_APPROVAL:
             approved = _wait_for_approval(
@@ -293,7 +319,7 @@ def _make_invoke_handler(
                 tool_call_id=tool_call_id,
                 packet_queue=packet_queue,
                 redis_client=redis_client,
-                step_number_fn=step_number_fn,
+                tool_step=tool_step,
                 gateway_id=gateway_id,
             )
             if not approved:
@@ -305,6 +331,21 @@ def _make_invoke_handler(
                         data=error_msg,
                     )
                 )
+                _emit(SectionEnd())
+                # Update DB with denial
+                if db_session:
+                    try:
+                        update_tool_message_result(
+                            db_session=db_session,
+                            session_id=UUID(session_id),
+                            tool_call_id=tool_call_id,
+                            tool_error=error_msg,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to update denied connector tool",
+                            exc_info=True,
+                        )
                 return error_msg
 
         # Execute via MCP
@@ -325,6 +366,21 @@ def _make_invoke_handler(
                     data=error_msg,
                 )
             )
+            _emit(SectionEnd())
+            # Update DB with error
+            if db_session:
+                try:
+                    update_tool_message_result(
+                        db_session=db_session,
+                        session_id=UUID(session_id),
+                        tool_call_id=tool_call_id,
+                        tool_error=error_msg,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to update connector tool error",
+                        exc_info=True,
+                    )
             return error_msg
 
         # Emit result
@@ -335,6 +391,23 @@ def _make_invoke_handler(
                 data=result,
             )
         )
+        _emit(SectionEnd())
+
+        # Update DB with result
+        if db_session:
+            try:
+                update_tool_message_result(
+                    db_session=db_session,
+                    session_id=UUID(session_id),
+                    tool_call_id=tool_call_id,
+                    tool_output={"output": result},
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to update connector tool result",
+                    exc_info=True,
+                )
+
         return result
 
     return handler
@@ -347,7 +420,7 @@ def _wait_for_approval(
     tool_call_id: str,
     packet_queue: Queue[Any],
     redis_client: redis.Redis,  # type: ignore[type-arg]
-    step_number_fn: Callable[[], int] | None = None,
+    tool_step: int = 0,
     gateway_id: str | None = None,
 ) -> bool:
     """Emit approval request and block until user responds via Redis."""
@@ -357,8 +430,7 @@ def _wait_for_approval(
         tool_call_id=tool_call_id,
         gateway_id=gateway_id,
     )
-    ind = step_number_fn() if step_number_fn else 0
-    packet_queue.put(Packet(ind=ind, obj=approval_obj))
+    packet_queue.put(Packet(ind=tool_step, obj=approval_obj))
 
     key = f"bud_agent_approval:{session_id}:{tool_call_id}"
     try:

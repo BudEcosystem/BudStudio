@@ -180,16 +180,14 @@ def create_web_search_tools(
 
     tools: list[FunctionTool] = []
 
-    def _emit(obj: Any) -> None:
-        """Put a Packet on the queue using the current step number."""
-        packet_queue.put(Packet(ind=step_number_fn(), obj=obj))
+    def _emit(obj: Any, step: int | None = None) -> None:
+        """Put a Packet on the queue using the given step number."""
+        ind = step if step is not None else step_number_fn()
+        packet_queue.put(Packet(ind=ind, obj=obj))
 
-    def _close_step() -> None:
-        """Emit SectionEnd and increment step number so the next tool gets
-        its own visual step in the MultiToolRenderer."""
-        _emit(SectionEnd())
-        if step_increment_fn:
-            step_increment_fn()
+    def _close_step(step: int | None = None) -> None:
+        """Emit SectionEnd so the current section is complete."""
+        _emit(SectionEnd(), step=step)
 
     # ── web_search ────────────────────────────────────────────────────────
 
@@ -212,14 +210,16 @@ def create_web_search_tools(
                 SearchToolStart(
                     type="internal_search_tool_start",
                     is_internet_search=True,
-                )
+                ),
+                step=tool_step,
             )
             _emit(
                 SearchToolDelta(
                     type="internal_search_tool_delta",
                     queries=queries,
                     documents=[],
-                )
+                ),
+                step=tool_step,
             )
 
             # Search all queries in parallel
@@ -238,7 +238,7 @@ def create_web_search_tools(
                     all_hits.extend(hits)
 
             if not all_hits:
-                _close_step()
+                _close_step(step=tool_step)
                 return json.dumps({"results": []})
 
             # Convert to InferenceSections and accumulate
@@ -257,7 +257,8 @@ def create_web_search_tools(
                     type="internal_search_tool_delta",
                     queries=queries,
                     documents=saved_docs,
-                )
+                ),
+                step=tool_step,
             )
 
             # Build response for the LLM
@@ -309,12 +310,12 @@ def create_web_search_tools(
                         exc_info=True,
                     )
 
-            _close_step()
+            _close_step(step=tool_step)
             return json.dumps({"results": results})
 
         except Exception as e:
             logger.exception("web_search tool failed")
-            _close_step()
+            _close_step(step=tool_step)
             return f"Error performing web search: {e}"
 
     tools.append(
@@ -366,7 +367,8 @@ def create_web_search_tools(
                 FetchToolStart(
                     type="fetch_tool_start",
                     documents=saved_docs,
-                )
+                ),
+                step=tool_step,
             )
 
             # Fetch content
@@ -426,12 +428,12 @@ def create_web_search_tools(
                         exc_info=True,
                     )
 
-            _close_step()
+            _close_step(step=tool_step)
             return json.dumps({"results": results})
 
         except Exception as e:
             logger.exception("open_url tool failed")
-            _close_step()
+            _close_step(step=tool_step)
             return f"Error fetching URLs: {e}"
 
     tools.append(

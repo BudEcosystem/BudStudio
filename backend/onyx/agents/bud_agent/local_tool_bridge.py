@@ -130,9 +130,10 @@ class LocalToolBridge:
 
             # Assign a step number for this tool call, closing any open
             # text/reasoning section so the tool gets its own step index.
+            # close_open_section_for_tool() also tracks tool sections so
+            # sequential tool calls each get a unique step number.
             if self._orchestrator:
                 step = self._orchestrator.close_open_section_for_tool()
-                self._orchestrator.step_number += 1
             else:
                 step = 0
 

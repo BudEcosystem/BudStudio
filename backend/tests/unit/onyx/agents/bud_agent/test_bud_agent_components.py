@@ -1799,6 +1799,179 @@ class TestWorkspaceService:
 
 
 # ==============================================================================
+# Connector / MCP Service SectionEnd Emission Tests
+# ==============================================================================
+
+
+class TestConnectorServiceSectionEnd:
+    """Verify that connector tool handlers emit SectionEnd after CustomToolDelta."""
+
+    @pytest.mark.asyncio
+    async def test_connector_handler_emits_section_end_on_success(self) -> None:
+        from onyx.agents.bud_agent.connector_service import _make_invoke_handler
+        from onyx.db.enums import AgentToolPermissionLevel
+        from onyx.server.query_and_chat.streaming_models import (
+            CustomToolDelta,
+            CustomToolStart,
+            SectionEnd,
+        )
+
+        pq: queue.Queue[Any] = queue.Queue()
+        mock_redis = MagicMock()
+
+        handler = _make_invoke_handler(
+            tool_name="test_tool",
+            mcp_url="http://fake",
+            headers={"Authorization": "Bearer x"},
+            permission_level=AgentToolPermissionLevel.ALWAYS_ALLOW,
+            session_id="sess-1",
+            packet_queue=pq,
+            redis_client=mock_redis,
+            step_number_fn=lambda: 5,
+        )
+
+        with patch(
+            "onyx.agents.bud_agent.connector_service.call_mcp_tool",
+            return_value="result_data",
+        ):
+            ctx = MagicMock()
+            result = await handler(ctx, '{"query": "test"}')
+
+        assert result == "result_data"
+
+        packets = []
+        while not pq.empty():
+            packets.append(pq.get_nowait())
+
+        assert len(packets) == 3
+        assert isinstance(packets[0].obj, CustomToolStart)
+        assert packets[0].obj.tool_name == "test_tool"
+        assert isinstance(packets[1].obj, CustomToolDelta)
+        assert isinstance(packets[2].obj, SectionEnd)
+
+    @pytest.mark.asyncio
+    async def test_connector_handler_emits_section_end_on_error(self) -> None:
+        from onyx.agents.bud_agent.connector_service import _make_invoke_handler
+        from onyx.db.enums import AgentToolPermissionLevel
+        from onyx.server.query_and_chat.streaming_models import (
+            CustomToolDelta,
+            CustomToolStart,
+            SectionEnd,
+        )
+
+        pq: queue.Queue[Any] = queue.Queue()
+        mock_redis = MagicMock()
+
+        handler = _make_invoke_handler(
+            tool_name="fail_tool",
+            mcp_url="http://fake",
+            headers={},
+            permission_level=AgentToolPermissionLevel.ALWAYS_ALLOW,
+            session_id="sess-1",
+            packet_queue=pq,
+            redis_client=mock_redis,
+            step_number_fn=lambda: 2,
+        )
+
+        with patch(
+            "onyx.agents.bud_agent.connector_service.call_mcp_tool",
+            side_effect=RuntimeError("connection refused"),
+        ):
+            ctx = MagicMock()
+            result = await handler(ctx, "{}")
+
+        assert "connection refused" in result
+
+        packets = []
+        while not pq.empty():
+            packets.append(pq.get_nowait())
+
+        assert len(packets) == 3
+        assert isinstance(packets[0].obj, CustomToolStart)
+        assert isinstance(packets[1].obj, CustomToolDelta)
+        assert packets[1].obj.response_type == "error"
+        assert isinstance(packets[2].obj, SectionEnd)
+
+
+class TestMcpServiceSectionEnd:
+    """Verify that MCP service handlers emit SectionEnd after CustomToolDelta."""
+
+    @pytest.mark.asyncio
+    async def test_mcp_handler_emits_section_end_on_success(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _make_invoke_handler
+        from onyx.server.query_and_chat.streaming_models import (
+            CustomToolDelta,
+            CustomToolStart,
+            SectionEnd,
+        )
+
+        pq: queue.Queue[Any] = queue.Queue()
+
+        handler = _make_invoke_handler(
+            tool_name="mcp_tool",
+            server_url="http://fake-mcp",
+            packet_queue=pq,
+            step_number_fn=lambda: 3,
+        )
+
+        with patch(
+            "onyx.agents.bud_agent.mcp_service.call_mcp_tool",
+            return_value="mcp_result",
+        ):
+            ctx = MagicMock()
+            result = await handler(ctx, '{"arg": "val"}')
+
+        assert result == "mcp_result"
+
+        packets = []
+        while not pq.empty():
+            packets.append(pq.get_nowait())
+
+        assert len(packets) == 3
+        assert isinstance(packets[0].obj, CustomToolStart)
+        assert packets[0].obj.tool_name == "mcp_tool"
+        assert isinstance(packets[1].obj, CustomToolDelta)
+        assert isinstance(packets[2].obj, SectionEnd)
+
+    @pytest.mark.asyncio
+    async def test_mcp_handler_emits_section_end_on_error(self) -> None:
+        from onyx.agents.bud_agent.mcp_service import _make_invoke_handler
+        from onyx.server.query_and_chat.streaming_models import (
+            CustomToolDelta,
+            CustomToolStart,
+            SectionEnd,
+        )
+
+        pq: queue.Queue[Any] = queue.Queue()
+
+        handler = _make_invoke_handler(
+            tool_name="mcp_fail",
+            server_url="http://fake-mcp",
+            packet_queue=pq,
+            step_number_fn=lambda: 1,
+        )
+
+        with patch(
+            "onyx.agents.bud_agent.mcp_service.call_mcp_tool",
+            side_effect=ConnectionError("timeout"),
+        ):
+            ctx = MagicMock()
+            result = await handler(ctx, "{}")
+
+        assert "timeout" in result
+
+        packets = []
+        while not pq.empty():
+            packets.append(pq.get_nowait())
+
+        assert len(packets) == 3
+        assert isinstance(packets[0].obj, CustomToolStart)
+        assert isinstance(packets[1].obj, CustomToolDelta)
+        assert packets[1].obj.response_type == "error"
+        assert isinstance(packets[2].obj, SectionEnd)
+
+
+# ==============================================================================
 # MCP Schema Sanitization Tests
 # ==============================================================================
 

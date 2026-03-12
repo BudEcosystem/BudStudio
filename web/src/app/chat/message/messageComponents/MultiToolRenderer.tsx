@@ -146,6 +146,12 @@ export default function MultiToolRenderer({
     }
   }, [isComplete, isStreamingExpanded]);
 
+  // Build collapsed summary text: "Worked through N steps"
+  const summaryText = useMemo(() => {
+    const count = toolGroups.length;
+    return count === 1 ? "Worked through 1 step" : `Worked through ${count} steps`;
+  }, [toolGroups.length]);
+
   // If still processing, show tools progressively with timing
   if (!isComplete) {
     // Get the tools to display based on visibleTools
@@ -290,7 +296,7 @@ export default function MultiToolRenderer({
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <Text text03 className="group-hover/StepsButton:text-text-04">
-          {toolGroups.length} steps
+          {summaryText}
         </Text>
         <SvgChevronDownSmall
           className={cn(
