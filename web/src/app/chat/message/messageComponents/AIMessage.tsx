@@ -1,7 +1,7 @@
 import {
   Packet,
   PacketType,
-  CanvasGeneration as CanvasGenerationPacket,
+  ArtifactGeneration as ArtifactGenerationPacket,
   CustomToolDelta,
   CitationDelta,
   SearchToolDelta,
@@ -30,7 +30,7 @@ import {
 import { useMessageSwitching } from "@/app/chat/message/messageComponents/hooks/useMessageSwitching";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
 import { RendererComponent } from "@/app/chat/message/messageComponents/renderMessageComponent";
-import { CanvasCard } from "@/app/chat/message/messageComponents/CanvasCard";
+import { ArtifactCard } from "@/app/chat/message/messageComponents/ArtifactCard";
 import AgentIcon from "@/refresh-components/AgentIcon";
 import IconButton from "@/refresh-components/buttons/IconButton";
 import SvgCopy from "@/icons/copy";
@@ -338,10 +338,10 @@ export default function AIMessage({
                                 </RendererComponent>
                               )}
 
-                              {/* Render canvas cards from canvas_generation and custom_tool_delta packets */}
+                              {/* Render artifact cards from artifact_generation and custom_tool_delta packets */}
                               {rawPackets
                                 .filter((p) => {
-                                  if (p.obj.type === PacketType.CANVAS_GENERATION) return true;
+                                  if (p.obj.type === PacketType.ARTIFACT_GENERATION) return true;
                                   if (
                                     p.obj.type === PacketType.CUSTOM_TOOL_DELTA &&
                                     (p.obj as CustomToolDelta).openui_response
@@ -351,8 +351,8 @@ export default function AIMessage({
                                 })
                                 .map((p, idx) => {
                                   const openui =
-                                    p.obj.type === PacketType.CANVAS_GENERATION
-                                      ? (p.obj as CanvasGenerationPacket).openui_lang
+                                    p.obj.type === PacketType.ARTIFACT_GENERATION
+                                      ? (p.obj as ArtifactGenerationPacket).openui_lang
                                       : (p.obj as CustomToolDelta).openui_response!;
                                   const delta = p.obj.type === PacketType.CUSTOM_TOOL_DELTA
                                     ? (p.obj as CustomToolDelta)
@@ -362,14 +362,14 @@ export default function AIMessage({
                                       ? (delta.data as Record<string, unknown>).title
                                       : undefined;
                                   const title =
-                                    p.obj.type === PacketType.CANVAS_GENERATION
-                                      ? (p.obj as CanvasGenerationPacket).title
+                                    p.obj.type === PacketType.ARTIFACT_GENERATION
+                                      ? (p.obj as ArtifactGenerationPacket).title
                                       : typeof rawDeltaTitle === "string"
                                         ? rawDeltaTitle
-                                        : "Canvas";
+                                        : "Artifact";
                                   return (
-                                    <div className="mt-3" key={`canvas-${idx}`}>
-                                      <CanvasCard
+                                    <div className="mt-3" key={`artifact-${idx}`}>
+                                      <ArtifactCard
                                         openui_response={openui}
                                         title={title}
                                         toolName={title}

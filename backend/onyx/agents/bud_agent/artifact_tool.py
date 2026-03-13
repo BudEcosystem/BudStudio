@@ -1,7 +1,7 @@
-"""Canvas tool for BudAgent — lets the agent render structured data as a canvas.
+"""Artifact tool for BudAgent — lets the agent render structured data as an artifact.
 
 Provides a FunctionTool that converts structured input (charts, tables, emails,
-code blocks, reports) into OpenUI Lang and emits it as a canvas panel via
+code blocks, reports) into OpenUI Lang and emits it as an artifact panel via
 CustomToolDelta packets.  No extra LLM call needed — conversion is deterministic.
 """
 
@@ -16,7 +16,7 @@ from uuid import UUID
 from agents import FunctionTool
 from agents import RunContextWrapper
 
-from onyx.agents.bud_agent.canvas_utils import generate_openui_for_canvas_tool
+from onyx.agents.bud_agent.artifact_utils import generate_openui_for_artifact_tool
 from onyx.agents.bud_agent.tool_definitions import REMOTE_TOOL_SCHEMAS
 from onyx.db.agent import add_tool_message
 from onyx.db.agent import update_tool_message_result
@@ -27,16 +27,16 @@ from onyx.server.query_and_chat.streaming_models import SectionEnd
 
 logger = logging.getLogger(__name__)
 
-TOOL_NAME = "render_canvas"
+TOOL_NAME = "render_artifact"
 
 
-def create_canvas_tool(
+def create_artifact_tool(
     session_id: UUID,
     packet_queue: Queue[Any],
     step_number_fn: Callable[[], int] | None = None,
     db_session: Any | None = None,
 ) -> list[FunctionTool]:
-    """Create the render_canvas FunctionTool.
+    """Create the render_artifact FunctionTool.
 
     Returns a single-element list for consistency with other tool factories.
     """
@@ -62,7 +62,7 @@ def _make_invoke_handler(
     step_number_fn: Callable[[], int] | None = None,
     db_session: Any | None = None,
 ) -> Any:
-    """Create an async handler for the render_canvas tool."""
+    """Create an async handler for the render_artifact tool."""
 
     async def handler(
         _ctx: RunContextWrapper[Any], json_string: str
@@ -78,17 +78,17 @@ def _make_invoke_handler(
         try:
             args = json.loads(json_string) if isinstance(json_string, str) else json_string
         except (json.JSONDecodeError, TypeError):
-            error_msg = "render_canvas: invalid JSON input"
+            error_msg = "render_artifact: invalid JSON input"
             logger.warning(error_msg)
             return error_msg
 
-        canvas_type: str = args.get("type", "")
-        title: str = args.get("title", "Canvas")
+        artifact_type: str = args.get("type", "")
+        title: str = args.get("title", "Artifact")
         data: dict[str, Any] = args.get("data", {})
 
         logger.info(
-            "render_canvas invoked: type=%r, title=%r, data_keys=%s",
-            canvas_type,
+            "render_artifact invoked: type=%r, title=%r, data_keys=%s",
+            artifact_type,
             title,
             list(data.keys()) if isinstance(data, dict) else f"list[{len(data)}]",
         )
@@ -109,25 +109,25 @@ def _make_invoke_handler(
                 )
             except Exception:
                 logger.warning(
-                    "Failed to persist render_canvas tool call",
+                    "Failed to persist render_artifact tool call",
                     exc_info=True,
                 )
 
         # Convert structured data to OpenUI Lang
         openui_lang: str | None = None
         try:
-            result = generate_openui_for_canvas_tool(canvas_type, title, data)
+            result = generate_openui_for_artifact_tool(artifact_type, title, data)
             if result is not None:
                 openui_lang, _ = result
         except Exception:
             logger.warning(
-                "render_canvas: OpenUI conversion failed",
+                "render_artifact: OpenUI conversion failed",
                 exc_info=True,
             )
 
         if not openui_lang:
             error_msg = (
-                f"render_canvas: could not convert type={canvas_type!r} to canvas. "
+                f"render_artifact: could not convert type={artifact_type!r} to artifact. "
                 "Check data schema matches the expected format."
             )
             _emit(
@@ -140,12 +140,12 @@ def _make_invoke_handler(
             _emit(SectionEnd())
             return error_msg
 
-        # Emit canvas result
+        # Emit artifact result
         _emit(
             CustomToolDelta(
                 tool_name=TOOL_NAME,
                 response_type="text",
-                data={"title": title, "type": canvas_type},
+                data={"title": title, "type": artifact_type},
                 openui_response=openui_lang,
             )
         )
@@ -160,16 +160,16 @@ def _make_invoke_handler(
                     tool_call_id=tool_call_id,
                     tool_output={
                         "title": title,
-                        "type": canvas_type,
+                        "type": artifact_type,
                         "openui_lang": openui_lang,
                     },
                 )
             except Exception:
                 logger.warning(
-                    "Failed to update render_canvas tool result",
+                    "Failed to update render_artifact tool result",
                     exc_info=True,
                 )
 
-        return f"Canvas rendered: {title}"
+        return f"Artifact rendered: {title}"
 
     return handler

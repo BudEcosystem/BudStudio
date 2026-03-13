@@ -145,13 +145,13 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
     if (isComplete) {
       if (responseType === "error") return `${toolName} failed`;
       if (openui_response) {
-        const canvasTitle =
+        const artifactTitle =
           (typeof data === "object" && data !== null && "title" in data)
             ? (data as Record<string, unknown>).title
             : null;
-        return canvasTitle
-          ? `Generated canvas: ${canvasTitle}`
-          : `${toolName} generated a canvas`;
+        return artifactTitle
+          ? `Generated artifact: ${artifactTitle}`
+          : `${toolName} generated an artifact`;
       }
       if (responseType === "image") return `${toolName} returned images`;
       if (responseType === "csv") return `${toolName} returned a file`;
@@ -168,8 +168,8 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
 
   const icon = responseType === "error" ? FiAlertCircle : FiTool;
 
-  // --- Canvas card path: openui_response is present ---
-  // Canvas is rendered at the message level (outside steps accordion),
+  // --- Artifact card path: openui_response is present ---
+  // Artifact is rendered at the message level (outside steps accordion),
   // so here we only show a simple status line to avoid duplication.
   // `status` already contains the text; content is left empty to avoid double rendering.
   if (openui_response) {

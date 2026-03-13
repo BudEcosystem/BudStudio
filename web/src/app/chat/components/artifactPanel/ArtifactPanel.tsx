@@ -7,18 +7,18 @@ import type { ActionEvent } from "@openuidev/react-lang";
 import { ThemeProvider } from "@openuidev/react-ui";
 import { useTheme } from "next-themes";
 import { budStudioLibrary } from "@/lib/openui/catalog";
-import { handleCanvasAction } from "@/lib/openui/actions";
+import { handleArtifactAction } from "@/lib/openui/actions";
 import "@openuidev/react-ui/components.css";
 import { cn } from "@/lib/utils";
-import { CanvasHeader } from "@/app/chat/components/canvasPanel/CanvasHeader";
-import type { ActiveCanvas } from "@/app/chat/stores/useChatSessionStore";
+import { ArtifactHeader } from "@/app/chat/components/artifactPanel/ArtifactHeader";
+import type { ActiveArtifact } from "@/app/chat/stores/useChatSessionStore";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface CanvasPanelProps {
-  activeCanvas: ActiveCanvas | null;
+interface ArtifactPanelProps {
+  activeArtifact: ActiveArtifact | null;
   closeSidebar: () => void;
   sendMessage: (msg: string) => void;
 }
@@ -54,7 +54,7 @@ class RendererErrorBoundary extends Component<
       return (
         <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
           <p className="font-main-ui-body text-text-03">
-            Something went wrong rendering the canvas.
+            Something went wrong rendering the artifact.
           </p>
           <p className="font-secondary-body text-text-04 max-w-sm break-words">
             {this.state.error?.message}
@@ -70,7 +70,7 @@ class RendererErrorBoundary extends Component<
 /*  Loading skeleton                                                   */
 /* ------------------------------------------------------------------ */
 
-function CanvasSkeleton() {
+function ArtifactSkeleton() {
   return (
     <div className="flex flex-col gap-4 p-4 animate-pulse">
       <div className="h-4 w-3/4 rounded bg-background-neutral-03" />
@@ -85,11 +85,11 @@ function CanvasSkeleton() {
 /*  Empty state                                                        */
 /* ------------------------------------------------------------------ */
 
-function CanvasEmptyState() {
+function ArtifactEmptyState() {
   return (
     <div className="flex h-full items-center justify-center p-6 text-center">
       <p className="font-main-ui-muted text-text-04">
-        No canvas content. Agent tool results will appear here.
+        No artifact content. Agent tool results will appear here.
       </p>
     </div>
   );
@@ -99,46 +99,46 @@ function CanvasEmptyState() {
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-function CanvasPanelInner({
-  activeCanvas,
+function ArtifactPanelInner({
+  activeArtifact,
   closeSidebar,
   sendMessage,
-}: CanvasPanelProps) {
+}: ArtifactPanelProps) {
   const { resolvedTheme } = useTheme();
   const openUiMode = resolvedTheme === "dark" ? "dark" : "light";
 
   const onAction = useCallback(
     (event: ActionEvent) => {
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
     },
     [sendMessage]
   );
 
-  // No active canvas at all -- show empty state
-  if (!activeCanvas) {
+  // No active artifact at all -- show empty state
+  if (!activeArtifact) {
     return (
       <div className="h-full w-full bg-background-tint-01 flex flex-col">
-        <CanvasHeader title="Canvas" isStreaming={false} onClose={closeSidebar} />
+        <ArtifactHeader title="Artifact" isStreaming={false} onClose={closeSidebar} />
         <ThemeProvider mode={openUiMode}>
-          <CanvasEmptyState />
+          <ArtifactEmptyState />
         </ThemeProvider>
       </div>
     );
   }
 
-  const { openui_lang, title, isStreaming } = activeCanvas;
+  const { openui_lang, title, isStreaming } = activeArtifact;
 
   // Streaming has started but no content has arrived yet -- show skeleton
   const showSkeleton = isStreaming && !openui_lang;
 
   return (
     <div className="h-full w-full bg-background-tint-01 flex flex-col">
-      <CanvasHeader title={title} isStreaming={isStreaming} onClose={closeSidebar} />
+      <ArtifactHeader title={title} isStreaming={isStreaming} onClose={closeSidebar} />
 
       <div className={cn("flex-1 overflow-y-auto p-4", "default-scrollbar")}>
         <ThemeProvider mode={openUiMode}>
           {showSkeleton ? (
-            <CanvasSkeleton />
+            <ArtifactSkeleton />
           ) : (
             <RendererErrorBoundary>
               <Renderer
@@ -155,5 +155,5 @@ function CanvasPanelInner({
   );
 }
 
-export const CanvasPanel = memo(CanvasPanelInner);
-CanvasPanel.displayName = "CanvasPanel";
+export const ArtifactPanel = memo(ArtifactPanelInner);
+ArtifactPanel.displayName = "ArtifactPanel";

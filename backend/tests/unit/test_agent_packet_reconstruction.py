@@ -530,7 +530,7 @@ def test_openui_response_propagated_from_ui_spec() -> None:
             step_number=0,
             ui_spec={
                 "openui_lang": openui_code,
-                "canvas_title": "Email: Hi",
+                "artifact_title": "Email: Hi",
             },
             created_at=base_time + datetime.timedelta(seconds=1),
         ),
@@ -634,32 +634,32 @@ def test_openui_response_not_set_on_error_packets() -> None:
 
 
 def test_openui_response_propagated_from_tool_output() -> None:
-    """canvas_tool stores openui_lang inside tool_output — verify fallback reads it."""
+    """artifact_tool stores openui_lang inside tool_output — verify fallback reads it."""
     base_time = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
     openui_code = 'root = EmailDraft(["a@b.com"], [], "Subject", "Body")'
     messages = [
         _make_message(
             AgentMessageRole.USER,
-            content="Render a canvas",
+            content="Render an artifact",
             created_at=base_time,
         ),
         _make_message(
             AgentMessageRole.TOOL,
-            tool_name="render_canvas",
+            tool_name="render_artifact",
             tool_input={"type": "email_draft"},
             tool_output={
                 "title": "Email: Subject",
                 "type": "email_draft",
                 "openui_lang": openui_code,
             },
-            tool_call_id="tc-canvas",
+            tool_call_id="tc-artifact",
             step_number=0,
             ui_spec=None,
             created_at=base_time + datetime.timedelta(seconds=1),
         ),
         _make_message(
             AgentMessageRole.ASSISTANT,
-            content="Canvas rendered.",
+            content="Artifact rendered.",
             step_number=1,
             created_at=base_time + datetime.timedelta(seconds=2),
         ),

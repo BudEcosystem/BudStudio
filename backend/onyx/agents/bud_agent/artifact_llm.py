@@ -1,11 +1,11 @@
-"""LLM-driven canvas generation from agent text responses.
+"""LLM-driven artifact generation from agent text responses.
 
 After the agent finishes its text response, this module decides if the
 response contains content worth rendering as rich UI (email draft, data
 table, code block, chart, report).  If yes, it generates OpenUI Lang via
-a secondary LLM call and returns it for the frontend canvas panel.
+a secondary LLM call and returns it for the frontend artifact panel.
 
-The tool-based canvas path (canvas_utils.py) is the fast path — it fires
+The tool-based artifact path (artifact_utils.py) is the fast path — it fires
 when a tool returns structured data matching hardcoded key patterns.
 This module is the fallback that analyses free-text responses.
 """
@@ -134,7 +134,7 @@ Card(children: ref[]) — Vertical container for all content. Children stack top
 - For forms, define one FormControl reference per field"""
 
 # ---------------------------------------------------------------------------
-# Minimum response length to even consider canvas generation.
+# Minimum response length to even consider artifact generation.
 # ---------------------------------------------------------------------------
 _MIN_CHARS = 150
 
@@ -153,11 +153,11 @@ _BULLET_LIST_RE = re.compile(
 )
 
 
-def should_attempt_canvas(response_text: str) -> bool:
+def should_attempt_artifact(response_text: str) -> bool:
     """Cheap pre-filter — no LLM call.
 
     Returns True if the text contains indicators of structured content
-    that could be rendered as a canvas component.
+    that could be rendered as an artifact component.
     """
     if len(response_text) < _MIN_CHARS:
         return False
@@ -181,8 +181,8 @@ def should_attempt_canvas(response_text: str) -> bool:
     return False
 
 
-def build_canvas_prompt(response_text: str) -> str:
-    """Build the prompt sent to the LLM for canvas generation."""
+def build_artifact_prompt(response_text: str) -> str:
+    """Build the prompt sent to the LLM for artifact generation."""
     truncated = response_text[:4000]
     return f"""{OPENUI_SYSTEM_PROMPT}
 
@@ -210,20 +210,20 @@ AI Assistant Response:
 Output:"""
 
 
-def maybe_generate_canvas(
+def maybe_generate_artifact(
     llm: Any,
     response_text: str,
 ) -> tuple[str, str] | None:
-    """Attempt to generate canvas OpenUI Lang from the agent's text response.
+    """Attempt to generate artifact OpenUI Lang from the agent's text response.
 
-    Returns (openui_lang, title) if canvas content was generated, else None.
+    Returns (openui_lang, title) if artifact content was generated, else None.
     Uses the same LLM the agent used for the conversation.
     """
-    if not should_attempt_canvas(response_text):
+    if not should_attempt_artifact(response_text):
         return None
 
     try:
-        prompt = build_canvas_prompt(response_text)
+        prompt = build_artifact_prompt(response_text)
         result = llm.invoke(prompt)
 
         # Extract text content from the LLM response
@@ -233,18 +233,18 @@ def maybe_generate_canvas(
             text = str(result).strip()
 
         logger.info(
-            "[CANVAS-LLM] Raw LLM response (first 500 chars): %r",
+            "[ARTIFACT-LLM] Raw LLM response (first 500 chars): %r",
             text[:500],
         )
 
         if not text or text.upper() == "NONE":
-            logger.info("[CANVAS-LLM] LLM returned empty or NONE")
+            logger.info("[ARTIFACT-LLM] LLM returned empty or NONE")
             return None
 
         # Parse the response: look for "root = " line and optional "TITLE: " line
         lines = text.split("\n")
         openui_lines: list[str] = []
-        title = "Canvas"
+        title = "Artifact"
 
         for line in lines:
             stripped = line.strip()
@@ -257,7 +257,7 @@ def maybe_generate_canvas(
 
         if not openui_lang or not openui_lang.startswith("root ="):
             logger.info(
-                "[CANVAS-LLM] Parsed openui_lang doesn't start with 'root =': %r",
+                "[ARTIFACT-LLM] Parsed openui_lang doesn't start with 'root =': %r",
                 openui_lang[:200] if openui_lang else "(empty)",
             )
             return None
@@ -266,7 +266,7 @@ def maybe_generate_canvas(
 
     except Exception:
         logger.warning(
-            "Canvas LLM generation failed, skipping canvas",
+            "Artifact LLM generation failed, skipping artifact",
             exc_info=True,
         )
         return None

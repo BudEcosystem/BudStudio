@@ -5,13 +5,13 @@ import Text from "@/refresh-components/texts/Text";
 import IconButton from "@/refresh-components/buttons/IconButton";
 import SvgArrowWallRight from "@/icons/arrow-wall-right";
 
-interface CanvasHeaderProps {
+interface ArtifactHeaderProps {
   title: string;
   isStreaming: boolean;
   onClose: () => void;
 }
 
-export function CanvasHeader({ title, isStreaming, onClose }: CanvasHeaderProps) {
+export function ArtifactHeader({ title, isStreaming, onClose }: ArtifactHeaderProps) {
   return (
     <div
       className={cn(
@@ -35,7 +35,7 @@ export function CanvasHeader({ title, isStreaming, onClose }: CanvasHeaderProps)
         icon={SvgArrowWallRight}
         tertiary
         onClick={onClose}
-        tooltip="Close Canvas"
+        tooltip="Close Artifact"
       />
     </div>
   );

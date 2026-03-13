@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.ask_user_tool import create_ask_user_tool
-from onyx.agents.bud_agent.canvas_tool import create_canvas_tool
+from onyx.agents.bud_agent.artifact_tool import create_artifact_tool
 from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.cron_service import create_cron_tools
@@ -214,7 +214,7 @@ def build_agent_run_context(
         db_session=db_session,
         user_id=user.id,
     )
-    canvas_tools = create_canvas_tool(
+    artifact_tools = create_artifact_tool(
         session_id=session_id,
         packet_queue=resolved_packet_queue,
         step_number_fn=resolved_step_number_fn,
@@ -254,7 +254,7 @@ def build_agent_run_context(
         + default_mcp_tools
         + web_search_tools
         + cron_tools
-        + canvas_tools
+        + artifact_tools
         + ask_user_tools
         + resolved_inbox_tools
         + resolved_extra_tools

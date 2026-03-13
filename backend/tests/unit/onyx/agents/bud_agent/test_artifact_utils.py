@@ -1,6 +1,6 @@
-"""Unit tests for canvas_utils — deterministic OpenUI Lang mapping."""
+"""Unit tests for artifact_utils — deterministic OpenUI Lang mapping."""
 
-from onyx.agents.bud_agent.canvas_utils import (
+from onyx.agents.bud_agent.artifact_utils import (
     _escape_openui_string,
     _format_string_array,
     _to_analysis_report,
@@ -8,7 +8,7 @@ from onyx.agents.bud_agent.canvas_utils import (
     _to_code_block,
     _to_data_table,
     _to_email_draft,
-    generate_openui_for_canvas_tool,
+    generate_openui_for_artifact_tool,
     generate_openui_lang,
 )
 
@@ -477,18 +477,18 @@ class TestGenerateOpenUILang:
 
 
 # ---------------------------------------------------------------------------
-# generate_openui_for_canvas_tool — type-routed wrapper
+# generate_openui_for_artifact_tool — type-routed wrapper
 # ---------------------------------------------------------------------------
 
 
-class TestGenerateOpenUIForCanvasTool:
+class TestGenerateOpenUIForArtifactTool:
     def test_chart_type_routes_to_chart(self) -> None:
         data = {
             "data": [{"city": "NYC", "temp": 72}],
             "xKey": "city",
             "yKey": "temp",
         }
-        result = generate_openui_for_canvas_tool("chart", "Temperatures", data)
+        result = generate_openui_for_artifact_tool("chart", "Temperatures", data)
         assert result is not None
         openui, title = result
         assert "BarChart" in openui
@@ -499,7 +499,7 @@ class TestGenerateOpenUIForCanvasTool:
             "columns": [{"key": "name", "label": "Name", "type": "string"}],
             "rows": [{"name": "Alice"}],
         }
-        result = generate_openui_for_canvas_tool("table", "Users", data)
+        result = generate_openui_for_artifact_tool("table", "Users", data)
         assert result is not None
         openui, title = result
         assert "Table" in openui
@@ -511,14 +511,14 @@ class TestGenerateOpenUIForCanvasTool:
             "subject": "Hello",
             "body": "Hi there",
         }
-        result = generate_openui_for_canvas_tool("email", "My Email", data)
+        result = generate_openui_for_artifact_tool("email", "My Email", data)
         assert result is not None
         openui, title = result
         assert "EmailDraft" in openui
 
     def test_code_type_routes_to_code(self) -> None:
         data = {"code": "print(1)", "language": "python"}
-        result = generate_openui_for_canvas_tool("code", "Snippet", data)
+        result = generate_openui_for_artifact_tool("code", "Snippet", data)
         assert result is not None
         openui, title = result
         assert "CodeBlock" in openui
@@ -529,7 +529,7 @@ class TestGenerateOpenUIForCanvasTool:
             "summary": "Summary",
             "sections": [{"heading": "Sec1", "body": "Body1"}],
         }
-        result = generate_openui_for_canvas_tool("report", "Analysis", data)
+        result = generate_openui_for_artifact_tool("report", "Analysis", data)
         assert result is not None
         openui, title = result
         assert "Accordion" in openui
@@ -540,7 +540,7 @@ class TestGenerateOpenUIForCanvasTool:
             "xKey": "x",
             "yKey": "y",
         }
-        result = generate_openui_for_canvas_tool("chart", "My Chart", data)
+        result = generate_openui_for_artifact_tool("chart", "My Chart", data)
         assert result is not None
         openui, title = result
         assert title == "My Chart"
@@ -552,7 +552,7 @@ class TestGenerateOpenUIForCanvasTool:
             "yKey": "y",
             "title": "Original",
         }
-        result = generate_openui_for_canvas_tool("chart", "Override", data)
+        result = generate_openui_for_artifact_tool("chart", "Override", data)
         assert result is not None
         _, title = result
         assert title == "Original"
@@ -564,14 +564,14 @@ class TestGenerateOpenUIForCanvasTool:
             "body": "Body",
         }
         # Type is "unknown" but data matches email pattern via fallback
-        result = generate_openui_for_canvas_tool("unknown", "Title", data)
+        result = generate_openui_for_artifact_tool("unknown", "Title", data)
         assert result is not None
         openui, _ = result
         assert "EmailDraft" in openui
 
     def test_mismatched_type_and_data_returns_none(self) -> None:
         data = {"foo": "bar"}
-        result = generate_openui_for_canvas_tool("chart", "Title", data)
+        result = generate_openui_for_artifact_tool("chart", "Title", data)
         assert result is None
 
     def test_pie_chart(self) -> None:
@@ -584,7 +584,7 @@ class TestGenerateOpenUIForCanvasTool:
             "yKey": "val",
             "type": "pie",
         }
-        result = generate_openui_for_canvas_tool("chart", "Shares", data)
+        result = generate_openui_for_artifact_tool("chart", "Shares", data)
         assert result is not None
         openui, _ = result
         assert "PieChart" in openui
@@ -596,7 +596,7 @@ class TestGenerateOpenUIForCanvasTool:
             {"city": "Tokyo", "population": 37},
             {"city": "Delhi", "population": 35},
         ]
-        result = generate_openui_for_canvas_tool("chart", "Populations", data_list)  # type: ignore[arg-type]
+        result = generate_openui_for_artifact_tool("chart", "Populations", data_list)  # type: ignore[arg-type]
         assert result is not None
         openui, title = result
         assert "BarChart" in openui
@@ -608,7 +608,7 @@ class TestGenerateOpenUIForCanvasTool:
         data_list: list[dict[str, object]] = [
             {"name": "Alice", "age": 30},
         ]
-        result = generate_openui_for_canvas_tool("table", "Users", data_list)  # type: ignore[arg-type]
+        result = generate_openui_for_artifact_tool("table", "Users", data_list)  # type: ignore[arg-type]
         assert result is not None
         openui, title = result
         assert "Table" in openui
