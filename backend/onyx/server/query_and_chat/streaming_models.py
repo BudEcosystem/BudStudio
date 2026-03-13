@@ -210,6 +210,20 @@ class AgentDone(BaseObj):
     type: Literal["agent_done"] = "agent_done"
 
 
+"""User Questions Packets"""
+
+
+class UserQuestionItem(BaseModel):
+    question: str
+    options: list[str]
+
+
+class AgentUserQuestions(BaseObj):
+    type: Literal["agent_user_questions"] = "agent_user_questions"
+    questions: list[UserQuestionItem]
+    tool_call_id: str
+
+
 """Canvas Packets"""
 
 
@@ -246,6 +260,7 @@ PacketObj = Annotated[
         AgentLocalToolRequest,
         AgentStopped,
         AgentDone,
+        AgentUserQuestions,
         CanvasGeneration,
     ],
     Field(discriminator="type"),

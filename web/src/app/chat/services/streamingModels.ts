@@ -40,6 +40,9 @@ export enum PacketType {
   AGENT_STOPPED = "agent_stopped",
   AGENT_DONE = "agent_done",
 
+  // User questions packets
+  AGENT_USER_QUESTIONS = "agent_user_questions",
+
   // Canvas packets
   CANVAS_GENERATION = "canvas_generation",
 }
@@ -181,6 +184,18 @@ export interface AgentDone extends BaseObj {
   type: "agent_done";
 }
 
+// User questions packets
+export interface UserQuestionItem {
+  question: string;
+  options: string[];
+}
+
+export interface AgentUserQuestions extends BaseObj {
+  type: "agent_user_questions";
+  questions: UserQuestionItem[];
+  tool_call_id: string;
+}
+
 // Canvas packets
 export interface CanvasGeneration extends BaseObj {
   type: "canvas_generation";
@@ -192,6 +207,7 @@ export type AgentObj =
   | AgentApprovalRequired
   | AgentSessionCompacted
   | AgentLocalToolRequest
+  | AgentUserQuestions
   | AgentStopped
   | AgentDone;
 

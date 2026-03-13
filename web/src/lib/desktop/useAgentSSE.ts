@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback } from "react";
-import type { Packet, PacketType } from "@/app/chat/services/streamingModels";
+import type { Packet, PacketType, UserQuestionItem } from "@/app/chat/services/streamingModels";
 import type { ToolCallInfo } from "@/components/desktop/AgentSessionContext";
 
 /**
@@ -52,6 +52,8 @@ export interface AgentEventCallbacks {
   onSessionCompacted?: (newSessionId: string, summary: string) => void;
   /** Called when canvas content is generated (canvas_generation packet) */
   onCanvas?: (openuiLang: string, title: string) => void;
+  /** Called when the agent asks the user clarifying questions */
+  onUserQuestions?: (questions: UserQuestionItem[], toolCallId: string) => void;
 }
 
 /**
@@ -319,6 +321,12 @@ function handlePacket(
     case "agent_session_compacted": {
       const compactObj = obj as { new_session_id: string; summary: string };
       callbacks.onSessionCompacted?.(compactObj.new_session_id, compactObj.summary);
+      break;
+    }
+
+    case "agent_user_questions": {
+      const qObj = obj as { questions: UserQuestionItem[]; tool_call_id: string };
+      callbacks.onUserQuestions?.(qObj.questions, qObj.tool_call_id);
       break;
     }
 

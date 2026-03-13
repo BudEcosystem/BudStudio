@@ -41,6 +41,7 @@ REMOTE_TOOLS: set[str] = {
     "send_message",
     "use_skill",
     "render_canvas",
+    "ask_user_questions",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -739,6 +740,42 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["recipient", "message"],
+        },
+    },
+    "ask_user_questions": {
+        "name": "ask_user_questions",
+        "description": (
+            "Ask the user one or more clarifying questions when the task or "
+            "instructions are ambiguous. Each question has 2-5 selectable "
+            "options for the user to choose from. Use this when you need "
+            "user input before proceeding."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "The question text",
+                            },
+                            "options": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 2,
+                                "maxItems": 5,
+                                "description": "2-5 options for the user to choose from",
+                            },
+                        },
+                        "required": ["question", "options"],
+                    },
+                    "description": "One or more questions to ask the user",
+                },
+            },
+            "required": ["questions"],
         },
     },
     "render_canvas": {
