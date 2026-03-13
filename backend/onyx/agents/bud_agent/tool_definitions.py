@@ -765,6 +765,8 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                             "options": {
                                 "type": "array",
                                 "items": {"type": "string"},
+                                "minItems": 2,
+                                "maxItems": 5,
                                 "description": "2-5 options for the user to choose from",
                             },
                         },

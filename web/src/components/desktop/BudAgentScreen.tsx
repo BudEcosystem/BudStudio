@@ -1262,7 +1262,7 @@ export function BudAgentScreen() {
         <div className="w-full max-w-searchbar-max relative">
           {/* Approval UI - Positioned just above the chat input */}
           {bottomApproval && (
-            <div className="absolute z-50 bottom-0 left-0 right-0 mb-2 border border-border rounded-lg shadow-lg p-5" style={{ backgroundColor: '#101010' }}>
+            <div className="absolute z-50 bottom-0 left-0 right-0 mb-2 border border-border rounded-lg shadow-lg p-5 bg-neutral-950">
               <InlineToolApproval
                 toolName={bottomApproval.toolName}
                 toolInput={bottomApproval.toolInput}
@@ -1276,7 +1276,7 @@ export function BudAgentScreen() {
 
           {/* User Questions UI - Positioned just above the chat input */}
           {bottomQuestions && currentSessionId && (
-            <div className="absolute z-50 bottom-0 left-0 right-0 mb-2 border border-border rounded-lg shadow-lg p-5" style={{ backgroundColor: '#101010' }}>
+            <div className="absolute z-50 bottom-0 left-0 right-0 mb-2 border border-border rounded-lg shadow-lg p-5 bg-neutral-950">
               <UserQuestionsPanel
                 questions={bottomQuestions.questions}
                 toolCallId={bottomQuestions.toolCallId}

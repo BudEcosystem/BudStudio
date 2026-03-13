@@ -55,7 +55,7 @@ export function UserQuestionsPanel({
       }));
 
       try {
-        await fetch(`/api/agent/sessions/${sessionId}/tool-result`, {
+        const response = await fetch(`/api/agent/sessions/${sessionId}/tool-result`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -63,11 +63,15 @@ export function UserQuestionsPanel({
             output: JSON.stringify(answers),
           }),
         });
+
+        if (!response.ok) {
+          throw new Error(`Server responded with ${response.status}`);
+        }
+        onSubmitted();
       } catch (err) {
         console.error("Failed to submit user answers:", err);
+        setSubmitting(false);
       }
-
-      onSubmitted();
     },
     [submitting, questions, sessionId, toolCallId, onSubmitted]
   );
