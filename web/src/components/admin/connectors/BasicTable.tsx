@@ -1,5 +1,6 @@
 import React, { FC } from "react";
 
+import type { JSX } from "react";
 type Column = {
   header: string;
   key: string;

@@ -2236,6 +2236,9 @@ class ChatMessage(Base):
     research_answer_purpose: Mapped[ResearchAnswerPurpose] = mapped_column(
         Enum(ResearchAnswerPurpose, native_enum=False), nullable=True
     )
+    canvas_data: Mapped[dict[str, str] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
+    )
 
 
 class AgentSubQuestion(Base):

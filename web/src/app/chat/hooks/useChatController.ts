@@ -68,6 +68,7 @@ import {
 import {
   Packet,
   CitationDelta,
+  CanvasGeneration,
   MessageStart,
   PacketType,
 } from "../services/streamingModels";
@@ -805,7 +806,14 @@ export function useChatController({
               // Check if the packet contains document information
               const packetObj = (packet as Packet).obj;
 
-              if (packetObj.type === "citation_delta") {
+              if (packetObj.type === "canvas_generation") {
+                const canvasGen = packetObj as CanvasGeneration;
+                useChatSessionStore.getState().setCurrentActiveCanvas({
+                  openui_lang: canvasGen.openui_lang,
+                  title: canvasGen.title,
+                  isStreaming: false,
+                });
+              } else if (packetObj.type === "citation_delta") {
                 const citationDelta = packetObj as CitationDelta;
                 if (citationDelta.citations) {
                   citations = Object.fromEntries(

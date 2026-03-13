@@ -17,7 +17,7 @@ interface SearchAndFilterControlsProps {
   onFilterChange: (filterOptions: FilterOptions) => void;
   onClearFilters: () => void;
   hasActiveFilters: boolean;
-  filterComponentRef: React.RefObject<{ resetFilters: () => void }>;
+  filterComponentRef: React.RefObject<{ resetFilters: () => void } | null>;
   resetPagination: () => void;
 }
 

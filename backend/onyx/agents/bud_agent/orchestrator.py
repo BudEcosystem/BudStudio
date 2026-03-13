@@ -26,14 +26,17 @@ from onyx.agents.bud_agent.agent_context import AgentExecutionMode
 from onyx.agents.bud_agent.agent_context import build_agent_run_context
 from onyx.agents.bud_agent.agent_context import build_message_history
 from onyx.agents.bud_agent.agent_context import compact_session
+from onyx.agents.bud_agent.canvas_llm import maybe_generate_canvas
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
 from onyx.db.agent import add_session_message
+from onyx.db.agent import update_message_ui_spec_canvas
 from onyx.db.agent import update_session_stats
 from onyx.db.agent import update_session_status
 from onyx.db.enums import AgentMessageRole
 from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import User
 from onyx.server.query_and_chat.streaming_models import AgentDone
+from onyx.server.query_and_chat.streaming_models import CanvasGeneration
 from onyx.server.query_and_chat.streaming_models import AgentSessionCompacted
 from onyx.server.query_and_chat.streaming_models import AgentStopped
 from onyx.server.query_and_chat.streaming_models import CitationDelta
@@ -101,6 +104,7 @@ class BudAgentOrchestrator:
         self._last_tool_step: int | None = None
         self._iteration_texts: list[str] = []
         self._current_iteration_text = ""
+        self._canvas_tool_used = False
         self._stop_redis_key = f"bud_agent_stop:{self._session_id}"
         self._running_redis_key = f"bud_agent_running:{self._session_id}"
         self._running_redis_ttl = 600  # matches soft_time_limit
@@ -552,6 +556,8 @@ class BudAgentOrchestrator:
                         self._tool_call_count += 1
                         raw = getattr(ev.item, "raw_item", None)
                         tool_name = (getattr(raw, "name", None) or (raw.get("name") if isinstance(raw, dict) else None) or "unknown").replace("\n", " ")
+                        if tool_name == "render_canvas":
+                            self._canvas_tool_used = True
                         logger.info(
                             "Tool call #%d: %s (session %s)",
                             self._tool_call_count,
@@ -705,14 +711,64 @@ class BudAgentOrchestrator:
                     ui_spec=ui_spec,
                 )
 
-            # 9. Update session usage stats
+            # 9. Post-response canvas generation
+            # Skip if the agent already rendered a canvas via render_canvas tool
+            logger.info(
+                "[CANVAS-AGENT] Post-response check: "
+                "response_len=%d, is_stopped=%s, canvas_tool_used=%s, "
+                "model=%s, preview=%r",
+                len(self._full_response_text),
+                self._is_stopped(),
+                self._canvas_tool_used,
+                ctx.model_name,
+                self._full_response_text[:100],
+            )
+            if (
+                self._full_response_text
+                and not self._is_stopped()
+                and not self._canvas_tool_used
+            ):
+                from onyx.agents.bud_agent.canvas_llm import should_attempt_canvas
+
+                pre_filter = should_attempt_canvas(self._full_response_text)
+                logger.info("[CANVAS-AGENT] Pre-filter result: %s", pre_filter)
+
+                canvas_result = maybe_generate_canvas(
+                    llm=ctx.llm,
+                    response_text=self._full_response_text,
+                )
+                logger.info(
+                    "[CANVAS-AGENT] maybe_generate_canvas returned: %s",
+                    canvas_result is not None,
+                )
+                if canvas_result is not None:
+                    openui_lang, canvas_title = canvas_result
+                    logger.info(
+                        "[CANVAS-AGENT] Emitting CanvasGeneration: "
+                        "title=%r, openui_lang=%r",
+                        canvas_title,
+                        openui_lang[:100],
+                    )
+                    self._emit(CanvasGeneration(
+                        openui_lang=openui_lang,
+                        title=canvas_title,
+                    ))
+                    update_message_ui_spec_canvas(
+                        self._db_session,
+                        self._session_id,
+                        self._step_number,
+                        openui_lang,
+                        canvas_title,
+                    )
+
+            # 10. Update session usage stats
             update_session_stats(
                 self._db_session,
                 self._session_id,
                 tool_calls=self._tool_call_count,
             )
 
-            # 10. Signal that we are done
+            # 11. Signal that we are done
             self._emit(AgentDone())
 
         except Exception as e:

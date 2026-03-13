@@ -30,6 +30,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import { FaMarkdown } from "react-icons/fa";
 import { useState, useCallback, useEffect, memo, useRef } from "react";
+import type { JSX } from "react";
 import remarkGfm from "remark-gfm";
 import Button from "@/refresh-components/buttons/Button";
 import { Checkbox } from "@/components/ui/checkbox";

@@ -866,6 +866,7 @@ def stream_chat_message_objects(
             skip_gen_ai_answer_generation=new_msg_req.skip_gen_ai_answer_generation,
             project_instructions=project_instructions,
         )
+        full_response_text = ""
         if simple_agent_framework_enabled:
             llm_model, model_settings = get_llm_model_and_settings_for_persona(
                 persona=persona,
@@ -873,7 +874,7 @@ def stream_chat_message_objects(
                 additional_headers=litellm_additional_headers,
                 user=user,
             )
-            yield from _fast_message_stream(
+            for packet in _fast_message_stream(
                 answer,
                 tools,
                 db_session,
@@ -883,13 +884,73 @@ def stream_chat_message_objects(
                 prompt_config,
                 llm_model,
                 model_settings,
-            )
+            ):
+                if isinstance(packet, Packet):
+                    if isinstance(packet.obj, (MessageStart, MessageDelta)):
+                        if packet.obj.content:
+                            full_response_text += packet.obj.content
+                yield packet
         else:
             from onyx.chat.packet_proccessing import process_streamed_packets
 
-            yield from process_streamed_packets.process_streamed_packets(
+            for packet in process_streamed_packets.process_streamed_packets(
                 answer_processed_output=answer.processed_streamed_output,
-            )
+            ):
+                if isinstance(packet, Packet):
+                    if isinstance(packet.obj, (MessageStart, MessageDelta)):
+                        if packet.obj.content:
+                            full_response_text += packet.obj.content
+                yield packet
+
+        # Post-response canvas generation — reuse the already-initialized LLM
+        logger.info(
+            f"[CANVAS] Post-response check: llm={llm is not None}, "
+            f"response_len={len(full_response_text)}, "
+            f"preview={full_response_text[:100]!r}"
+        )
+        if llm is not None and full_response_text:
+            from onyx.agents.bud_agent.canvas_llm import maybe_generate_canvas
+            from onyx.agents.bud_agent.canvas_llm import should_attempt_canvas
+            from onyx.server.query_and_chat.streaming_models import CanvasGeneration
+
+            pre_filter = should_attempt_canvas(full_response_text)
+            logger.info(f"[CANVAS] Pre-filter result: {pre_filter}")
+
+            try:
+                canvas_result = maybe_generate_canvas(
+                    llm=llm,
+                    response_text=full_response_text,
+                )
+                logger.info(f"[CANVAS] maybe_generate_canvas returned: {canvas_result is not None}")
+                if canvas_result is not None:
+                    openui_lang, canvas_title = canvas_result
+                    logger.info(
+                        f"[CANVAS] Emitting CanvasGeneration: title={canvas_title!r}, "
+                        f"openui_lang={openui_lang[:100]!r}"
+                    )
+                    # Persist canvas to DB BEFORE yielding, because
+                    # code after yield may not execute if the client
+                    # disconnects and the generator is garbage-collected.
+                    from onyx.db.chat import update_chat_message_canvas
+
+                    update_chat_message_canvas(
+                        db_session=db_session,
+                        chat_message_id=reserved_message_id,
+                        openui_lang=openui_lang,
+                        title=canvas_title,
+                    )
+                    yield Packet(
+                        ind=0,
+                        obj=CanvasGeneration(
+                            openui_lang=openui_lang,
+                            title=canvas_title,
+                        ),
+                    )
+            except Exception:
+                logger.warning(
+                    "Canvas generation failed in chat stream, skipping",
+                    exc_info=True,
+                )
 
     except ValueError as e:
         logger.exception("Failed to process chat message.")

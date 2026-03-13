@@ -7,6 +7,7 @@ import {
 } from "@/lib/search/interfaces";
 import { DocumentFeedbackBlock } from "./DocumentFeedbackBlock";
 import { useContext, useState } from "react";
+import type { JSX } from "react";
 import { PopupSpec } from "../admin/connectors/Popup";
 import { DocumentUpdatedAtBadge } from "./DocumentUpdatedAtBadge";
 import { SourceIcon } from "../SourceIcon";

@@ -10,6 +10,7 @@ from typing import Any
 from onyx.context.search.models import SavedSearchDoc
 from onyx.db.enums import AgentMessageRole
 from onyx.db.models import AgentMessage
+from onyx.server.query_and_chat.streaming_models import CanvasGeneration
 from onyx.server.query_and_chat.streaming_models import CitationDelta
 from onyx.server.query_and_chat.streaming_models import CitationInfo
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
@@ -215,6 +216,15 @@ def _emit_tool_packets(
     elif tool_name == "open_url":
         return _emit_open_url_packets(msg, step)
 
+    # Check ui_spec and tool_output for canvas / OpenUI Lang data to propagate on history
+    ui_spec: dict[str, Any] | None = getattr(msg, "ui_spec", None)
+    openui_lang: str | None = (
+        ui_spec.get("openui_lang") if ui_spec else None
+    )
+    # canvas_tool.py stores openui_lang inside tool_output
+    if not openui_lang and isinstance(msg.tool_output, dict):
+        openui_lang = msg.tool_output.get("openui_lang")
+
     # Generic tool rendering
     packets: list[Packet] = []
     packets.append(
@@ -235,6 +245,7 @@ def _emit_tool_packets(
                     if isinstance(data, (dict, list))
                     else "text",
                     data=data,
+                    openui_response=openui_lang,
                 ),
             )
         )
@@ -251,6 +262,27 @@ def _emit_tool_packets(
         )
 
     packets.append(Packet(ind=step, obj=SectionEnd()))
+    return packets
+
+
+def _emit_canvas_packets(
+    ui_spec: dict[str, Any], step: int
+) -> list[Packet]:
+    """Emit a CanvasGeneration packet if ui_spec has canvas data."""
+    packets: list[Packet] = []
+    canvas_data: dict[str, Any] | None = ui_spec.get("canvas")
+
+    if canvas_data and "openui_lang" in canvas_data:
+        packets.append(
+            Packet(
+                ind=step,
+                obj=CanvasGeneration(
+                    openui_lang=canvas_data["openui_lang"],
+                    title=canvas_data.get("title", "Canvas"),
+                ),
+            )
+        )
+
     return packets
 
 
@@ -347,6 +379,12 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
                 )
             packets.append(Packet(ind=step_counter, obj=SectionEnd()))
             step_counter += 1
+
+        # Emit canvas packet if ui_spec has canvas data
+        if assistant_msg and assistant_msg.ui_spec and "canvas" in assistant_msg.ui_spec:
+            packets.extend(
+                _emit_canvas_packets(assistant_msg.ui_spec, step_counter)
+            )
     else:
         # ── Original path: no intermediate texts ──
         for msg in non_user:
@@ -407,6 +445,20 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
                 )
                 packets.extend(_emit_tool_packets(msg, step))
                 step_counter = step + 1
+
+    # Emit canvas packet from the original path if present
+    if not (intermediate_texts and tool_msgs):
+        # Find the assistant message to check for canvas data
+        for msg in non_user:
+            if (
+                msg.role == AgentMessageRole.ASSISTANT
+                and msg.ui_spec
+                and "canvas" in msg.ui_spec
+            ):
+                packets.extend(
+                    _emit_canvas_packets(msg.ui_spec, step_counter)
+                )
+                break
 
     # Add OverallStop at the end
     if packets:

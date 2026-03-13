@@ -509,3 +509,168 @@ def test_no_intermediate_texts_preserves_original_behavior() -> None:
     assert "custom_tool_start" in types
     assert "message_start" in types
     assert "stop" in types
+
+
+def test_openui_response_propagated_from_ui_spec() -> None:
+    """Tool message with ui_spec.openui_lang sets openui_response on CustomToolDelta."""
+    base_time = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    openui_code = 'root = EmailDraft(["a@b.com"], [], "Hi", "Hello")'
+    messages = [
+        _make_message(
+            AgentMessageRole.USER,
+            content="Draft an email",
+            created_at=base_time,
+        ),
+        _make_message(
+            AgentMessageRole.TOOL,
+            tool_name="send_email",
+            tool_input={"to": ["a@b.com"], "subject": "Hi", "body": "Hello"},
+            tool_output={"to": ["a@b.com"], "subject": "Hi", "body": "Hello"},
+            tool_call_id="tc-email",
+            step_number=0,
+            ui_spec={
+                "openui_lang": openui_code,
+                "canvas_title": "Email: Hi",
+            },
+            created_at=base_time + datetime.timedelta(seconds=1),
+        ),
+        _make_message(
+            AgentMessageRole.ASSISTANT,
+            content="Email drafted.",
+            step_number=1,
+            created_at=base_time + datetime.timedelta(seconds=2),
+        ),
+    ]
+    result = translate_agent_messages_to_packets(messages)
+
+    assert len(result) == 1
+    turn = result[0]
+
+    # Find the CustomToolDelta packet
+    tool_deltas = [p for p in turn if p.obj.type == "custom_tool_delta"]
+    assert len(tool_deltas) == 1
+    td_obj = tool_deltas[0].obj
+    assert isinstance(td_obj, CustomToolDelta)
+    assert td_obj.openui_response == openui_code
+
+
+def test_openui_response_none_when_no_ui_spec() -> None:
+    """Tool message without ui_spec has openui_response=None on CustomToolDelta."""
+    base_time = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    messages = [
+        _make_message(
+            AgentMessageRole.USER,
+            content="Read file",
+            created_at=base_time,
+        ),
+        _make_message(
+            AgentMessageRole.TOOL,
+            tool_name="read_file",
+            tool_input={"path": "/tmp/test.txt"},
+            tool_output={"output": "file contents"},
+            tool_call_id="tc-rf",
+            step_number=0,
+            ui_spec=None,
+            created_at=base_time + datetime.timedelta(seconds=1),
+        ),
+        _make_message(
+            AgentMessageRole.ASSISTANT,
+            content="Done.",
+            step_number=1,
+            created_at=base_time + datetime.timedelta(seconds=2),
+        ),
+    ]
+    result = translate_agent_messages_to_packets(messages)
+
+    assert len(result) == 1
+    turn = result[0]
+
+    tool_deltas = [p for p in turn if p.obj.type == "custom_tool_delta"]
+    assert len(tool_deltas) == 1
+    td_obj = tool_deltas[0].obj
+    assert isinstance(td_obj, CustomToolDelta)
+    assert td_obj.openui_response is None
+
+
+def test_openui_response_not_set_on_error_packets() -> None:
+    """Tool errors should not carry openui_response even if ui_spec exists."""
+    base_time = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    messages = [
+        _make_message(
+            AgentMessageRole.USER,
+            content="Do something",
+            created_at=base_time,
+        ),
+        _make_message(
+            AgentMessageRole.TOOL,
+            tool_name="broken_tool",
+            tool_input={},
+            tool_output=None,
+            tool_error="Something went wrong",
+            tool_call_id="tc-err",
+            step_number=0,
+            ui_spec={"openui_lang": "should not appear"},
+            created_at=base_time + datetime.timedelta(seconds=1),
+        ),
+        _make_message(
+            AgentMessageRole.ASSISTANT,
+            content="Error occurred.",
+            step_number=1,
+            created_at=base_time + datetime.timedelta(seconds=2),
+        ),
+    ]
+    result = translate_agent_messages_to_packets(messages)
+
+    assert len(result) == 1
+    turn = result[0]
+
+    tool_deltas = [p for p in turn if p.obj.type == "custom_tool_delta"]
+    assert len(tool_deltas) == 1
+    td_obj = tool_deltas[0].obj
+    assert isinstance(td_obj, CustomToolDelta)
+    assert td_obj.response_type == "error"
+    # Error packets do not carry openui_response
+    assert td_obj.openui_response is None
+
+
+def test_openui_response_propagated_from_tool_output() -> None:
+    """canvas_tool stores openui_lang inside tool_output — verify fallback reads it."""
+    base_time = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+    openui_code = 'root = EmailDraft(["a@b.com"], [], "Subject", "Body")'
+    messages = [
+        _make_message(
+            AgentMessageRole.USER,
+            content="Render a canvas",
+            created_at=base_time,
+        ),
+        _make_message(
+            AgentMessageRole.TOOL,
+            tool_name="render_canvas",
+            tool_input={"type": "email_draft"},
+            tool_output={
+                "title": "Email: Subject",
+                "type": "email_draft",
+                "openui_lang": openui_code,
+            },
+            tool_call_id="tc-canvas",
+            step_number=0,
+            ui_spec=None,
+            created_at=base_time + datetime.timedelta(seconds=1),
+        ),
+        _make_message(
+            AgentMessageRole.ASSISTANT,
+            content="Canvas rendered.",
+            step_number=1,
+            created_at=base_time + datetime.timedelta(seconds=2),
+        ),
+    ]
+    result = translate_agent_messages_to_packets(messages)
+
+    assert len(result) == 1
+    turn = result[0]
+
+    tool_deltas = [p for p in turn if p.obj.type == "custom_tool_delta"]
+    assert len(tool_deltas) == 1
+    td_obj = tool_deltas[0].obj
+    assert isinstance(td_obj, CustomToolDelta)
+    assert td_obj.openui_response == openui_code

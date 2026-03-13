@@ -48,6 +48,7 @@ import { ChatSearchModal } from "@/app/chat/chat_search/ChatSearchModal";
 import MinimalMarkdown from "@/components/chat/MinimalMarkdown";
 import { useScreenSize } from "@/hooks/useScreenSize";
 import { DocumentResults } from "@/app/chat/components/documentSidebar/DocumentResults";
+import { CanvasPanel } from "@/app/chat/components/canvasPanel/CanvasPanel";
 import { useChatController } from "@/app/chat/hooks/useChatController";
 import { useAssistantController } from "@/app/chat/hooks/useAssistantController";
 import { useChatSessionController } from "@/app/chat/hooks/useChatSessionController";
@@ -68,6 +69,8 @@ import {
   useHasPerformedInitialScroll,
   useDocumentSidebarVisible,
   useHasSentLocalUserMessage,
+  useCanvasPanelVisible,
+  useActiveCanvas,
 } from "@/app/chat/stores/useChatSessionStore";
 import { FederatedOAuthModal } from "@/components/chat/FederatedOAuthModal";
 import { MessagesDisplay } from "@/app/chat/components/MessagesDisplay";
@@ -433,11 +436,16 @@ export function ChatPage({
   const hasPerformedInitialScroll = useHasPerformedInitialScroll();
   const currentSessionHasSentLocalUserMessage = useHasSentLocalUserMessage();
   const documentSidebarVisible = useDocumentSidebarVisible();
+  const canvasPanelVisible = useCanvasPanelVisible();
+  const activeCanvas = useActiveCanvas();
   const updateHasPerformedInitialScroll = useChatSessionStore(
     (state) => state.updateHasPerformedInitialScroll
   );
   const updateCurrentDocumentSidebarVisible = useChatSessionStore(
     (state) => state.updateCurrentDocumentSidebarVisible
+  );
+  const updateCurrentCanvasPanelVisible = useChatSessionStore(
+    (state) => state.updateCurrentCanvasPanelVisible
   );
 
   const clientScrollToBottom = useCallback(
@@ -641,6 +649,22 @@ export function ChatPage({
   const handleDesktopDocumentSidebarClose = useCallback(() => {
     setTimeout(() => updateCurrentDocumentSidebarVisible(false), 300);
   }, [updateCurrentDocumentSidebarVisible]);
+
+  // Canvas panel handlers
+  const handleCanvasClose = useCallback(() => {
+    updateCurrentCanvasPanelVisible(false);
+  }, [updateCurrentCanvasPanelVisible]);
+
+  const handleCanvasSendMessage = useCallback(
+    (msg: string) => {
+      onSubmit({
+        message: msg,
+        currentMessageFiles: [],
+        useAgentSearch: deepResearchEnabled,
+      });
+    },
+    [onSubmit, deepResearchEnabled]
+  );
 
   // Determine whether to show the centered input (no messages yet)
   const showCenteredInput =
@@ -989,10 +1013,32 @@ export function ChatPage({
           )}
         </div>
 
+        {/* Canvas Panel sidebar */}
         <div
           className={cn(
             "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
-            documentSidebarVisible && !settings?.isMobile
+            canvasPanelVisible && !settings?.isMobile
+              ? "w-[30rem]"
+              : "w-[0rem]"
+          )}
+        >
+          <div className="h-full w-[30rem]">
+            {/* IMPORTANT: this is a memoized component, and it's very important
+              for performance reasons that this stays true. MAKE SURE that all function
+              props are wrapped in useCallback. */}
+            <CanvasPanel
+              activeCanvas={activeCanvas}
+              closeSidebar={handleCanvasClose}
+              sendMessage={handleCanvasSendMessage}
+            />
+          </div>
+        </div>
+
+        {/* Document Results sidebar — hidden when canvas panel is visible */}
+        <div
+          className={cn(
+            "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
+            documentSidebarVisible && !canvasPanelVisible && !settings?.isMobile
               ? "w-[25rem]"
               : "w-[0rem]"
           )}

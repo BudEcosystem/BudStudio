@@ -2,6 +2,7 @@
 
 import React from "react";
 
+import type { JSX } from "react";
 export function HeaderTitle({
   children,
   backgroundToggled,

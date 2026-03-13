@@ -44,7 +44,7 @@ interface UseChatSessionControllerProps {
   // Refs
   chatSessionIdRef: React.MutableRefObject<string | null>;
   loadedIdSessionRef: React.MutableRefObject<string | null>;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  textAreaRef: React.RefObject<HTMLTextAreaElement | null>;
   scrollInitialized: React.MutableRefObject<boolean>;
   isInitialLoad: React.MutableRefObject<boolean>;
   submitOnLoadPerformed: React.MutableRefObject<boolean>;

@@ -2,7 +2,7 @@ import { Dispatch, SetStateAction, useEffect, useRef } from "react";
 
 interface UseSidebarVisibilityProps {
   sidebarVisible: boolean;
-  sidebarElementRef: React.RefObject<HTMLElement>;
+  sidebarElementRef: React.RefObject<HTMLElement | null>;
   showDocSidebar: boolean;
   setShowDocSidebar: Dispatch<SetStateAction<boolean>>;
   mobile?: boolean;

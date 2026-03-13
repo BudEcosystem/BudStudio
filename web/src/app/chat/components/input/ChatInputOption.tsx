@@ -1,4 +1,5 @@
 import React, { useRef } from "react";
+import type { JSX } from "react";
 import { ChevronDownIcon, IconProps } from "@/components/icons/icons";
 import {
   Tooltip,

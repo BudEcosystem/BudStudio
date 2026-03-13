@@ -1,4 +1,5 @@
 import React from "react";
+import type { JSX } from "react";
 import { DocumentSetSummary, Tag, ValidSources } from "@/lib/types";
 import { SourceMetadata } from "@/lib/search/interfaces";
 import { InfoIcon, defaultTailwindCSS } from "@/components/icons/icons";

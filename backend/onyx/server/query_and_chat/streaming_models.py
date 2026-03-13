@@ -101,6 +101,7 @@ class CustomToolDelta(BaseObj):
     data: dict | list | str | int | float | bool | None = None
     # For file-based responses like image/csv
     file_ids: list[str] | None = None
+    openui_response: str | None = None
 
 
 """Reasoning Packets"""
@@ -209,6 +210,15 @@ class AgentDone(BaseObj):
     type: Literal["agent_done"] = "agent_done"
 
 
+"""Canvas Packets"""
+
+
+class CanvasGeneration(BaseObj):
+    type: Literal["canvas_generation"] = "canvas_generation"
+    openui_lang: str
+    title: str
+
+
 """Packet"""
 
 # Discriminated union of all possible packet object types
@@ -236,6 +246,7 @@ PacketObj = Annotated[
         AgentLocalToolRequest,
         AgentStopped,
         AgentDone,
+        CanvasGeneration,
     ],
     Field(discriminator="type"),
 ]

@@ -6,6 +6,7 @@ import {
   TableBody,
 } from "@/components/ui/table";
 import React, { useMemo, useState } from "react";
+import type { JSX } from "react";
 import {
   closestCenter,
   DndContext,

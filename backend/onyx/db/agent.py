@@ -249,6 +249,40 @@ def update_tool_message_result(
     return message
 
 
+def update_message_ui_spec_canvas(
+    db_session: Session,
+    session_id: UUID,
+    step_number: int,
+    openui_lang: str,
+    canvas_title: str,
+) -> None:
+    """Update the assistant message's ui_spec with canvas data.
+
+    Finds the most recent assistant message for the given session and step,
+    then merges a 'canvas' key into its ui_spec JSON.
+    """
+    stmt = (
+        select(AgentMessage)
+        .where(
+            AgentMessage.session_id == session_id,
+            AgentMessage.role == AgentMessageRole.ASSISTANT,
+        )
+        .order_by(desc(AgentMessage.created_at))
+        .limit(1)
+    )
+    message = db_session.execute(stmt).scalar_one_or_none()
+    if message is None:
+        return
+
+    ui_spec = message.ui_spec or {}
+    ui_spec["canvas"] = {
+        "openui_lang": openui_lang,
+        "title": canvas_title,
+    }
+    message.ui_spec = ui_spec
+    db_session.commit()
+
+
 def update_session_status(
     db_session: Session,
     session_id: UUID,

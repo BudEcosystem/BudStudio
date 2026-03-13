@@ -9,6 +9,7 @@ import {
 } from "../../../services/streamingModels";
 import { MessageRenderer, RenderType } from "../interfaces";
 import { BlinkingDot } from "../../BlinkingDot";
+import { buildImgUrl } from "../../../components/files/images/utils";
 
 const MAX_PREVIEW_LENGTH = 200;
 
@@ -102,6 +103,7 @@ function constructCustomToolState(packets: CustomToolPacket[]) {
   const responseType = latestDelta?.response_type || null;
   const data = latestDelta?.data;
   const fileIds = latestDelta?.file_ids || null;
+  const openui_response = latestDelta?.openui_response || null;
 
   const isRunning = Boolean(toolStart && !toolEnd);
   const isComplete = Boolean(toolStart && toolEnd);
@@ -111,6 +113,7 @@ function constructCustomToolState(packets: CustomToolPacket[]) {
     responseType,
     data,
     fileIds,
+    openui_response,
     isRunning,
     isComplete,
   };
@@ -122,8 +125,15 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
   renderType,
   children,
 }) => {
-  const { toolName, responseType, data, fileIds, isRunning, isComplete } =
-    constructCustomToolState(packets);
+  const {
+    toolName,
+    responseType,
+    data,
+    fileIds,
+    openui_response,
+    isRunning,
+    isComplete,
+  } = constructCustomToolState(packets);
 
   useEffect(() => {
     if (isComplete) {
@@ -134,13 +144,22 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
   const status = useMemo(() => {
     if (isComplete) {
       if (responseType === "error") return `${toolName} failed`;
+      if (openui_response) {
+        const canvasTitle =
+          (typeof data === "object" && data !== null && "title" in data)
+            ? (data as Record<string, unknown>).title
+            : null;
+        return canvasTitle
+          ? `Generated canvas: ${canvasTitle}`
+          : `${toolName} generated a canvas`;
+      }
       if (responseType === "image") return `${toolName} returned images`;
       if (responseType === "csv") return `${toolName} returned a file`;
       return `${toolName} completed`;
     }
     if (isRunning) return `${toolName} running...`;
     return null;
-  }, [toolName, responseType, isComplete, isRunning]);
+  }, [toolName, responseType, openui_response, data, isComplete, isRunning]);
 
   const dataPreview = useMemo(() => {
     if (!isComplete || data === undefined || data === null) return null;
@@ -148,6 +167,20 @@ export const CustomToolRenderer: MessageRenderer<CustomToolPacket, {}> = ({
   }, [isComplete, data, responseType]);
 
   const icon = responseType === "error" ? FiAlertCircle : FiTool;
+
+  // --- Canvas card path: openui_response is present ---
+  // Canvas is rendered at the message level (outside steps accordion),
+  // so here we only show a simple status line to avoid duplication.
+  // `status` already contains the text; content is left empty to avoid double rendering.
+  if (openui_response) {
+    return children({
+      icon,
+      status,
+      content: <></>,
+    });
+  }
+
+  // --- Default path: no openui_response ---
 
   // HIGHLIGHT mode — compact, shown during streaming
   if (renderType === RenderType.HIGHLIGHT) {
