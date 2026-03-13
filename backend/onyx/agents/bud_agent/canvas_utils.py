@@ -203,7 +203,7 @@ def _to_data_table(result: dict[str, Any]) -> tuple[str, str]:
     """Generate Table OpenUI Lang from columns + rows.
 
     Format:
-        root = Stack([title, tbl])
+        root = Card([title, tbl])
         title = TextContent("Title", "large-heavy")
         tbl = Table(cols, rows)
         cols = [Col("Name", "string"), Col("Age", "number")]
@@ -288,7 +288,7 @@ def _to_code_block(result: dict[str, Any]) -> tuple[str, str]:
     """Generate CodeBlock OpenUI Lang.
 
     Format:
-        root = Stack([title, cb])
+        root = Card([title, cb])
         title = TextContent("Title", "large-heavy")
         cb = CodeBlock("python", codeStr)
         codeStr = "escaped code string"
@@ -313,10 +313,10 @@ def _to_code_block(result: dict[str, Any]) -> tuple[str, str]:
 
 
 def _to_analysis_report(result: dict[str, Any]) -> tuple[str, str]:
-    """Generate Stack + TextContent + Accordion OpenUI Lang.
+    """Generate Card + TextContent + Accordion OpenUI Lang.
 
     Format:
-        root = Stack([title, summary, accordion])
+        root = Card([title, summary, accordion])
         title = TextContent("Title", "large-heavy")
         summary = TextContent("Summary text")
         accordion = Accordion([s0, s1, ...])
@@ -358,14 +358,14 @@ def _to_chart(result: dict[str, Any]) -> tuple[str, str]:
     """Generate BarChart/LineChart/PieChart OpenUI Lang.
 
     For bar/line:
-        root = Stack([title, chart])
+        root = Card([title, chart])
         title = TextContent("Title", "large-heavy")
         chart = BarChart(labels, [s1], "grouped")
         labels = ["Jan", "Feb"]
         s1 = Series("Values", [10, 20])
 
     For pie:
-        root = Stack([title, chart])
+        root = Card([title, chart])
         title = TextContent("Title", "large-heavy")
         chart = PieChart([sl0, sl1, ...])
         sl0 = Slice("Category", 42)

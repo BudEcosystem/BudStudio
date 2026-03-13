@@ -252,13 +252,12 @@ def update_tool_message_result(
 def update_message_ui_spec_canvas(
     db_session: Session,
     session_id: UUID,
-    step_number: int,
     openui_lang: str,
     canvas_title: str,
 ) -> None:
     """Update the assistant message's ui_spec with canvas data.
 
-    Finds the most recent assistant message for the given session and step,
+    Finds the most recent assistant message for the given session,
     then merges a 'canvas' key into its ui_spec JSON.
     """
     stmt = (

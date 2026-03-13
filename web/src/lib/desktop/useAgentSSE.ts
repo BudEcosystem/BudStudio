@@ -253,7 +253,14 @@ function handlePacket(
       );
       // If the tool produced canvas content, open the canvas panel
       if (toolObj.openui_response) {
-        callbacks.onCanvas?.(toolObj.openui_response, toolObj.tool_name);
+        const canvasTitle =
+          (typeof toolObj.data === "object" && toolObj.data !== null
+            ? (toolObj.data as Record<string, unknown>).title
+            : undefined);
+        callbacks.onCanvas?.(
+          toolObj.openui_response,
+          typeof canvasTitle === "string" ? canvasTitle : toolObj.tool_name
+        );
       }
       break;
     }

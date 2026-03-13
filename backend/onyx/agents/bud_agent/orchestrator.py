@@ -756,7 +756,6 @@ class BudAgentOrchestrator:
                     update_message_ui_spec_canvas(
                         self._db_session,
                         self._session_id,
-                        self._step_number,
                         openui_lang,
                         canvas_title,
                     )

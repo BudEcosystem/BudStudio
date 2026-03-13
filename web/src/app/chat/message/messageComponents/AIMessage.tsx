@@ -364,8 +364,9 @@ export default function AIMessage({
                                   const title =
                                     p.obj.type === PacketType.CANVAS_GENERATION
                                       ? (p.obj as CanvasGenerationPacket).title
-                                      : (typeof rawDeltaTitle === "string" ? rawDeltaTitle : null)
-                                        || "Canvas";
+                                      : typeof rawDeltaTitle === "string"
+                                        ? rawDeltaTitle
+                                        : "Canvas";
                                   return (
                                     <div className="mt-3" key={`canvas-${idx}`}>
                                       <CanvasCard
