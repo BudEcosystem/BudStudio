@@ -10,7 +10,7 @@ from typing import Any
 from onyx.context.search.models import SavedSearchDoc
 from onyx.db.enums import AgentMessageRole
 from onyx.db.models import AgentMessage
-from onyx.server.query_and_chat.streaming_models import CanvasGeneration
+from onyx.server.query_and_chat.streaming_models import ArtifactGeneration
 from onyx.server.query_and_chat.streaming_models import CitationDelta
 from onyx.server.query_and_chat.streaming_models import CitationInfo
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
@@ -216,12 +216,12 @@ def _emit_tool_packets(
     elif tool_name == "open_url":
         return _emit_open_url_packets(msg, step)
 
-    # Check ui_spec and tool_output for canvas / OpenUI Lang data to propagate on history
+    # Check ui_spec and tool_output for artifact / OpenUI Lang data to propagate on history
     ui_spec: dict[str, Any] | None = getattr(msg, "ui_spec", None)
     openui_lang: str | None = (
         ui_spec.get("openui_lang") if ui_spec else None
     )
-    # canvas_tool.py stores openui_lang inside tool_output
+    # artifact_tool.py stores openui_lang inside tool_output
     if not openui_lang and isinstance(msg.tool_output, dict):
         openui_lang = msg.tool_output.get("openui_lang")
 
@@ -265,20 +265,20 @@ def _emit_tool_packets(
     return packets
 
 
-def _emit_canvas_packets(
+def _emit_artifact_packets(
     ui_spec: dict[str, Any], step: int
 ) -> list[Packet]:
-    """Emit a CanvasGeneration packet if ui_spec has canvas data."""
+    """Emit an ArtifactGeneration packet if ui_spec has artifact data."""
     packets: list[Packet] = []
-    canvas_data: dict[str, Any] | None = ui_spec.get("canvas")
+    artifact_data: dict[str, Any] | None = ui_spec.get("artifact")
 
-    if canvas_data and "openui_lang" in canvas_data:
+    if artifact_data and "openui_lang" in artifact_data:
         packets.append(
             Packet(
                 ind=step,
-                obj=CanvasGeneration(
-                    openui_lang=canvas_data["openui_lang"],
-                    title=canvas_data.get("title", "Canvas"),
+                obj=ArtifactGeneration(
+                    openui_lang=artifact_data["openui_lang"],
+                    title=artifact_data.get("title", "Artifact"),
                 ),
             )
         )
@@ -380,10 +380,10 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
             packets.append(Packet(ind=step_counter, obj=SectionEnd()))
             step_counter += 1
 
-        # Emit canvas packet if ui_spec has canvas data
-        if assistant_msg and assistant_msg.ui_spec and "canvas" in assistant_msg.ui_spec:
+        # Emit artifact packet if ui_spec has artifact data
+        if assistant_msg and assistant_msg.ui_spec and "artifact" in assistant_msg.ui_spec:
             packets.extend(
-                _emit_canvas_packets(assistant_msg.ui_spec, step_counter)
+                _emit_artifact_packets(assistant_msg.ui_spec, step_counter)
             )
     else:
         # ── Original path: no intermediate texts ──
@@ -446,17 +446,17 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
                 packets.extend(_emit_tool_packets(msg, step))
                 step_counter = step + 1
 
-    # Emit canvas packet from the original path if present
+    # Emit artifact packet from the original path if present
     if not (intermediate_texts and tool_msgs):
-        # Find the assistant message to check for canvas data
+        # Find the assistant message to check for artifact data
         for msg in non_user:
             if (
                 msg.role == AgentMessageRole.ASSISTANT
                 and msg.ui_spec
-                and "canvas" in msg.ui_spec
+                and "artifact" in msg.ui_spec
             ):
                 packets.extend(
-                    _emit_canvas_packets(msg.ui_spec, step_counter)
+                    _emit_artifact_packets(msg.ui_spec, step_counter)
                 )
                 break
 

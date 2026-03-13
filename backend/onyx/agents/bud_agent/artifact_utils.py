@@ -1,7 +1,7 @@
 """Deterministic OpenUI Lang mapping for known tool results.
 
 Maps structured tool results to OpenUI Lang strings that the frontend
-can render as canvas cards using @openuidev/react-ui components
+can render as artifact cards using @openuidev/react-ui components
 (EmailDraft, Table, CodeBlock, BarChart, LineChart, PieChart, etc.).
 
 No LLM involved -- pure template logic based on result shape.
@@ -13,12 +13,12 @@ import json
 from typing import Any
 
 
-def generate_openui_for_canvas_tool(
-    canvas_type: str, title: str, data: dict[str, Any] | list[Any]
+def generate_openui_for_artifact_tool(
+    artifact_type: str, title: str, data: dict[str, Any] | list[Any]
 ) -> tuple[str, str] | None:
-    """Convert render_canvas tool input to OpenUI Lang.
+    """Convert render_artifact tool input to OpenUI Lang.
 
-    Routes to the appropriate converter based on the explicit canvas_type,
+    Routes to the appropriate converter based on the explicit artifact_type,
     injecting the title into the data if not already present.
     Falls back to generic key-based detection if the type doesn't match.
 
@@ -28,7 +28,7 @@ def generate_openui_for_canvas_tool(
     """
     # Normalise: if data is a list, wrap it for the requested type.
     if isinstance(data, list):
-        if canvas_type == "chart":
+        if artifact_type == "chart":
             # Infer xKey/yKey from the first row's keys when the LLM sends
             # a bare array of data-point dicts.
             if data and isinstance(data[0], dict):
@@ -38,8 +38,8 @@ def generate_openui_for_canvas_tool(
                 data = {"data": data, "xKey": x_key, "yKey": y_key}
             else:
                 data = {"data": data, "xKey": "x", "yKey": "y"}
-        elif canvas_type == "table":
-            # Bare list of dicts → auto-infer table
+        elif artifact_type == "table":
+            # Bare list of dicts -> auto-infer table
             data = {"data": data}
         else:
             # Wrap generically so dict operations below don't crash
@@ -47,26 +47,26 @@ def generate_openui_for_canvas_tool(
 
     enriched: dict[str, Any] = {**data, "title": data.get("title", title)}
 
-    if canvas_type == "email":
+    if artifact_type == "email":
         if {"to", "subject", "body"} <= enriched.keys():
             return _to_email_draft(enriched)
-    elif canvas_type == "table":
+    elif artifact_type == "table":
         if "columns" in enriched and "rows" in enriched:
             return _to_data_table(enriched)
         if "data" in enriched and isinstance(enriched["data"], list):
             return _list_of_dicts_to_data_table(enriched["data"], title)
-    elif canvas_type == "code":
+    elif artifact_type == "code":
         if "code" in enriched:
             return _to_code_block(enriched)
-    elif canvas_type == "report":
+    elif artifact_type == "report":
         if {"title", "summary", "sections"} <= enriched.keys():
             return _to_analysis_report(enriched)
-    elif canvas_type == "chart":
+    elif artifact_type == "chart":
         if {"data", "xKey", "yKey"} <= enriched.keys():
             return _to_chart(enriched)
 
     # Fallback: try generic key-based detection
-    return generate_openui_lang("render_canvas", enriched)
+    return generate_openui_lang("render_artifact", enriched)
 
 
 def generate_openui_lang(
@@ -75,7 +75,7 @@ def generate_openui_lang(
     """Given a tool name and its result dict, return (openui_lang, title).
 
     Returns a tuple of (openui_lang_string, title_string) if the result
-    matches a known canvas-renderable pattern.  Returns None otherwise.
+    matches a known artifact-renderable pattern.  Returns None otherwise.
 
     Detection order:
     1. Email tools: result has 'to', 'subject', 'body' keys

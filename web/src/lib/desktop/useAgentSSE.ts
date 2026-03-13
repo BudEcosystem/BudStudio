@@ -50,8 +50,8 @@ export interface AgentEventCallbacks {
   onDone?: () => void;
   /** Called when the session is compacted */
   onSessionCompacted?: (newSessionId: string, summary: string) => void;
-  /** Called when canvas content is generated (canvas_generation packet) */
-  onCanvas?: (openuiLang: string, title: string) => void;
+  /** Called when artifact content is generated (artifact_generation packet) */
+  onArtifact?: (openuiLang: string, title: string) => void;
   /** Called when the agent asks the user clarifying questions */
   onUserQuestions?: (questions: UserQuestionItem[], toolCallId: string) => void;
 }
@@ -253,15 +253,15 @@ function handlePacket(
         isError ? output : undefined,
         ""
       );
-      // If the tool produced canvas content, open the canvas panel
+      // If the tool produced artifact content, open the artifact panel
       if (toolObj.openui_response) {
-        const canvasTitle =
+        const artifactTitle =
           (typeof toolObj.data === "object" && toolObj.data !== null
             ? (toolObj.data as Record<string, unknown>).title
             : undefined);
-        callbacks.onCanvas?.(
+        callbacks.onArtifact?.(
           toolObj.openui_response,
-          typeof canvasTitle === "string" ? canvasTitle : toolObj.tool_name
+          typeof artifactTitle === "string" ? artifactTitle : toolObj.tool_name
         );
       }
       break;
@@ -330,9 +330,9 @@ function handlePacket(
       break;
     }
 
-    case "canvas_generation": {
-      const canvasObj = obj as { openui_lang: string; title: string };
-      callbacks.onCanvas?.(canvasObj.openui_lang, canvasObj.title);
+    case "artifact_generation": {
+      const artifactObj = obj as { openui_lang: string; title: string };
+      callbacks.onArtifact?.(artifactObj.openui_lang, artifactObj.title);
       break;
     }
   }

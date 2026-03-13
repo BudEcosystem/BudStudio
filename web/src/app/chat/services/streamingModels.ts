@@ -43,8 +43,8 @@ export enum PacketType {
   // User questions packets
   AGENT_USER_QUESTIONS = "agent_user_questions",
 
-  // Canvas packets
-  CANVAS_GENERATION = "canvas_generation",
+  // Artifact packets
+  ARTIFACT_GENERATION = "artifact_generation",
 }
 
 // Basic Message Packets
@@ -196,9 +196,9 @@ export interface AgentUserQuestions extends BaseObj {
   tool_call_id: string;
 }
 
-// Canvas packets
-export interface CanvasGeneration extends BaseObj {
-  type: "canvas_generation";
+// Artifact packets
+export interface ArtifactGeneration extends BaseObj {
+  type: "artifact_generation";
   openui_lang: string;
   title: string;
 }
@@ -244,7 +244,7 @@ export type ObjTypes =
   | SectionEndObj
   | CitationObj
   | AgentObj
-  | CanvasGeneration
+  | ArtifactGeneration
   | PacketException;
 
 // Packet wrapper for streaming objects

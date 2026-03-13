@@ -1,5 +1,5 @@
 /**
- * Tests for the OpenUI canvas action handler.
+ * Tests for the OpenUI artifact action handler.
  *
  * Covers:
  * - continue_conversation: forwards message via sendMessage
@@ -12,9 +12,9 @@
  */
 
 import type { ActionEvent } from "@openuidev/react-lang";
-import { handleCanvasAction } from "../actions";
+import { handleArtifactAction } from "../actions";
 
-describe("handleCanvasAction", () => {
+describe("handleArtifactAction", () => {
   let sendMessage: jest.Mock;
 
   beforeEach(() => {
@@ -33,7 +33,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "Tell me more about that",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(sendMessage).toHaveBeenCalledWith("Tell me more about that");
@@ -46,7 +46,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(sendMessage).toHaveBeenCalledWith("Fallback message");
@@ -59,7 +59,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(sendMessage).not.toHaveBeenCalled();
     });
@@ -86,7 +86,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(writeTextMock).toHaveBeenCalledTimes(1);
       expect(writeTextMock).toHaveBeenCalledWith("copied content");
@@ -100,7 +100,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(writeTextMock).toHaveBeenCalledWith("");
     });
@@ -121,7 +121,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(openMock).toHaveBeenCalledTimes(1);
       expect(openMock).toHaveBeenCalledWith(
@@ -142,7 +142,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(openMock).not.toHaveBeenCalled();
     });
@@ -177,7 +177,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(createElementSpy).toHaveBeenCalledWith("a");
       expect(createObjectURLMock).toHaveBeenCalledTimes(1);
@@ -200,7 +200,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(openMock).not.toHaveBeenCalled();
       expect(sendMessage).not.toHaveBeenCalled();
@@ -222,7 +222,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(openMock).toHaveBeenCalledTimes(1);
       expect(openMock).toHaveBeenCalledWith(
@@ -243,7 +243,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(openMock).not.toHaveBeenCalled();
       expect(sendMessage).not.toHaveBeenCalled();
@@ -259,7 +259,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(openMock).not.toHaveBeenCalled();
     });
@@ -277,7 +277,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "The user wants to do something custom",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(sendMessage).toHaveBeenCalledWith(
@@ -292,7 +292,7 @@ describe("handleCanvasAction", () => {
         humanFriendlyMessage: "",
       };
 
-      handleCanvasAction(event, sendMessage);
+      handleArtifactAction(event, sendMessage);
 
       expect(sendMessage).not.toHaveBeenCalled();
     });

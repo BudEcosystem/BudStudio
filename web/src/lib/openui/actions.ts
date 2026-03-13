@@ -1,13 +1,13 @@
 import type { ActionEvent } from "@openuidev/react-lang";
 
 /**
- * Central handler for canvas action events emitted by OpenUI components.
+ * Central handler for artifact action events emitted by OpenUI components.
  *
  * @param event   The structured ActionEvent from the Renderer's onAction callback.
  * @param sendMessage  A function that sends a chat message on behalf of the user
  *                     (e.g. continues the conversation with the agent).
  */
-export function handleCanvasAction(
+export function handleArtifactAction(
   event: ActionEvent,
   sendMessage: (msg: string) => void
 ): void {

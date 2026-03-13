@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useChatSessionStore } from "../../stores/useChatSessionStore";
 
-interface CanvasCardProps {
+interface ArtifactCardProps {
   openui_response: string;
   title?: string;
   toolName: string;
@@ -56,7 +56,7 @@ function detectComponentType(openui_response: string): ComponentTypeInfo {
     return { icon: FileText, label: "Form" };
   }
 
-  return { icon: FileText, label: "Canvas" };
+  return { icon: FileText, label: "Artifact" };
 }
 
 function extractPreview(openui_response: string): string {
@@ -75,14 +75,14 @@ function extractPreview(openui_response: string): string {
   return "View generated content";
 }
 
-export const CanvasCard: React.FC<CanvasCardProps> = ({
+export const ArtifactCard: React.FC<ArtifactCardProps> = ({
   openui_response,
   title,
   toolName,
   isStreaming,
 }) => {
-  const setCurrentActiveCanvas = useChatSessionStore(
-    (s) => s.setCurrentActiveCanvas
+  const setCurrentActiveArtifact = useChatSessionStore(
+    (s) => s.setCurrentActiveArtifact
   );
   const hasAutoOpened = useRef(false);
 
@@ -91,35 +91,35 @@ export const CanvasCard: React.FC<CanvasCardProps> = ({
   const preview = extractPreview(openui_response);
 
   const handleClick = useCallback(() => {
-    setCurrentActiveCanvas({
+    setCurrentActiveArtifact({
       openui_lang: openui_response,
       title: displayTitle,
       isStreaming,
     });
-  }, [openui_response, displayTitle, isStreaming, setCurrentActiveCanvas]);
+  }, [openui_response, displayTitle, isStreaming, setCurrentActiveArtifact]);
 
-  // Auto-open canvas panel when a new openui_response first arrives during streaming
+  // Auto-open artifact panel when a new openui_response first arrives during streaming
   useEffect(() => {
     if (openui_response && !hasAutoOpened.current) {
       hasAutoOpened.current = true;
-      setCurrentActiveCanvas({
+      setCurrentActiveArtifact({
         openui_lang: openui_response,
         title: displayTitle,
         isStreaming,
       });
     }
-  }, [openui_response, displayTitle, isStreaming, setCurrentActiveCanvas]);
+  }, [openui_response, displayTitle, isStreaming, setCurrentActiveArtifact]);
 
-  // Keep the active canvas content up to date while streaming
+  // Keep the active artifact content up to date while streaming
   useEffect(() => {
     if (isStreaming && hasAutoOpened.current) {
-      setCurrentActiveCanvas({
+      setCurrentActiveArtifact({
         openui_lang: openui_response,
         title: displayTitle,
         isStreaming: true,
       });
     }
-  }, [openui_response, displayTitle, isStreaming, setCurrentActiveCanvas]);
+  }, [openui_response, displayTitle, isStreaming, setCurrentActiveArtifact]);
 
   return (
     <button
@@ -154,4 +154,4 @@ export const CanvasCard: React.FC<CanvasCardProps> = ({
   );
 };
 
-export default CanvasCard;
+export default ArtifactCard;

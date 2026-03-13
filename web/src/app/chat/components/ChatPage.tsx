@@ -48,7 +48,7 @@ import { ChatSearchModal } from "@/app/chat/chat_search/ChatSearchModal";
 import MinimalMarkdown from "@/components/chat/MinimalMarkdown";
 import { useScreenSize } from "@/hooks/useScreenSize";
 import { DocumentResults } from "@/app/chat/components/documentSidebar/DocumentResults";
-import { CanvasPanel } from "@/app/chat/components/canvasPanel/CanvasPanel";
+import { ArtifactPanel } from "@/app/chat/components/artifactPanel/ArtifactPanel";
 import { useChatController } from "@/app/chat/hooks/useChatController";
 import { useAssistantController } from "@/app/chat/hooks/useAssistantController";
 import { useChatSessionController } from "@/app/chat/hooks/useChatSessionController";
@@ -69,8 +69,8 @@ import {
   useHasPerformedInitialScroll,
   useDocumentSidebarVisible,
   useHasSentLocalUserMessage,
-  useCanvasPanelVisible,
-  useActiveCanvas,
+  useArtifactPanelVisible,
+  useActiveArtifact,
 } from "@/app/chat/stores/useChatSessionStore";
 import { FederatedOAuthModal } from "@/components/chat/FederatedOAuthModal";
 import { MessagesDisplay } from "@/app/chat/components/MessagesDisplay";
@@ -436,16 +436,16 @@ export function ChatPage({
   const hasPerformedInitialScroll = useHasPerformedInitialScroll();
   const currentSessionHasSentLocalUserMessage = useHasSentLocalUserMessage();
   const documentSidebarVisible = useDocumentSidebarVisible();
-  const canvasPanelVisible = useCanvasPanelVisible();
-  const activeCanvas = useActiveCanvas();
+  const artifactPanelVisible = useArtifactPanelVisible();
+  const activeArtifact = useActiveArtifact();
   const updateHasPerformedInitialScroll = useChatSessionStore(
     (state) => state.updateHasPerformedInitialScroll
   );
   const updateCurrentDocumentSidebarVisible = useChatSessionStore(
     (state) => state.updateCurrentDocumentSidebarVisible
   );
-  const updateCurrentCanvasPanelVisible = useChatSessionStore(
-    (state) => state.updateCurrentCanvasPanelVisible
+  const updateCurrentArtifactPanelVisible = useChatSessionStore(
+    (state) => state.updateCurrentArtifactPanelVisible
   );
 
   const clientScrollToBottom = useCallback(
@@ -650,12 +650,12 @@ export function ChatPage({
     setTimeout(() => updateCurrentDocumentSidebarVisible(false), 300);
   }, [updateCurrentDocumentSidebarVisible]);
 
-  // Canvas panel handlers
-  const handleCanvasClose = useCallback(() => {
-    updateCurrentCanvasPanelVisible(false);
-  }, [updateCurrentCanvasPanelVisible]);
+  // Artifact panel handlers
+  const handleArtifactClose = useCallback(() => {
+    updateCurrentArtifactPanelVisible(false);
+  }, [updateCurrentArtifactPanelVisible]);
 
-  const handleCanvasSendMessage = useCallback(
+  const handleArtifactSendMessage = useCallback(
     (msg: string) => {
       onSubmit({
         message: msg,
@@ -1013,11 +1013,11 @@ export function ChatPage({
           )}
         </div>
 
-        {/* Canvas Panel sidebar */}
+        {/* Artifact Panel sidebar */}
         <div
           className={cn(
             "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
-            canvasPanelVisible && !settings?.isMobile
+            artifactPanelVisible && !settings?.isMobile
               ? "w-[30rem]"
               : "w-[0rem]"
           )}
@@ -1026,19 +1026,19 @@ export function ChatPage({
             {/* IMPORTANT: this is a memoized component, and it's very important
               for performance reasons that this stays true. MAKE SURE that all function
               props are wrapped in useCallback. */}
-            <CanvasPanel
-              activeCanvas={activeCanvas}
-              closeSidebar={handleCanvasClose}
-              sendMessage={handleCanvasSendMessage}
+            <ArtifactPanel
+              activeArtifact={activeArtifact}
+              closeSidebar={handleArtifactClose}
+              sendMessage={handleArtifactSendMessage}
             />
           </div>
         </div>
 
-        {/* Document Results sidebar — hidden when canvas panel is visible */}
+        {/* Document Results sidebar — hidden when artifact panel is visible */}
         <div
           className={cn(
             "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
-            documentSidebarVisible && !canvasPanelVisible && !settings?.isMobile
+            documentSidebarVisible && !artifactPanelVisible && !settings?.isMobile
               ? "w-[25rem]"
               : "w-[0rem]"
           )}

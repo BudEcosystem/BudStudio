@@ -40,7 +40,7 @@ REMOTE_TOOLS: set[str] = {
     "manage_cron",
     "send_message",
     "use_skill",
-    "render_canvas",
+    "render_artifact",
     "ask_user_questions",
 }
 
@@ -78,9 +78,9 @@ def is_remote_tool(tool_name: str) -> bool:
     return tool_name in REMOTE_TOOLS or is_connector_tool(tool_name)
 
 
-def is_canvas_tool(tool_name: str) -> bool:
-    """Check if a tool is the render_canvas tool."""
-    return tool_name == "render_canvas"
+def is_artifact_tool(tool_name: str) -> bool:
+    """Check if a tool is the render_artifact tool."""
+    return tool_name == "render_artifact"
 
 
 def requires_approval(tool_name: str) -> bool:
@@ -778,12 +778,12 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "required": ["questions"],
         },
     },
-    "render_canvas": {
-        "name": "render_canvas",
+    "render_artifact": {
+        "name": "render_artifact",
         "description": (
-            "Render structured content as a rich visual canvas panel. "
+            "Render structured content as a rich visual artifact panel. "
             "Use this INSTEAD of writing tables, charts, emails, code blocks, "
-            "or structured reports as plain markdown text. The canvas will "
+            "or structured reports as plain markdown text. The artifact will "
             "appear as an interactive UI component beside the chat.\n\n"
             "Supported types and their data schemas:\n"
             "- chart: {data: [{key: value, ...}], xKey: str, yKey: str, "
@@ -801,16 +801,16 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": {
                     "type": "string",
                     "enum": ["chart", "table", "email", "code", "report"],
-                    "description": "The type of canvas to render.",
+                    "description": "The type of artifact to render.",
                 },
                 "title": {
                     "type": "string",
-                    "description": "Display title for the canvas panel.",
+                    "description": "Display title for the artifact panel.",
                 },
                 "data": {
                     "type": "object",
                     "description": (
-                        "Structured data for the canvas. "
+                        "Structured data for the artifact. "
                         "Schema depends on the type field."
                     ),
                 },

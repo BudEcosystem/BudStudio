@@ -224,11 +224,11 @@ class AgentUserQuestions(BaseObj):
     tool_call_id: str
 
 
-"""Canvas Packets"""
+"""Artifact Packets"""
 
 
-class CanvasGeneration(BaseObj):
-    type: Literal["canvas_generation"] = "canvas_generation"
+class ArtifactGeneration(BaseObj):
+    type: Literal["artifact_generation"] = "artifact_generation"
     openui_lang: str
     title: str
 
@@ -261,7 +261,7 @@ PacketObj = Annotated[
         AgentStopped,
         AgentDone,
         AgentUserQuestions,
-        CanvasGeneration,
+        ArtifactGeneration,
     ],
     Field(discriminator="type"),
 ]

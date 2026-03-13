@@ -1,4 +1,4 @@
-"""Unit tests for canvas_tool — render_canvas FunctionTool."""
+"""Unit tests for artifact_tool — render_artifact FunctionTool."""
 
 import asyncio
 import json
@@ -6,7 +6,7 @@ from queue import Queue
 from typing import Any
 from unittest.mock import MagicMock
 
-from onyx.agents.bud_agent.canvas_tool import create_canvas_tool
+from onyx.agents.bud_agent.artifact_tool import create_artifact_tool
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
 from onyx.server.query_and_chat.streaming_models import CustomToolStart
 from onyx.server.query_and_chat.streaming_models import Packet
@@ -14,11 +14,11 @@ from onyx.server.query_and_chat.streaming_models import SectionEnd
 
 
 def _run_tool(args: dict[str, Any]) -> tuple[str, list[Packet]]:
-    """Helper: invoke the render_canvas tool and collect emitted packets."""
+    """Helper: invoke the render_artifact tool and collect emitted packets."""
     packet_queue: Queue[Any] = Queue()
     step_fn = MagicMock(return_value=0)
 
-    tools = create_canvas_tool(
+    tools = create_artifact_tool(
         session_id=MagicMock(),
         packet_queue=packet_queue,
         step_number_fn=step_fn,
@@ -26,7 +26,7 @@ def _run_tool(args: dict[str, Any]) -> tuple[str, list[Packet]]:
     )
     assert len(tools) == 1
     tool = tools[0]
-    assert tool.name == "render_canvas"
+    assert tool.name == "render_artifact"
 
     ctx = MagicMock()
     result = asyncio.get_event_loop().run_until_complete(
@@ -39,18 +39,18 @@ def _run_tool(args: dict[str, Any]) -> tuple[str, list[Packet]]:
     return result, packets
 
 
-class TestCanvasToolCreation:
+class TestArtifactToolCreation:
     def test_creates_single_tool(self) -> None:
-        tools = create_canvas_tool(
+        tools = create_artifact_tool(
             session_id=MagicMock(),
             packet_queue=Queue(),
         )
         assert len(tools) == 1
-        assert tools[0].name == "render_canvas"
+        assert tools[0].name == "render_artifact"
 
 
-class TestCanvasToolChart:
-    def test_bar_chart_emits_canvas(self) -> None:
+class TestArtifactToolChart:
+    def test_bar_chart_emits_artifact(self) -> None:
         args = {
             "type": "chart",
             "title": "Revenue",
@@ -64,12 +64,12 @@ class TestCanvasToolChart:
             },
         }
         result, packets = _run_tool(args)
-        assert "Canvas rendered" in result
+        assert "Artifact rendered" in result
 
         # Check packet sequence: CustomToolStart → CustomToolDelta → SectionEnd
         assert len(packets) == 3
         assert isinstance(packets[0].obj, CustomToolStart)
-        assert packets[0].obj.tool_name == "render_canvas"
+        assert packets[0].obj.tool_name == "render_artifact"
 
         delta = packets[1].obj
         assert isinstance(delta, CustomToolDelta)
@@ -94,15 +94,15 @@ class TestCanvasToolChart:
             },
         }
         result, packets = _run_tool(args)
-        assert "Canvas rendered" in result
+        assert "Artifact rendered" in result
         delta = packets[1].obj
         assert isinstance(delta, CustomToolDelta)
         assert delta.openui_response is not None
         assert "PieChart" in delta.openui_response
 
 
-class TestCanvasToolTable:
-    def test_table_emits_canvas(self) -> None:
+class TestArtifactToolTable:
+    def test_table_emits_artifact(self) -> None:
         args = {
             "type": "table",
             "title": "Users",
@@ -117,7 +117,7 @@ class TestCanvasToolTable:
             },
         }
         result, packets = _run_tool(args)
-        assert "Canvas rendered" in result
+        assert "Artifact rendered" in result
         delta = packets[1].obj
         assert isinstance(delta, CustomToolDelta)
         assert delta.openui_response is not None
@@ -125,8 +125,8 @@ class TestCanvasToolTable:
         assert "Col" in delta.openui_response
 
 
-class TestCanvasToolEmail:
-    def test_email_emits_canvas(self) -> None:
+class TestArtifactToolEmail:
+    def test_email_emits_artifact(self) -> None:
         args = {
             "type": "email",
             "title": "Draft Email",
@@ -137,15 +137,15 @@ class TestCanvasToolEmail:
             },
         }
         result, packets = _run_tool(args)
-        assert "Canvas rendered" in result
+        assert "Artifact rendered" in result
         delta = packets[1].obj
         assert isinstance(delta, CustomToolDelta)
         assert delta.openui_response is not None
         assert "EmailDraft" in delta.openui_response
 
 
-class TestCanvasToolCode:
-    def test_code_emits_canvas(self) -> None:
+class TestArtifactToolCode:
+    def test_code_emits_artifact(self) -> None:
         args = {
             "type": "code",
             "title": "Python Snippet",
@@ -155,15 +155,15 @@ class TestCanvasToolCode:
             },
         }
         result, packets = _run_tool(args)
-        assert "Canvas rendered" in result
+        assert "Artifact rendered" in result
         delta = packets[1].obj
         assert isinstance(delta, CustomToolDelta)
         assert delta.openui_response is not None
         assert "CodeBlock" in delta.openui_response
 
 
-class TestCanvasToolReport:
-    def test_report_emits_canvas(self) -> None:
+class TestArtifactToolReport:
+    def test_report_emits_artifact(self) -> None:
         args = {
             "type": "report",
             "title": "Analysis",
@@ -176,18 +176,18 @@ class TestCanvasToolReport:
             },
         }
         result, packets = _run_tool(args)
-        assert "Canvas rendered" in result
+        assert "Artifact rendered" in result
         delta = packets[1].obj
         assert isinstance(delta, CustomToolDelta)
         assert delta.openui_response is not None
         assert "Accordion" in delta.openui_response
 
 
-class TestCanvasToolErrors:
+class TestArtifactToolErrors:
     def test_invalid_json_returns_error(self) -> None:
         """Bad JSON input should not crash."""
         packet_queue: Queue[Any] = Queue()
-        tools = create_canvas_tool(
+        tools = create_artifact_tool(
             session_id=MagicMock(),
             packet_queue=packet_queue,
         )

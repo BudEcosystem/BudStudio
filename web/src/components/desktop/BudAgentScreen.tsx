@@ -54,8 +54,8 @@ import { Separator } from "@radix-ui/react-separator";
 import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
 import CitedSourcesToggle from "@/app/chat/message/messageComponents/CitedSourcesToggle";
-import { CanvasPanel } from "@/app/chat/components/canvasPanel/CanvasPanel";
-import type { ActiveCanvas } from "@/app/chat/stores/useChatSessionStore";
+import { ArtifactPanel } from "@/app/chat/components/artifactPanel/ArtifactPanel";
+import type { ActiveArtifact } from "@/app/chat/stores/useChatSessionStore";
 
 import { useTheme } from "next-themes";
 import type {
@@ -64,7 +64,7 @@ import type {
   FetchToolStart,
   CitationDelta,
   StreamingCitation,
-  CanvasGeneration,
+  ArtifactGeneration,
   CustomToolDelta,
 } from "@/app/chat/services/streamingModels";
 import type { OnyxDocument, MinimalOnyxDocument } from "@/lib/search/interfaces";
@@ -211,9 +211,9 @@ function AgentMessageContent({
 }
 
 /**
- * Detect the canvas component type from the openui_lang string for icon rendering.
+ * Detect the artifact component type from the openui_lang string for icon rendering.
  */
-function detectCanvasIcon(openuiLang: string) {
+function detectArtifactIcon(openuiLang: string) {
   const lower = openuiLang.toLowerCase();
   if (lower.includes("emaildraft") || lower.includes("email_draft"))
     return { icon: Mail, label: "Email Draft" };
@@ -227,14 +227,14 @@ function detectCanvasIcon(openuiLang: string) {
     return { icon: FileText, label: "Report" };
   if (lower.includes("form("))
     return { icon: FileText, label: "Form" };
-  return { icon: FileText, label: "Canvas" };
+  return { icon: FileText, label: "Artifact" };
 }
 
 /**
- * Inline canvas card for the Bud Agent view.
- * Unlike CanvasCard (which uses useChatSessionStore), this takes a click handler prop.
+ * Inline artifact card for the Bud Agent view.
+ * Unlike ArtifactCard (which uses useChatSessionStore), this takes a click handler prop.
  */
-function AgentCanvasCard({
+function AgentArtifactCard({
   openuiLang,
   title,
   onClick,
@@ -243,7 +243,7 @@ function AgentCanvasCard({
   title: string;
   onClick: () => void;
 }) {
-  const { icon: Icon } = detectCanvasIcon(openuiLang);
+  const { icon: Icon } = detectArtifactIcon(openuiLang);
   return (
     <button
       type="button"
@@ -291,9 +291,9 @@ export function BudAgentScreen() {
     resetAll,
   } = useChatInteractionState();
 
-  // Canvas panel state
-  const [activeCanvas, setActiveCanvas] = useState<ActiveCanvas | null>(null);
-  const [canvasPanelVisible, setCanvasPanelVisible] = useState(false);
+  // Artifact panel state
+  const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(null);
+  const [artifactPanelVisible, setArtifactPanelVisible] = useState(false);
 
   // User questions panel state
   const [bottomQuestions, setBottomQuestions] = useState<{
@@ -646,14 +646,14 @@ export function BudAgentScreen() {
           });
         },
 
-        onCanvas: (openuiLang, title) => {
-          const canvas: ActiveCanvas = {
+        onArtifact: (openuiLang, title) => {
+          const artifact: ActiveArtifact = {
             openui_lang: openuiLang,
             title,
             isStreaming: false,
           };
-          setActiveCanvas(canvas);
-          setCanvasPanelVisible(true);
+          setActiveArtifact(artifact);
+          setArtifactPanelVisible(true);
         },
 
         onUserQuestions: (questions, toolCallId) => {
@@ -901,11 +901,11 @@ export function BudAgentScreen() {
     [currentSessionId, updateCurrentAgentMessage]
   );
 
-  const handleCanvasClose = useCallback(() => {
-    setCanvasPanelVisible(false);
+  const handleArtifactClose = useCallback(() => {
+    setArtifactPanelVisible(false);
   }, []);
 
-  const handleCanvasSendMessage = useCallback(
+  const handleArtifactSendMessage = useCallback(
     (msg: string) => {
       handleSubmit(msg);
     },
@@ -1195,22 +1195,22 @@ export function BudAgentScreen() {
                             );
                           })()}
 
-                          {/* Canvas card — render from canvas_generation OR custom_tool_delta with openui_response */}
+                          {/* Artifact card — render from artifact_generation OR custom_tool_delta with openui_response */}
                           {msg.packets?.map((p, pIdx) => {
-                            if (p.obj?.type === PacketType.CANVAS_GENERATION) {
-                              const canvasObj = p.obj as CanvasGeneration;
+                            if (p.obj?.type === PacketType.ARTIFACT_GENERATION) {
+                              const artifactObj = p.obj as ArtifactGeneration;
                               return (
-                                <AgentCanvasCard
-                                  key={`canvas-${pIdx}`}
-                                  openuiLang={canvasObj.openui_lang}
-                                  title={canvasObj.title || "Canvas"}
+                                <AgentArtifactCard
+                                  key={`artifact-${pIdx}`}
+                                  openuiLang={artifactObj.openui_lang}
+                                  title={artifactObj.title || "Artifact"}
                                   onClick={() => {
-                                    setActiveCanvas({
-                                      openui_lang: canvasObj.openui_lang,
-                                      title: canvasObj.title || "Canvas",
+                                    setActiveArtifact({
+                                      openui_lang: artifactObj.openui_lang,
+                                      title: artifactObj.title || "Artifact",
                                       isStreaming: false,
                                     });
-                                    setCanvasPanelVisible(true);
+                                    setArtifactPanelVisible(true);
                                   }}
                                 />
                               );
@@ -1222,21 +1222,21 @@ export function BudAgentScreen() {
                                   typeof delta.data === "object" && delta.data !== null
                                     ? (delta.data as Record<string, unknown>).title
                                     : undefined;
-                                const canvasTitle =
+                                const artifactTitle =
                                   (typeof rawTitle === "string" ? rawTitle : null)
-                                  || detectCanvasIcon(delta.openui_response).label;
+                                  || detectArtifactIcon(delta.openui_response).label;
                                 return (
-                                  <AgentCanvasCard
-                                    key={`canvas-${pIdx}`}
+                                  <AgentArtifactCard
+                                    key={`artifact-${pIdx}`}
                                     openuiLang={delta.openui_response}
-                                    title={canvasTitle}
+                                    title={artifactTitle}
                                     onClick={() => {
-                                      setActiveCanvas({
+                                      setActiveArtifact({
                                         openui_lang: delta.openui_response!,
-                                        title: canvasTitle,
+                                        title: artifactTitle,
                                         isStreaming: false,
                                       });
-                                      setCanvasPanelVisible(true);
+                                      setArtifactPanelVisible(true);
                                     }}
                                   />
                                 );
@@ -1331,18 +1331,18 @@ export function BudAgentScreen() {
       )}
       </div>{/* End main content area */}
 
-      {/* Canvas Panel Drawer */}
+      {/* Artifact Panel Drawer */}
       <div
         className={cn(
           "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
-          canvasPanelVisible && activeCanvas ? "w-[30rem]" : "w-[0rem]"
+          artifactPanelVisible && activeArtifact ? "w-[30rem]" : "w-[0rem]"
         )}
       >
         <div className="h-full w-[30rem]">
-          <CanvasPanel
-            activeCanvas={activeCanvas}
-            closeSidebar={handleCanvasClose}
-            sendMessage={handleCanvasSendMessage}
+          <ArtifactPanel
+            activeArtifact={activeArtifact}
+            closeSidebar={handleArtifactClose}
+            sendMessage={handleArtifactSendMessage}
           />
         </div>
       </div>

@@ -12,7 +12,7 @@ import {
 } from "../services/messageTree";
 import { useMemo } from "react";
 
-export interface ActiveCanvas {
+export interface ActiveArtifact {
   openui_lang: string;
   title: string;
   isStreaming: boolean;
@@ -32,8 +32,8 @@ interface ChatSessionData {
   hasPerformedInitialScroll: boolean;
   documentSidebarVisible: boolean;
   hasSentLocalUserMessage: boolean;
-  canvasPanelVisible: boolean;
-  activeCanvas: ActiveCanvas | null;
+  artifactPanelVisible: boolean;
+  activeArtifact: ActiveArtifact | null;
 
   // Session-specific state (previously global)
   isFetchingChatMessages: boolean;
@@ -102,16 +102,16 @@ interface ChatSessionStore {
   updateCurrentHasSentLocalUserMessage: (
     hasSentLocalUserMessage: boolean
   ) => void;
-  setActiveCanvas: (
+  setActiveArtifact: (
     sessionId: string,
-    canvas: ActiveCanvas | null
+    artifact: ActiveArtifact | null
   ) => void;
-  updateCanvasPanelVisible: (
+  updateArtifactPanelVisible: (
     sessionId: string,
     visible: boolean
   ) => void;
-  updateCurrentCanvasPanelVisible: (visible: boolean) => void;
-  setCurrentActiveCanvas: (canvas: ActiveCanvas | null) => void;
+  updateCurrentArtifactPanelVisible: (visible: boolean) => void;
+  setCurrentActiveArtifact: (artifact: ActiveArtifact | null) => void;
 
   // Convenience functions that automatically use current session ID
   updateCurrentSelectedNodeForDocDisplay: (
@@ -163,8 +163,8 @@ const createInitialSessionData = (
   hasPerformedInitialScroll: true,
   documentSidebarVisible: false,
   hasSentLocalUserMessage: false,
-  canvasPanelVisible: false,
-  activeCanvas: null,
+  artifactPanelVisible: false,
+  activeArtifact: null,
 
   // Session-specific state defaults
   isFetchingChatMessages: false,
@@ -346,29 +346,29 @@ export const useChatSessionStore = create<ChatSessionStore>()((set, get) => ({
     }
   },
 
-  setActiveCanvas: (sessionId: string, canvas: ActiveCanvas | null) => {
-    const updates: Partial<ChatSessionData> = { activeCanvas: canvas };
-    if (canvas !== null) {
-      updates.canvasPanelVisible = true;
+  setActiveArtifact: (sessionId: string, artifact: ActiveArtifact | null) => {
+    const updates: Partial<ChatSessionData> = { activeArtifact: artifact };
+    if (artifact !== null) {
+      updates.artifactPanelVisible = true;
     }
     get().updateSessionData(sessionId, updates);
   },
 
-  updateCanvasPanelVisible: (sessionId: string, visible: boolean) => {
-    get().updateSessionData(sessionId, { canvasPanelVisible: visible });
+  updateArtifactPanelVisible: (sessionId: string, visible: boolean) => {
+    get().updateSessionData(sessionId, { artifactPanelVisible: visible });
   },
 
-  updateCurrentCanvasPanelVisible: (visible: boolean) => {
+  updateCurrentArtifactPanelVisible: (visible: boolean) => {
     const { currentSessionId } = get();
     if (currentSessionId) {
-      get().updateCanvasPanelVisible(currentSessionId, visible);
+      get().updateArtifactPanelVisible(currentSessionId, visible);
     }
   },
 
-  setCurrentActiveCanvas: (canvas: ActiveCanvas | null) => {
+  setCurrentActiveArtifact: (artifact: ActiveArtifact | null) => {
     const { currentSessionId } = get();
     if (currentSessionId) {
-      get().setActiveCanvas(currentSessionId, canvas);
+      get().setActiveArtifact(currentSessionId, artifact);
     }
   },
 
@@ -702,20 +702,20 @@ export const useHasSentLocalUserMessage = () =>
     return currentSession?.hasSentLocalUserMessage || false;
   });
 
-export const useCanvasPanelVisible = () =>
+export const useArtifactPanelVisible = () =>
   useChatSessionStore((state) => {
     const { currentSessionId, sessions } = state;
     const currentSession = currentSessionId
       ? sessions.get(currentSessionId)
       : null;
-    return currentSession?.canvasPanelVisible || false;
+    return currentSession?.artifactPanelVisible || false;
   });
 
-export const useActiveCanvas = () =>
+export const useActiveArtifact = () =>
   useChatSessionStore((state) => {
     const { currentSessionId, sessions } = state;
     const currentSession = currentSessionId
       ? sessions.get(currentSessionId)
       : null;
-    return currentSession?.activeCanvas || null;
+    return currentSession?.activeArtifact || null;
   });

@@ -1251,7 +1251,7 @@ def update_db_session_with_messages(
     return chat_message
 
 
-def update_chat_message_canvas(
+def update_chat_message_artifact(
     db_session: Session,
     chat_message_id: int,
     openui_lang: str,
@@ -1263,7 +1263,7 @@ def update_chat_message_canvas(
         .first()
     )
     if chat_message:
-        chat_message.canvas_data = {
+        chat_message.artifact_data = {
             "openui_lang": openui_lang,
             "title": title,
         }
