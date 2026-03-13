@@ -53,7 +53,7 @@ import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
 import CitedSourcesToggle from "@/app/chat/message/messageComponents/CitedSourcesToggle";
 import { CanvasPanel } from "@/app/chat/components/canvasPanel/CanvasPanel";
-import type { ActiveCanvas } from "@/app/chat/components/canvasPanel/CanvasPanel";
+import type { ActiveCanvas } from "@/app/chat/stores/useChatSessionStore";
 
 import { useTheme } from "next-themes";
 import type {
@@ -422,8 +422,9 @@ export function BudAgentScreen() {
     [currentSessionId, updateMessage]
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (!message.trim() || isProcessing) return;
+  const handleSubmit = useCallback(async (overrideMessage?: string) => {
+    const effectiveMessage = overrideMessage ?? message;
+    if (!effectiveMessage.trim() || isProcessing) return;
 
     // The active session is auto-loaded by the context on mount.
     // If for some reason it's not available yet, bail out.
@@ -433,7 +434,7 @@ export function BudAgentScreen() {
       return;
     }
 
-    const userMessage = message.trim();
+    const userMessage = effectiveMessage.trim();
 
     // Add user message
     addMessage(sessionId, {
@@ -894,9 +895,9 @@ export function BudAgentScreen() {
 
   const handleCanvasSendMessage = useCallback(
     (msg: string) => {
-      setMessage(msg);
+      handleSubmit(msg);
     },
-    []
+    [handleSubmit]
   );
 
   const handleFileUpload = useCallback((files: File[]) => {

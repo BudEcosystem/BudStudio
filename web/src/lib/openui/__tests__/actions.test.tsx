@@ -124,8 +124,27 @@ describe("handleCanvasAction", () => {
       handleCanvasAction(event, sendMessage);
 
       expect(openMock).toHaveBeenCalledTimes(1);
-      expect(openMock).toHaveBeenCalledWith("https://example.com/file.pdf");
+      expect(openMock).toHaveBeenCalledWith(
+        "https://example.com/file.pdf",
+        "_blank",
+        "noopener,noreferrer"
+      );
       expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("should block javascript: URLs", () => {
+      const openMock = jest.fn();
+      window.open = openMock;
+
+      const event: ActionEvent = {
+        type: "download",
+        params: { url: "javascript:alert(1)" },
+        humanFriendlyMessage: "",
+      };
+
+      handleCanvasAction(event, sendMessage);
+
+      expect(openMock).not.toHaveBeenCalled();
     });
 
     it("should create a blob download when params.content is provided", () => {
@@ -228,6 +247,21 @@ describe("handleCanvasAction", () => {
 
       expect(openMock).not.toHaveBeenCalled();
       expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("should block javascript: URLs", () => {
+      const openMock = jest.fn();
+      window.open = openMock;
+
+      const event: ActionEvent = {
+        type: "open_url",
+        params: { url: "javascript:alert('xss')" },
+        humanFriendlyMessage: "",
+      };
+
+      handleCanvasAction(event, sendMessage);
+
+      expect(openMock).not.toHaveBeenCalled();
     });
   });
 

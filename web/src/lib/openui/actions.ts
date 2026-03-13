@@ -34,7 +34,11 @@ export function handleCanvasAction(
     case "download": {
       const url = event.params?.url;
       if (url) {
-        window.open(String(url));
+        const urlStr = String(url);
+        // Only allow http(s) URLs to prevent javascript: injection
+        if (/^https?:\/\//i.test(urlStr)) {
+          window.open(urlStr, "_blank", "noopener,noreferrer");
+        }
       } else if (event.params?.content) {
         // Create a blob download from inline content
         const blob = new Blob([String(event.params.content)], {
@@ -56,7 +60,10 @@ export function handleCanvasAction(
     case "open_url": {
       const url = event.params?.url;
       if (url) {
-        window.open(String(url), "_blank", "noopener,noreferrer");
+        const urlStr = String(url);
+        if (/^https?:\/\//i.test(urlStr)) {
+          window.open(urlStr, "_blank", "noopener,noreferrer");
+        }
       }
       break;
     }

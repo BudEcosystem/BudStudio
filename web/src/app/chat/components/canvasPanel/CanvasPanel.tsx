@@ -11,16 +11,11 @@ import { handleCanvasAction } from "@/lib/openui/actions";
 import "@openuidev/react-ui/components.css";
 import { cn } from "@/lib/utils";
 import { CanvasHeader } from "@/app/chat/components/canvasPanel/CanvasHeader";
+import type { ActiveCanvas } from "@/app/chat/stores/useChatSessionStore";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-
-export interface ActiveCanvas {
-  openui_lang: string;
-  title: string;
-  isStreaming: boolean;
-}
 
 interface CanvasPanelProps {
   activeCanvas: ActiveCanvas | null;

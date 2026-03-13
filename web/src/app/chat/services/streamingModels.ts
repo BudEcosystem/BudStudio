@@ -122,7 +122,7 @@ export interface CustomToolDelta extends BaseObj {
   type: "custom_tool_delta";
   tool_name: string;
   response_type: string;
-  data?: any;
+  data?: unknown;
   file_ids?: string[] | null;
   openui_response?: string | null;
 }
