@@ -40,6 +40,7 @@ REMOTE_TOOLS: set[str] = {
     "manage_cron",
     "send_message",
     "use_skill",
+    "render_canvas",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -74,6 +75,11 @@ def is_remote_tool(tool_name: str) -> bool:
     This includes both statically-defined remote tools and dynamic connector tools.
     """
     return tool_name in REMOTE_TOOLS or is_connector_tool(tool_name)
+
+
+def is_canvas_tool(tool_name: str) -> bool:
+    """Check if a tool is the render_canvas tool."""
+    return tool_name == "render_canvas"
 
 
 def requires_approval(tool_name: str) -> bool:
@@ -733,6 +739,46 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["recipient", "message"],
+        },
+    },
+    "render_canvas": {
+        "name": "render_canvas",
+        "description": (
+            "Render structured content as a rich visual canvas panel. "
+            "Use this INSTEAD of writing tables, charts, emails, code blocks, "
+            "or structured reports as plain markdown text. The canvas will "
+            "appear as an interactive UI component beside the chat.\n\n"
+            "Supported types and their data schemas:\n"
+            "- chart: {data: [{key: value, ...}], xKey: str, yKey: str, "
+            "type?: 'bar'|'line'|'pie', title?: str}\n"
+            "- table: {columns: [{key: str, label: str, type?: 'string'|'number'}], "
+            "rows: [{key: value, ...}], title?: str}\n"
+            "- email: {to: [str], cc?: [str], subject: str, body: str}\n"
+            "- code: {code: str, language: str, filename?: str}\n"
+            "- report: {title: str, summary: str, "
+            "sections: [{heading: str, body: str}]}"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["chart", "table", "email", "code", "report"],
+                    "description": "The type of canvas to render.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Display title for the canvas panel.",
+                },
+                "data": {
+                    "type": "object",
+                    "description": (
+                        "Structured data for the canvas. "
+                        "Schema depends on the type field."
+                    ),
+                },
+            },
+            "required": ["type", "title", "data"],
         },
     },
 }

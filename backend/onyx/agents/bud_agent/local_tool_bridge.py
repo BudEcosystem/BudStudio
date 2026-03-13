@@ -235,6 +235,7 @@ class LocalToolBridge:
                         tool_call_id=tool_call_id,
                         tool_output={"output": output} if output else None,
                         tool_error=error,
+                        ui_spec=None,
                     )
                 except Exception:
                     logger.warning("Failed to update tool result", exc_info=True)

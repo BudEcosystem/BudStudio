@@ -7,6 +7,7 @@ import {
 } from "@/components/icons/icons";
 import { SEARCH_TOOL_ID } from "@/app/chat/components/tools/constants";
 import React, { useState, useEffect, useCallback } from "react";
+import type { JSX } from "react";
 import {
   Popover,
   PopoverContent,

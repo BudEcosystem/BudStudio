@@ -18,6 +18,9 @@ const sharedConfig = {
   maxWorkers: "50%",
 
   moduleNameMapper: {
+    // ESM-only packages that need explicit resolution for Jest's CJS resolver
+    "^@openuidev/react-lang$":
+      "<rootDir>/node_modules/@openuidev/react-lang/dist/index.js",
     // Mock react-markdown and related packages
     "^react-markdown$": "<rootDir>/tests/setup/__mocks__/react-markdown.tsx",
     "^remark-gfm$": "<rootDir>/tests/setup/__mocks__/remark-gfm.ts",
@@ -37,11 +40,11 @@ const sharedConfig = {
   testPathIgnorePatterns: ["/node_modules/", "/tests/e2e/", "/.next/"],
 
   transformIgnorePatterns: [
-    "/node_modules/(?!(jose|@radix-ui|@headlessui|@phosphor-icons|msw|until-async|react-markdown|remark-gfm|remark-parse|unified|bail|is-plain-obj|trough|vfile|unist-.*|mdast-.*|micromark.*|decode-named-character-reference|character-entities)/)",
+    "/node_modules/(?!(jose|@radix-ui|@headlessui|@phosphor-icons|@openuidev|msw|until-async|react-markdown|remark-gfm|remark-parse|unified|bail|is-plain-obj|trough|vfile|unist-.*|mdast-.*|micromark.*|decode-named-character-reference|character-entities)/)",
   ],
 
   transform: {
-    "^.+\\.tsx?$": [
+    "^.+\\.[jt]sx?$": [
       "ts-jest",
       {
         // Performance: Disable type-checking in tests (types are checked by tsc)

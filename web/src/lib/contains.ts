@@ -40,7 +40,7 @@ export function containsObject(
 
 export function isEventWithinRef(
   event: MouseEvent | TouchEvent,
-  ref: RefObject<HTMLElement>
+  ref: RefObject<HTMLElement | null>
 ): boolean {
   if (!ref.current) return false;
 

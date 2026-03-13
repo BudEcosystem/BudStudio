@@ -12,6 +12,12 @@ import {
 } from "../services/messageTree";
 import { useMemo } from "react";
 
+export interface ActiveCanvas {
+  openui_lang: string;
+  title: string;
+  isStreaming: boolean;
+}
+
 interface ChatSessionData {
   sessionId: string;
   messageTree: MessageTreeState;
@@ -26,6 +32,8 @@ interface ChatSessionData {
   hasPerformedInitialScroll: boolean;
   documentSidebarVisible: boolean;
   hasSentLocalUserMessage: boolean;
+  canvasPanelVisible: boolean;
+  activeCanvas: ActiveCanvas | null;
 
   // Session-specific state (previously global)
   isFetchingChatMessages: boolean;
@@ -94,6 +102,16 @@ interface ChatSessionStore {
   updateCurrentHasSentLocalUserMessage: (
     hasSentLocalUserMessage: boolean
   ) => void;
+  setActiveCanvas: (
+    sessionId: string,
+    canvas: ActiveCanvas | null
+  ) => void;
+  updateCanvasPanelVisible: (
+    sessionId: string,
+    visible: boolean
+  ) => void;
+  updateCurrentCanvasPanelVisible: (visible: boolean) => void;
+  setCurrentActiveCanvas: (canvas: ActiveCanvas | null) => void;
 
   // Convenience functions that automatically use current session ID
   updateCurrentSelectedNodeForDocDisplay: (
@@ -145,6 +163,8 @@ const createInitialSessionData = (
   hasPerformedInitialScroll: true,
   documentSidebarVisible: false,
   hasSentLocalUserMessage: false,
+  canvasPanelVisible: false,
+  activeCanvas: null,
 
   // Session-specific state defaults
   isFetchingChatMessages: false,
@@ -323,6 +343,32 @@ export const useChatSessionStore = create<ChatSessionStore>()((set, get) => ({
         currentSessionId,
         hasSentLocalUserMessage
       );
+    }
+  },
+
+  setActiveCanvas: (sessionId: string, canvas: ActiveCanvas | null) => {
+    const updates: Partial<ChatSessionData> = { activeCanvas: canvas };
+    if (canvas !== null) {
+      updates.canvasPanelVisible = true;
+    }
+    get().updateSessionData(sessionId, updates);
+  },
+
+  updateCanvasPanelVisible: (sessionId: string, visible: boolean) => {
+    get().updateSessionData(sessionId, { canvasPanelVisible: visible });
+  },
+
+  updateCurrentCanvasPanelVisible: (visible: boolean) => {
+    const { currentSessionId } = get();
+    if (currentSessionId) {
+      get().updateCanvasPanelVisible(currentSessionId, visible);
+    }
+  },
+
+  setCurrentActiveCanvas: (canvas: ActiveCanvas | null) => {
+    const { currentSessionId } = get();
+    if (currentSessionId) {
+      get().setActiveCanvas(currentSessionId, canvas);
     }
   },
 
@@ -654,4 +700,22 @@ export const useHasSentLocalUserMessage = () =>
       ? sessions.get(currentSessionId)
       : null;
     return currentSession?.hasSentLocalUserMessage || false;
+  });
+
+export const useCanvasPanelVisible = () =>
+  useChatSessionStore((state) => {
+    const { currentSessionId, sessions } = state;
+    const currentSession = currentSessionId
+      ? sessions.get(currentSessionId)
+      : null;
+    return currentSession?.canvasPanelVisible || false;
+  });
+
+export const useActiveCanvas = () =>
+  useChatSessionStore((state) => {
+    const { currentSessionId, sessions } = state;
+    const currentSession = currentSessionId
+      ? sessions.get(currentSessionId)
+      : null;
+    return currentSession?.activeCanvas || null;
   });

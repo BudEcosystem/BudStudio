@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import React, { useState, ReactNode, useRef, useLayoutEffect } from "react";
 
+import type { JSX } from "react";
 interface CollapsibleCardProps {
   header: JSX.Element;
   children: ReactNode;

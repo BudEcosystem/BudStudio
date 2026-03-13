@@ -1,6 +1,7 @@
 import { AlertIcon, TriangleAlertIcon } from "@/components/icons/icons";
 import { useState } from "react";
 
+import type { JSX } from "react";
 export type StatusOptions = "in-progress" | "failed" | "warning" | "success";
 
 interface ResponseSectionProps {

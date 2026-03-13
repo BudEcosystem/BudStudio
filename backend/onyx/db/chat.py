@@ -1249,3 +1249,22 @@ def update_db_session_with_messages(
         db_session.flush()
 
     return chat_message
+
+
+def update_chat_message_canvas(
+    db_session: Session,
+    chat_message_id: int,
+    openui_lang: str,
+    title: str,
+) -> None:
+    chat_message = (
+        db_session.query(ChatMessage)
+        .filter(ChatMessage.id == chat_message_id)
+        .first()
+    )
+    if chat_message:
+        chat_message.canvas_data = {
+            "openui_lang": openui_lang,
+            "title": title,
+        }
+        db_session.commit()

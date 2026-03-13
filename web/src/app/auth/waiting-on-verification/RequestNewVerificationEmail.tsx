@@ -5,6 +5,7 @@ import { requestEmailVerification } from "../lib";
 import { Spinner } from "@/components/Spinner";
 import { useState } from "react";
 
+import type { JSX } from "react";
 export function RequestNewVerificationEmail({
   children,
   email,

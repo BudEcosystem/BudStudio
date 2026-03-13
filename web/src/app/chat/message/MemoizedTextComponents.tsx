@@ -5,6 +5,7 @@ import {
 } from "@/components/search/results/Citation";
 import { LoadedOnyxDocument, OnyxDocument } from "@/lib/search/interfaces";
 import React, { memo } from "react";
+import type { JSX } from "react";
 import isEqual from "lodash/isEqual";
 import { SourceIcon } from "@/components/SourceIcon";
 import { WebResultIcon } from "@/components/WebResultIcon";

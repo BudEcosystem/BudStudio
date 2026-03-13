@@ -39,6 +39,9 @@ export enum PacketType {
   AGENT_LOCAL_TOOL_REQUEST = "agent_local_tool_request",
   AGENT_STOPPED = "agent_stopped",
   AGENT_DONE = "agent_done",
+
+  // Canvas packets
+  CANVAS_GENERATION = "canvas_generation",
 }
 
 // Basic Message Packets
@@ -119,8 +122,9 @@ export interface CustomToolDelta extends BaseObj {
   type: "custom_tool_delta";
   tool_name: string;
   response_type: string;
-  data?: any;
+  data?: unknown;
   file_ids?: string[] | null;
+  openui_response?: string | null;
 }
 
 // Reasoning Packets
@@ -177,6 +181,13 @@ export interface AgentDone extends BaseObj {
   type: "agent_done";
 }
 
+// Canvas packets
+export interface CanvasGeneration extends BaseObj {
+  type: "canvas_generation";
+  openui_lang: string;
+  title: string;
+}
+
 export type AgentObj =
   | AgentApprovalRequired
   | AgentSessionCompacted
@@ -217,6 +228,7 @@ export type ObjTypes =
   | SectionEndObj
   | CitationObj
   | AgentObj
+  | CanvasGeneration
   | PacketException;
 
 // Packet wrapper for streaming objects

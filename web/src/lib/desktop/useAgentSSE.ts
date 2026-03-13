@@ -50,6 +50,8 @@ export interface AgentEventCallbacks {
   onDone?: () => void;
   /** Called when the session is compacted */
   onSessionCompacted?: (newSessionId: string, summary: string) => void;
+  /** Called when canvas content is generated (canvas_generation packet) */
+  onCanvas?: (openuiLang: string, title: string) => void;
 }
 
 /**
@@ -235,7 +237,12 @@ function handlePacket(
     }
 
     case "custom_tool_delta": {
-      const toolObj = obj as { tool_name: string; response_type: string; data?: unknown };
+      const toolObj = obj as {
+        tool_name: string;
+        response_type: string;
+        data?: unknown;
+        openui_response?: string | null;
+      };
       const output = typeof toolObj.data === "string" ? toolObj.data : JSON.stringify(toolObj.data ?? "");
       const isError = toolObj.response_type === "error";
       callbacks.onToolResult?.(
@@ -244,6 +251,17 @@ function handlePacket(
         isError ? output : undefined,
         ""
       );
+      // If the tool produced canvas content, open the canvas panel
+      if (toolObj.openui_response) {
+        const canvasTitle =
+          (typeof toolObj.data === "object" && toolObj.data !== null
+            ? (toolObj.data as Record<string, unknown>).title
+            : undefined);
+        callbacks.onCanvas?.(
+          toolObj.openui_response,
+          typeof canvasTitle === "string" ? canvasTitle : toolObj.tool_name
+        );
+      }
       break;
     }
 
@@ -301,6 +319,12 @@ function handlePacket(
     case "agent_session_compacted": {
       const compactObj = obj as { new_session_id: string; summary: string };
       callbacks.onSessionCompacted?.(compactObj.new_session_id, compactObj.summary);
+      break;
+    }
+
+    case "canvas_generation": {
+      const canvasObj = obj as { openui_lang: string; title: string };
+      callbacks.onCanvas?.(canvasObj.openui_lang, canvasObj.title);
       break;
     }
   }

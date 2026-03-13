@@ -19,6 +19,7 @@ from onyx.db.models import ChatMessage
 from onyx.db.tools import get_tool_by_id
 from onyx.feature_flags.factory import get_default_feature_flag_provider
 from onyx.feature_flags.feature_flags_keys import SIMPLE_AGENT_FRAMEWORK
+from onyx.server.query_and_chat.streaming_models import CanvasGeneration
 from onyx.server.query_and_chat.streaming_models import CitationDelta
 from onyx.server.query_and_chat.streaming_models import CitationInfo
 from onyx.server.query_and_chat.streaming_models import CitationStart
@@ -477,6 +478,19 @@ def translate_db_message_to_packets_simple(
 
             step_nr += 1
 
+    # Reconstruct canvas packet from stored data
+    if chat_message.canvas_data:
+        packet_list.append(
+            Packet(
+                ind=step_nr,
+                obj=CanvasGeneration(
+                    openui_lang=chat_message.canvas_data["openui_lang"],
+                    title=chat_message.canvas_data["title"],
+                ),
+            )
+        )
+        step_nr += 1
+
     return EndStepPacketList(packet_list=packet_list, end_step_nr=step_nr)
 
 
@@ -694,6 +708,19 @@ def translate_db_message_to_packets(
 
         packet_list.extend(create_citation_packets(citation_info_list, step_nr))
 
+        step_nr += 1
+
+    # Reconstruct canvas packet from stored data
+    if chat_message.canvas_data:
+        packet_list.append(
+            Packet(
+                ind=step_nr,
+                obj=CanvasGeneration(
+                    openui_lang=chat_message.canvas_data["openui_lang"],
+                    title=chat_message.canvas_data["title"],
+                ),
+            )
+        )
         step_nr += 1
 
     packet_list.append(Packet(ind=step_nr, obj=OverallStop()))

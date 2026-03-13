@@ -28,6 +28,14 @@ import { setToolPermission } from "@/lib/agent/connector-utils";
 import { setUserDefaultModel } from "@/lib/users/UserSettings";
 import { structureValue } from "@/lib/llm/utils";
 import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
+import {
+  Mail,
+  Table,
+  BarChart3,
+  Code,
+  FileText,
+  ArrowRight,
+} from "lucide-react";
 import { useMarkdownRenderer } from "@/app/chat/message/messageComponents/markdownUtils";
 import { copyAll } from "@/app/chat/message/copyingUtils";
 import AgentIcon from "@/refresh-components/AgentIcon";
@@ -44,6 +52,8 @@ import { Separator } from "@radix-ui/react-separator";
 import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
 import CitedSourcesToggle from "@/app/chat/message/messageComponents/CitedSourcesToggle";
+import { CanvasPanel } from "@/app/chat/components/canvasPanel/CanvasPanel";
+import type { ActiveCanvas } from "@/app/chat/stores/useChatSessionStore";
 
 import { useTheme } from "next-themes";
 import type {
@@ -52,6 +62,8 @@ import type {
   FetchToolStart,
   CitationDelta,
   StreamingCitation,
+  CanvasGeneration,
+  CustomToolDelta,
 } from "@/app/chat/services/streamingModels";
 import type { OnyxDocument, MinimalOnyxDocument } from "@/lib/search/interfaces";
 import type { FullChatState } from "@/app/chat/message/messageComponents/interfaces";
@@ -197,6 +209,62 @@ function AgentMessageContent({
 }
 
 /**
+ * Detect the canvas component type from the openui_lang string for icon rendering.
+ */
+function detectCanvasIcon(openuiLang: string) {
+  const lower = openuiLang.toLowerCase();
+  if (lower.includes("emaildraft") || lower.includes("email_draft"))
+    return { icon: Mail, label: "Email Draft" };
+  if (lower.includes("datatable") || lower.includes("data_table") || lower.includes("table("))
+    return { icon: Table, label: "Data Table" };
+  if (lower.includes("chart") || lower.includes("barchart") || lower.includes("linechart") || lower.includes("areachart") || lower.includes("piechart") || lower.includes("radarchart") || lower.includes("scatterchart"))
+    return { icon: BarChart3, label: "Chart" };
+  if (lower.includes("codeblock") || lower.includes("code_block"))
+    return { icon: Code, label: "Code Block" };
+  if (lower.includes("accordion"))
+    return { icon: FileText, label: "Report" };
+  if (lower.includes("form("))
+    return { icon: FileText, label: "Form" };
+  return { icon: FileText, label: "Canvas" };
+}
+
+/**
+ * Inline canvas card for the Bud Agent view.
+ * Unlike CanvasCard (which uses useChatSessionStore), this takes a click handler prop.
+ */
+function AgentCanvasCard({
+  openuiLang,
+  title,
+  onClick,
+}: {
+  openuiLang: string;
+  title: string;
+  onClick: () => void;
+}) {
+  const { icon: Icon } = detectCanvasIcon(openuiLang);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full max-w-md items-center gap-3 rounded-lg border
+        border-border bg-background p-3 text-left shadow-sm transition-all
+        hover:border-border-strong hover:shadow-md mt-2"
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background-emphasis text-text-dark">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <span className="truncate text-sm font-medium text-text-dark">{title}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 text-xs font-medium text-text-subtle transition-colors group-hover:text-text-dark">
+        View
+        <ArrowRight className="h-3.5 w-3.5" />
+      </div>
+    </button>
+  );
+}
+
+/**
  * BudAgent Screen - Autonomous agent chat interface
  * Uses SSE streaming from the local agent API for real-time updates
  */
@@ -220,6 +288,10 @@ export function BudAgentScreen() {
     resetStreamingRefs,
     resetAll,
   } = useChatInteractionState();
+
+  // Canvas panel state
+  const [activeCanvas, setActiveCanvas] = useState<ActiveCanvas | null>(null);
+  const [canvasPanelVisible, setCanvasPanelVisible] = useState(false);
 
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -350,8 +422,9 @@ export function BudAgentScreen() {
     [currentSessionId, updateMessage]
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (!message.trim() || isProcessing) return;
+  const handleSubmit = useCallback(async (overrideMessage?: string) => {
+    const effectiveMessage = overrideMessage ?? message;
+    if (!effectiveMessage.trim() || isProcessing) return;
 
     // The active session is auto-loaded by the context on mount.
     // If for some reason it's not available yet, bail out.
@@ -361,7 +434,7 @@ export function BudAgentScreen() {
       return;
     }
 
-    const userMessage = message.trim();
+    const userMessage = effectiveMessage.trim();
 
     // Add user message
     addMessage(sessionId, {
@@ -563,6 +636,16 @@ export function BudAgentScreen() {
               "Agent execution was stopped.",
             status: "stopped",
           });
+        },
+
+        onCanvas: (openuiLang, title) => {
+          const canvas: ActiveCanvas = {
+            openui_lang: openuiLang,
+            title,
+            isStreaming: false,
+          };
+          setActiveCanvas(canvas);
+          setCanvasPanelVisible(true);
         },
 
         onSessionCompacted: (newSessionId) => {
@@ -804,6 +887,17 @@ export function BudAgentScreen() {
       setBottomApproval(null);
     },
     [currentSessionId, updateCurrentAgentMessage]
+  );
+
+  const handleCanvasClose = useCallback(() => {
+    setCanvasPanelVisible(false);
+  }, []);
+
+  const handleCanvasSendMessage = useCallback(
+    (msg: string) => {
+      handleSubmit(msg);
+    },
+    [handleSubmit]
   );
 
   const handleFileUpload = useCallback((files: File[]) => {
@@ -1088,6 +1182,56 @@ export function BudAgentScreen() {
                               </>
                             );
                           })()}
+
+                          {/* Canvas card — render from canvas_generation OR custom_tool_delta with openui_response */}
+                          {msg.packets?.map((p, pIdx) => {
+                            if (p.obj?.type === PacketType.CANVAS_GENERATION) {
+                              const canvasObj = p.obj as CanvasGeneration;
+                              return (
+                                <AgentCanvasCard
+                                  key={`canvas-${pIdx}`}
+                                  openuiLang={canvasObj.openui_lang}
+                                  title={canvasObj.title || "Canvas"}
+                                  onClick={() => {
+                                    setActiveCanvas({
+                                      openui_lang: canvasObj.openui_lang,
+                                      title: canvasObj.title || "Canvas",
+                                      isStreaming: false,
+                                    });
+                                    setCanvasPanelVisible(true);
+                                  }}
+                                />
+                              );
+                            }
+                            if (p.obj?.type === PacketType.CUSTOM_TOOL_DELTA) {
+                              const delta = p.obj as CustomToolDelta;
+                              if (delta.openui_response) {
+                                const rawTitle =
+                                  typeof delta.data === "object" && delta.data !== null
+                                    ? (delta.data as Record<string, unknown>).title
+                                    : undefined;
+                                const canvasTitle =
+                                  (typeof rawTitle === "string" ? rawTitle : null)
+                                  || detectCanvasIcon(delta.openui_response).label;
+                                return (
+                                  <AgentCanvasCard
+                                    key={`canvas-${pIdx}`}
+                                    openuiLang={delta.openui_response}
+                                    title={canvasTitle}
+                                    onClick={() => {
+                                      setActiveCanvas({
+                                        openui_lang: delta.openui_response!,
+                                        title: canvasTitle,
+                                        isStreaming: false,
+                                      });
+                                      setCanvasPanelVisible(true);
+                                    }}
+                                  />
+                                );
+                              }
+                            }
+                            return null;
+                          })}
                         </div>
                       </div>
                     </div>
@@ -1162,6 +1306,22 @@ export function BudAgentScreen() {
         />
       )}
       </div>{/* End main content area */}
+
+      {/* Canvas Panel Drawer */}
+      <div
+        className={cn(
+          "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
+          canvasPanelVisible && activeCanvas ? "w-[30rem]" : "w-[0rem]"
+        )}
+      >
+        <div className="h-full w-[30rem]">
+          <CanvasPanel
+            activeCanvas={activeCanvas}
+            closeSidebar={handleCanvasClose}
+            sendMessage={handleCanvasSendMessage}
+          />
+        </div>
+      </div>
 
       {/* Sources Sidebar Drawer */}
       <div
