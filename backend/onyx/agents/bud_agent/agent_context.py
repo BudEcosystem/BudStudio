@@ -26,6 +26,7 @@ from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
+from onyx.agents.bud_agent.ask_user_tool import create_ask_user_tool
 from onyx.agents.bud_agent.canvas_tool import create_canvas_tool
 from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
@@ -219,6 +220,13 @@ def build_agent_run_context(
         step_number_fn=resolved_step_number_fn,
         db_session=db_session,
     )
+    ask_user_tools = create_ask_user_tool(
+        session_id=session_id,
+        packet_queue=resolved_packet_queue,
+        step_number_fn=resolved_step_number_fn,
+        db_session=db_session,
+        redis_client=resolved_redis,
+    )
 
     # Step 7: inbox tools
     resolved_inbox_tools: list[FunctionTool] = (
@@ -247,6 +255,7 @@ def build_agent_run_context(
         + web_search_tools
         + cron_tools
         + canvas_tools
+        + ask_user_tools
         + resolved_inbox_tools
         + resolved_extra_tools
     )

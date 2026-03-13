@@ -10,6 +10,7 @@ import {
 } from "./AgentSessionContext";
 import { MemoryUpdateDialog } from "./MemoryUpdateDialog";
 import { InlineToolApproval } from "./InlineToolApproval";
+import { UserQuestionsPanel } from "./UserQuestionsPanel";
 import ChatInputBar from "@/app/chat/components/input/ChatInputBar";
 import { useChatContext } from "@/refresh-components/contexts/ChatContext";
 import { useAgentsContext } from "@/refresh-components/contexts/AgentsContext";
@@ -23,6 +24,7 @@ import {
   useChatInteractionState,
   type PendingMemoryUpdate,
 } from "@/lib/desktop";
+import type { UserQuestionItem } from "@/app/chat/services/streamingModels";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
 import { setToolPermission } from "@/lib/agent/connector-utils";
 import { setUserDefaultModel } from "@/lib/users/UserSettings";
@@ -292,6 +294,12 @@ export function BudAgentScreen() {
   // Canvas panel state
   const [activeCanvas, setActiveCanvas] = useState<ActiveCanvas | null>(null);
   const [canvasPanelVisible, setCanvasPanelVisible] = useState(false);
+
+  // User questions panel state
+  const [bottomQuestions, setBottomQuestions] = useState<{
+    toolCallId: string;
+    questions: UserQuestionItem[];
+  } | null>(null);
 
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -646,6 +654,10 @@ export function BudAgentScreen() {
           };
           setActiveCanvas(canvas);
           setCanvasPanelVisible(true);
+        },
+
+        onUserQuestions: (questions, toolCallId) => {
+          setBottomQuestions({ toolCallId, questions });
         },
 
         onSessionCompacted: (newSessionId) => {
@@ -1258,6 +1270,18 @@ export function BudAgentScreen() {
                 operationHash={bottomApproval.operationHash}
                 onApprove={handleToolApprove}
                 onDeny={handleToolDeny}
+              />
+            </div>
+          )}
+
+          {/* User Questions UI - Positioned just above the chat input */}
+          {bottomQuestions && currentSessionId && (
+            <div className="absolute z-50 bottom-0 left-0 right-0 mb-2 border border-border rounded-lg shadow-lg p-5" style={{ backgroundColor: '#101010' }}>
+              <UserQuestionsPanel
+                questions={bottomQuestions.questions}
+                toolCallId={bottomQuestions.toolCallId}
+                sessionId={currentSessionId}
+                onSubmitted={() => setBottomQuestions(null)}
               />
             </div>
           )}
