@@ -1,5 +1,14 @@
 ---
 apiVersion: v1
+kind: Secret
+metadata:
+  name: bud-neo4j-credentials
+  namespace: bud
+type: Opaque
+stringData:
+  NEO4J_AUTH: "neo4j/budneo4j2026"
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: bud-neo4j-data
@@ -41,7 +50,10 @@ spec:
               name: bolt
           env:
             - name: NEO4J_AUTH
-              value: "neo4j/budneo4j2026"
+              valueFrom:
+                secretKeyRef:
+                  name: bud-neo4j-credentials
+                  key: NEO4J_AUTH
             - name: NEO4J_PLUGINS
               value: '[]'
             - name: NEO4J_server_memory_heap_initial__size

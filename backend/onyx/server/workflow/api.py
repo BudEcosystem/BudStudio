@@ -17,6 +17,9 @@ from onyx.auth.users import current_admin_user
 from onyx.auth.users import current_user
 from onyx.db.models import User
 from onyx.utils.logger import setup_logger
+from onyx.workflow.canvas_builder import apply_merge_map_to_edges
+from onyx.workflow.canvas_builder import build_cross_workflow_edges
+from onyx.workflow.canvas_builder import merge_similar_nodes
 from onyx.workflow.models import AnnotationInput
 from onyx.workflow.neo4j_client import get_neo4j_client
 from onyx.workflow.neo4j_client import Neo4jClient
@@ -157,10 +160,6 @@ async def get_unified_canvas(
     )
 
     # -- Build raw nodes ------------------------------------------------
-    import numpy as np
-
-    _STEP_SIMILARITY_THRESHOLD = 0.85
-
     raw_nodes: list[dict[str, Any]] = []
     node_embeddings: dict[str, list[float]] = {}  # node_id -> embedding
     action_to_workflows: dict[str, set[str]] = {}
@@ -197,47 +196,7 @@ async def get_unified_canvas(
             node_embeddings[node_id] = embedding
 
     # -- Merge semantically similar nodes within same workflow ----------
-    # Build merge map: node_id -> canonical merged node_id
-    merge_map: dict[str, str] = {}
-    wf_groups: dict[str, list[dict[str, Any]]] = {}
-    for node in raw_nodes:
-        wid = node["data"]["workflow_id"]
-        wf_groups.setdefault(wid, []).append(node)
-
-    for wid, wf_nodes in wf_groups.items():
-        # Compare all pairs within the workflow
-        for i, n1 in enumerate(wf_nodes):
-            if n1["id"] in merge_map:
-                continue
-            emb1 = node_embeddings.get(n1["id"])
-            if not emb1:
-                continue
-            a1 = np.array(emb1, dtype=np.float64)
-            norm1 = float(np.linalg.norm(a1))
-            if norm1 < 1e-10:
-                continue
-            for j in range(i + 1, len(wf_nodes)):
-                n2 = wf_nodes[j]
-                if n2["id"] in merge_map:
-                    continue
-                emb2 = node_embeddings.get(n2["id"])
-                if not emb2:
-                    continue
-                a2 = np.array(emb2, dtype=np.float64)
-                norm2 = float(np.linalg.norm(a2))
-                if norm2 < 1e-10:
-                    continue
-                sim = float(np.dot(a1, a2)) / (norm1 * norm2)
-                if sim >= _STEP_SIMILARITY_THRESHOLD:
-                    # Merge n2 into n1
-                    merge_map[n2["id"]] = n1["id"]
-                    # Accumulate frequency
-                    n1["data"]["frequency"] += n2["data"]["frequency"]
-
-    # Apply merge: filter out merged nodes, rewrite edge references
-    nodes: list[dict[str, Any]] = [
-        n for n in raw_nodes if n["id"] not in merge_map
-    ]
+    nodes, merge_map = merge_similar_nodes(raw_nodes, node_embeddings)
 
     # Fetch edges between steps (dynamic relationship types)
     edge_rows = await client.execute_read(
@@ -318,68 +277,17 @@ async def get_unified_canvas(
                 }
             )
 
-    # Apply merge_map to edge source/target references
-    for edge in edges:
-        src = edge["source"]
-        tgt = edge["target"]
-        if src in merge_map:
-            edge["source"] = merge_map[src]
-        if tgt in merge_map:
-            edge["target"] = merge_map[tgt]
-
-    # Deduplicate edges after merging (same source+target)
-    deduped_edges: list[dict[str, Any]] = []
-    deduped_keys: set[str] = set()
-    for edge in edges:
-        key = f"{edge['source']}->{edge['target']}"
-        if key in deduped_keys:
-            continue
-        deduped_keys.add(key)
-        deduped_edges.append(edge)
-    edges = deduped_edges
+    # Apply merge_map to edge source/target references and deduplicate
+    edges = apply_merge_map_to_edges(edges, merge_map)
 
     # -- Cross-workflow edges for semantically similar steps --------
-    _CROSS_WF_THRESHOLD = 0.9
-    node_ids = [n["id"] for n in nodes]
-    for i, nid1 in enumerate(node_ids):
-        emb1 = node_embeddings.get(nid1)
-        if not emb1:
-            continue
-        wid1 = nodes[i]["data"]["workflow_id"]
-        a1 = np.array(emb1, dtype=np.float64)
-        norm1 = float(np.linalg.norm(a1))
-        if norm1 < 1e-10:
-            continue
-        for j in range(i + 1, len(node_ids)):
-            nid2 = node_ids[j]
-            wid2 = nodes[j]["data"]["workflow_id"]
-            if wid1 == wid2:
-                continue  # Same workflow — already handled
-            emb2 = node_embeddings.get(nid2)
-            if not emb2:
-                continue
-            a2 = np.array(emb2, dtype=np.float64)
-            norm2 = float(np.linalg.norm(a2))
-            if norm2 < 1e-10:
-                continue
-            sim = float(np.dot(a1, a2)) / (norm1 * norm2)
-            if sim >= _CROSS_WF_THRESHOLD:
-                cross_key = f"{nid1}->{nid2}"
-                if cross_key not in deduped_keys:
-                    deduped_keys.add(cross_key)
-                    edges.append(
-                        {
-                            "id": f"cross-{nid1}-{nid2}",
-                            "source": nid1,
-                            "target": nid2,
-                            "type": "workflowEdge",
-                            "data": {
-                                "frequency": 1,
-                                "edge_type": "SIMILAR_ACTION",
-                                "goal": "Semantically similar step across workflows",
-                            },
-                        }
-                    )
+    existing_edge_keys: set[str] = {
+        f"{e['source']}->{e['target']}" for e in edges
+    }
+    cross_edges = build_cross_workflow_edges(
+        nodes, node_embeddings, existing_edge_keys
+    )
+    edges.extend(cross_edges)
 
     # Shared actions (canonical_actions in 2+ workflows)
     shared_actions = [
@@ -601,6 +509,7 @@ async def get_execution_detail(
                 **step,
                 "raw_steps": [],
                 "_raw_ids_seen": set(),
+                "_raw_index": {},
             }
 
         if raw_step:
@@ -609,17 +518,18 @@ async def get_execution_detail(
                 steps_map[step_id]["_raw_ids_seen"].add(rs_id)
                 raw_entry: dict[str, Any] = {**raw_step, "artifacts": []}
                 steps_map[step_id]["raw_steps"].append(raw_entry)
+                steps_map[step_id]["_raw_index"][rs_id] = raw_entry
             if artifact:
-                # Append artifact to the last matching raw step
-                for rs_entry in steps_map[step_id]["raw_steps"]:
-                    if rs_entry.get("id") == rs_id:
-                        rs_entry["artifacts"].append(artifact)
-                        break
+                # O(1) dict lookup instead of scanning raw_steps list
+                rs_entry = steps_map[step_id]["_raw_index"].get(rs_id)
+                if rs_entry is not None:
+                    rs_entry["artifacts"].append(artifact)
 
-    # Remove internal tracking sets before returning
+    # Remove internal tracking fields before returning
     steps_list: list[dict[str, Any]] = []
     for s in steps_map.values():
         s.pop("_raw_ids_seen", None)
+        s.pop("_raw_index", None)
         steps_list.append(s)
     steps_list.sort(key=lambda s: s.get("position", 0))
 
