@@ -641,6 +641,24 @@ class BudAgentOrchestrator:
                 self._step_number += 1
                 self._emit(OverallStop())
 
+                # Dispatch workflow sync (non-blocking, fire-and-forget)
+                try:
+                    from onyx.background.celery.apps.client import celery_app
+
+                    _sync_kwargs = {
+                        "session_id": str(self._session_id),
+                        "tenant_id": self._tenant_id or "",
+                        "user_id": str(self._user.id) if self._user else "",
+                    }
+                    logger.info(f"Dispatching workflow sync for session={self._session_id}")
+                    celery_app.send_task(
+                        "sync_turn_to_neo4j_task",
+                        kwargs=_sync_kwargs,
+                    )
+                    logger.info("Workflow sync task dispatched successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to dispatch workflow sync: {e}", exc_info=True)
+
             # 8. Persist the assistant response
             if self._full_response_text:
                 # Use processed text (with [[N]](link) citations) if available

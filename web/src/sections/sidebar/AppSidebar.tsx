@@ -72,6 +72,7 @@ import SvgClock from "@/icons/clock";
 import SvgPlug from "@/icons/plug";
 import SvgInbox from "@/icons/inbox";
 import SvgLightbulbSimple from "@/icons/lightbulb-simple";
+import SvgWorkflow from "@/icons/workflow";
 import { useCronNotifications } from "@/components/desktop/CronNotificationContext";
 import { useInbox } from "@/components/desktop/InboxContext";
 import { CronNotificationPanel } from "@/components/desktop/CronNotificationPanel";
@@ -505,6 +506,15 @@ function AppSidebarInner() {
                   >
                     Skills
                   </SidebarTab>
+                  <SidebarTab
+                    leftIcon={SvgWorkflow}
+                    onClick={() => setAgentView("workflows")}
+                    active={agentView === "workflows"}
+                    folded
+                    testId="sidebar-workflows-tab"
+                  >
+                    Canvas
+                  </SidebarTab>
                     </>
                   ) : (
                     <>
@@ -649,6 +659,14 @@ function AppSidebarInner() {
                         testId="sidebar-skills-tab"
                       >
                         Skills
+                      </SidebarTab>
+                      <SidebarTab
+                        leftIcon={SvgWorkflow}
+                        onClick={() => setAgentView("workflows")}
+                        active={agentView === "workflows"}
+                        testId="sidebar-workflows-tab"
+                      >
+                        Canvas
                       </SidebarTab>
                     </SidebarSection>
                   </>

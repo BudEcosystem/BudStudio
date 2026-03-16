@@ -40,6 +40,7 @@ export {
 } from "./InboxContext";
 export { InboxView } from "./InboxView";
 export { SkillsView } from "./SkillsView";
+export { WorkflowsView } from "./WorkflowsView";
 export {
   EventStreamProvider,
   useEventStreamContext,

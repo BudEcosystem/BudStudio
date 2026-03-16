@@ -347,5 +347,6 @@ celery_app.autodiscover_tasks(
         "onyx.background.celery.tasks.user_file_processing",
         "onyx.background.celery.tasks.agent_cron",
         "onyx.background.celery.tasks.agent_inbox",
+        "onyx.background.celery.tasks.workflow",
     ]
 )

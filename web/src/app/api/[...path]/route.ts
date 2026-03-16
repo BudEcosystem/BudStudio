@@ -96,7 +96,7 @@ function processSetCookieHeaders(headers: Headers): Headers {
 
 // Paths that are allowed to proxy through in production mode.
 // These are backend APIs that the frontend calls directly.
-const PRODUCTION_ALLOWED_PREFIXES = ["agent/", "skill", "admin/skill"];
+const PRODUCTION_ALLOWED_PREFIXES = ["agent/", "skill", "admin/skill", "workflow"];
 
 async function handleRequest(request: NextRequest, path: string[]) {
   const joinedPath = path.join("/");
