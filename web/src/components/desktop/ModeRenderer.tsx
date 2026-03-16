@@ -8,6 +8,7 @@ import { CronJobsView } from "./CronJobsView";
 import { ConnectorsView } from "./ConnectorsView";
 import { InboxView } from "./InboxView";
 import { SkillsView } from "./SkillsView";
+import { WorkflowsView } from "./WorkflowsView";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 
@@ -104,6 +105,12 @@ export function ModeRenderer({ children }: ModeRendererProps) {
       return (
         <DesktopContainer>
           <SkillsView />
+        </DesktopContainer>
+      );
+    case "workflows":
+      return (
+        <DesktopContainer>
+          <WorkflowsView />
         </DesktopContainer>
       );
     case "chat":

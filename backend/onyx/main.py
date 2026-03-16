@@ -96,6 +96,7 @@ from onyx.server.agent.cron_api import router as agent_cron_router
 from onyx.server.agent.events_api import router as agent_events_router
 from onyx.server.agent.inbox_api import router as agent_inbox_router
 from onyx.server.federated.api import router as federated_router
+from onyx.server.workflow.api import router as workflow_router
 from onyx.server.gpts.api import router as gpts_router
 from onyx.server.kg.api import admin_router as kg_admin_router
 from onyx.server.long_term_logs.long_term_logs_api import (
@@ -461,6 +462,7 @@ def get_application(lifespan_override: Lifespan | None = None) -> FastAPI:
     include_router_with_global_prefix_prepended(application, agent_cron_router)
     include_router_with_global_prefix_prepended(application, agent_inbox_router)
     include_router_with_global_prefix_prepended(application, agent_events_router)
+    include_router_with_global_prefix_prepended(application, workflow_router)
 
     if AUTH_TYPE == AuthType.DISABLED:
         # Server logs this during auth setup verification step

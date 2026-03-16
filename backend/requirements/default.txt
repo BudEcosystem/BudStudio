@@ -47,6 +47,7 @@ Mako==1.2.4
 markitdown[pdf, docx, pptx, xlsx, xls]==0.1.2
 mcp[cli]==1.12.4
 msal==1.28.0
+neo4j==5.28.1
 nltk==3.9.1
 Office365-REST-Python-Client==2.5.9
 oauthlib==3.2.2

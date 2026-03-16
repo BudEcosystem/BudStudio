@@ -137,5 +137,7 @@ celery_app.autodiscover_tasks(
         "onyx.background.celery.tasks.agent_cron",
         # Agent inbox tasks
         "onyx.background.celery.tasks.agent_inbox",
+        # Workflow sync tasks
+        "onyx.background.celery.tasks.workflow",
     ]
 )
