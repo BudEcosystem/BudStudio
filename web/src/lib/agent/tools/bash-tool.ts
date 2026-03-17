@@ -203,7 +203,18 @@ export class BashTool implements Tool {
     const sessionId = registry.spawn(command, this.workspacePath, { pty, env });
 
     // Poll with the wait timeout
-    const result = await registry.poll(sessionId, waitMs);
+    let result = await registry.poll(sessionId, waitMs);
+
+    // If we got output but process is still "running", give it a brief moment
+    // to close — fast commands often emit output before the close event fires.
+    if (result.status === "running" && result.output.length > 0) {
+      const grace = await registry.poll(sessionId, 500);
+      result = {
+        output: result.output + grace.output,
+        status: grace.status,
+        exitCode: grace.exitCode,
+      };
+    }
 
     if (result.status !== "running") {
       // Command finished within the wait period
