@@ -93,6 +93,10 @@ WORKDIR /app
 # global modules may be outdated and trigger security scans.
 RUN rm -rf /usr/local/lib/node_modules
 
+# Install bash + common dev tools needed by the agent's bash tool.
+# Alpine ships only /bin/sh (ash); many user commands expect bash.
+RUN apk add --no-cache bash git curl
+
 # Not needed, set by compose 
 # ENV NODE_ENV production  
 

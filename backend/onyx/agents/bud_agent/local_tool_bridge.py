@@ -44,8 +44,8 @@ if TYPE_CHECKING:
 
 logger = setup_logger()
 
-TOOL_TIMEOUT_SECONDS = 300  # 5 minutes
-REDIS_KEY_TTL_SECONDS = 600  # 10 minutes
+TOOL_TIMEOUT_SECONDS = 900  # 15 minutes (supports long builds, background poll)
+REDIS_KEY_TTL_SECONDS = 1200  # 20 minutes
 
 # Type alias for the on_invoke_tool callback signature
 InvokeHandler = Callable[
