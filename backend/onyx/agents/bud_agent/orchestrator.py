@@ -55,7 +55,7 @@ from onyx.utils.threadpool_concurrency import wait_on_background
 
 logger = setup_logger()
 
-MAX_TOOL_CALLS = 50
+MAX_TOOL_CALLS = 500
 KEEPALIVE_INTERVAL_SECONDS = 15
 # Compaction threshold: trigger compaction before the hard truncation limit
 COMPACTION_THRESHOLD_CHARS = 300_000
@@ -464,6 +464,18 @@ class BudAgentOrchestrator:
                         MAX_TOOL_CALLS,
                         self._session_id,
                     )
+                    # Notify the user that the limit was reached
+                    self._emit(MessageStart())
+                    self._emit(
+                        MessageDelta(
+                            content=(
+                                "\n\n⚠️ This response reached the maximum "
+                                f"tool call limit ({MAX_TOOL_CALLS}). "
+                                "Please send a follow-up message to continue."
+                            ),
+                        )
+                    )
+                    self._emit(SectionEnd())
                     break
 
                 stream = SyncAgentStream(
