@@ -59,12 +59,16 @@ async function getAuthType(): Promise<string | null> {
     return authTypeCache.authType;
   }
 
-  // Fetch auth type from backend
+  // Fetch auth type from backend (with timeout to avoid hanging when backend is down)
   try {
     const internalUrl = process.env.INTERNAL_URL || "http://127.0.0.1:8080";
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(`${internalUrl}/auth/type`, {
       cache: "no-store",
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     if (response.ok) {
       const data = await response.json();
       authTypeCache = { authType: data.auth_type, timestamp: now };

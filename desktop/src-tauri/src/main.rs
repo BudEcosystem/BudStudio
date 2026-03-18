@@ -311,43 +311,49 @@ struct UpdateInfo {
 }
 
 #[tauri::command]
-async fn check_for_update(handle: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let updater = handle.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(update)) => {
-            log::info!("Update available: {}", update.version);
-            Ok(Some(UpdateInfo {
-                version: update.version.clone(),
-                body: update.body.clone(),
-            }))
-        }
-        Ok(None) => {
-            log::info!("No update available");
-            Ok(None)
-        }
-        Err(e) => {
-            log::warn!("Failed to check for updates: {}", e);
-            Err(e.to_string())
-        }
-    }
+async fn check_for_update(_handle: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
+    // Update checking temporarily disabled
+    log::info!("Update check disabled");
+    Ok(None)
+    // let updater = handle.updater().map_err(|e| e.to_string())?;
+    // match updater.check().await {
+    //     Ok(Some(update)) => {
+    //         log::info!("Update available: {}", update.version);
+    //         Ok(Some(UpdateInfo {
+    //             version: update.version.clone(),
+    //             body: update.body.clone(),
+    //         }))
+    //     }
+    //     Ok(None) => {
+    //         log::info!("No update available");
+    //         Ok(None)
+    //     }
+    //     Err(e) => {
+    //         log::warn!("Failed to check for updates: {}", e);
+    //         Err(e.to_string())
+    //     }
+    // }
 }
 
 #[tauri::command]
-async fn install_update(handle: tauri::AppHandle) -> Result<(), String> {
-    let updater = handle.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(update)) => {
-            log::info!("Downloading and installing update v{}...", update.version);
-            update
-                .download_and_install(|_bytes_downloaded, _total_bytes| {}, || {})
-                .await
-                .map_err(|e| e.to_string())?;
-            log::info!("Update installed, restart required");
-            Ok(())
-        }
-        Ok(None) => Err("No update available".to_string()),
-        Err(e) => Err(e.to_string()),
-    }
+async fn install_update(_handle: tauri::AppHandle) -> Result<(), String> {
+    // Update install temporarily disabled
+    log::info!("Update install disabled");
+    Err("Update checking is temporarily disabled".to_string())
+    // let updater = handle.updater().map_err(|e| e.to_string())?;
+    // match updater.check().await {
+    //     Ok(Some(update)) => {
+    //         log::info!("Downloading and installing update v{}...", update.version);
+    //         update
+    //             .download_and_install(|_bytes_downloaded, _total_bytes| {}, || {})
+    //             .await
+    //             .map_err(|e| e.to_string())?;
+    //         log::info!("Update installed, restart required");
+    //         Ok(())
+    //     }
+    //     Ok(None) => Err("No update available".to_string()),
+    //     Err(e) => Err(e.to_string()),
+    // }
 }
 
 #[tokio::main]
