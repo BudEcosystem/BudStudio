@@ -29,6 +29,7 @@ from onyx.agents.bud_agent.tool_definitions import requires_approval
 from onyx.db.agent import add_tool_message
 from onyx.db.agent import update_tool_message_result
 from onyx.db.agent_connector import get_tool_permissions
+from onyx.db.engine.sql_engine import get_session_with_tenant
 from onyx.db.enums import AgentToolPermissionLevel
 from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
 from onyx.server.query_and_chat.streaming_models import AgentLocalToolRequest
@@ -40,7 +41,6 @@ from onyx.utils.logger import setup_logger
 
 if TYPE_CHECKING:
     from onyx.agents.bud_agent.orchestrator import BudAgentOrchestrator
-    from sqlalchemy.orm import Session
 
 logger = setup_logger()
 
@@ -62,26 +62,27 @@ class LocalToolBridge:
         session_id: str,
         packet_queue: Queue[Any],
         redis_client: redis.Redis,  # type: ignore[type-arg]
-        db_session: Session | None = None,
+        tenant_id: str = "public",
         orchestrator: BudAgentOrchestrator | None = None,
         user_id: UUID | None = None,
     ) -> None:
         self._session_id = session_id
         self._packet_queue = packet_queue
         self._redis_client = redis_client
-        self._db_session = db_session
+        self._tenant_id = tenant_id
         self._orchestrator = orchestrator
 
         # Load persistent local-tool permissions from the DB once at init.
         self._always_allowed_tools: set[str] = set()
-        if db_session and user_id:
+        if user_id:
             try:
-                perms = get_tool_permissions(db_session, user_id, LOCAL_GATEWAY_ID)
-                self._always_allowed_tools = {
-                    p.tool_name
-                    for p in perms
-                    if p.permission_level == AgentToolPermissionLevel.ALWAYS_ALLOW
-                }
+                with get_session_with_tenant(tenant_id=self._tenant_id) as db_session:
+                    perms = get_tool_permissions(db_session, user_id, LOCAL_GATEWAY_ID)
+                    self._always_allowed_tools = {
+                        p.tool_name
+                        for p in perms
+                        if p.permission_level == AgentToolPermissionLevel.ALWAYS_ALLOW
+                    }
             except Exception:
                 logger.warning(
                     "Failed to load local tool permissions", exc_info=True
@@ -141,19 +142,19 @@ class LocalToolBridge:
             self._emit(CustomToolStart(tool_name=tool_name), step=step)
 
             # Persist tool message to DB
-            if self._db_session:
-                try:
-                    from uuid import UUID as UUIDType
+            try:
+                from uuid import UUID as UUIDType
+                with get_session_with_tenant(tenant_id=self._tenant_id) as db_session:
                     add_tool_message(
-                        db_session=self._db_session,
+                        db_session=db_session,
                         session_id=UUIDType(self._session_id),
                         tool_name=tool_name,
                         tool_input=tool_input,
                         tool_call_id=tool_call_id,
                         step_number=step,
                     )
-                except Exception:
-                    logger.warning("Failed to persist tool message", exc_info=True)
+            except Exception:
+                logger.warning("Failed to persist tool message", exc_info=True)
 
             # Handle approval if required (skip if user has persistent always-allow)
             if requires_approval(tool_name) and tool_name not in self._always_allowed_tools:
@@ -173,18 +174,18 @@ class LocalToolBridge:
                     self._emit(SectionEnd(), step=step)
 
                     # Update DB with denial
-                    if self._db_session:
-                        try:
-                            from uuid import UUID as UUIDType
+                    try:
+                        from uuid import UUID as UUIDType
+                        with get_session_with_tenant(tenant_id=self._tenant_id) as db_session:
                             update_tool_message_result(
-                                db_session=self._db_session,
+                                db_session=db_session,
                                 session_id=UUIDType(self._session_id),
                                 tool_call_id=tool_call_id,
                                 tool_error=error_msg,
                                 ui_spec={"approval_status": "denied"},
                             )
-                        except Exception:
-                            logger.warning("Failed to update denied tool", exc_info=True)
+                    except Exception:
+                        logger.warning("Failed to update denied tool", exc_info=True)
                     return error_msg
 
             # Emit local tool request (tells desktop to execute)
@@ -226,19 +227,19 @@ class LocalToolBridge:
             self._emit(SectionEnd(), step=step)
 
             # Update DB with result
-            if self._db_session:
-                try:
-                    from uuid import UUID as UUIDType
+            try:
+                from uuid import UUID as UUIDType
+                with get_session_with_tenant(tenant_id=self._tenant_id) as db_session:
                     update_tool_message_result(
-                        db_session=self._db_session,
+                        db_session=db_session,
                         session_id=UUIDType(self._session_id),
                         tool_call_id=tool_call_id,
                         tool_output={"output": output} if output else None,
                         tool_error=error,
                         ui_spec=None,
                     )
-                except Exception:
-                    logger.warning("Failed to update tool result", exc_info=True)
+            except Exception:
+                logger.warning("Failed to update tool result", exc_info=True)
 
             # Return to Agents SDK
             if error:

@@ -12,6 +12,7 @@ import queue
 import re
 import threading
 from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 from typing import cast
 from uuid import UUID
@@ -29,6 +30,7 @@ from onyx.agents.bud_agent.agent_context import compact_session
 from onyx.agents.bud_agent.artifact_llm import maybe_generate_artifact
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
 from onyx.db.agent import add_session_message
+from onyx.db.engine.sql_engine import get_session_with_tenant
 from onyx.db.agent import update_message_ui_spec_artifact
 from onyx.db.agent import update_session_stats
 from onyx.db.agent import update_session_status
@@ -75,7 +77,6 @@ class BudAgentOrchestrator:
         self,
         session_id: UUID,
         user: User,
-        db_session: Session,
         redis_client: redis.Redis,  # type: ignore[type-arg]
         workspace_path: str | None = None,
         model: str | None = None,
@@ -84,7 +85,6 @@ class BudAgentOrchestrator:
     ) -> None:
         self._session_id = session_id
         self._user = user
-        self._db_session = db_session
         self._redis_client = redis_client
         self._workspace_path = workspace_path
         self._model = model
@@ -116,6 +116,17 @@ class BudAgentOrchestrator:
     @step_number.setter
     def step_number(self, value: int) -> None:
         self._step_number = value
+
+    @contextmanager
+    def _get_db_session(self) -> Generator[Session, None, None]:
+        """Create a short-lived DB session for a single operation.
+
+        This prevents holding a DB connection 'idle in transaction' for the
+        entire agent run (which can last minutes during LLM processing) and
+        avoids exhausting the connection pool.
+        """
+        with get_session_with_tenant(tenant_id=self._tenant_id) as session:
+            yield session
 
     def close_open_section_for_tool(self) -> int:
         """Close any open text/reasoning section and return the step for a tool.
@@ -156,12 +167,13 @@ class BudAgentOrchestrator:
     def run(self, user_message: str) -> Generator[str, None, None]:
         """Run the agent loop and yield JSON-line packets for SSE streaming."""
         # Persist the user message before starting the agent loop
-        add_session_message(
-            db_session=self._db_session,
-            session_id=self._session_id,
-            role=AgentMessageRole.USER,
-            content=user_message,
-        )
+        with self._get_db_session() as db_session:
+            add_session_message(
+                db_session=db_session,
+                session_id=self._session_id,
+                role=AgentMessageRole.USER,
+                content=user_message,
+            )
 
         # Start the agent loop in a background thread
         thread = run_in_background(
@@ -248,8 +260,20 @@ class BudAgentOrchestrator:
         self._packet_queue.put(Packet(ind=ind, obj=obj))
 
     def _run_agent_loop(self, user_message: str) -> None:
-        """Background thread: run the agent loop via the Agents SDK."""
+        """Background thread: run the agent loop via the Agents SDK.
+
+        A single DB session is created for the entire method because tool
+        creation functions capture it in closures for later invocation.
+        After the initial reads (build_agent_run_context), we call
+        ``db_session.rollback()`` to release the DB connection back to the
+        pool — this prevents "idle in transaction" connections from
+        accumulating during LLM processing.  Tool handlers that later use
+        the session will transparently check out a new connection.
+        """
+        _db_cm = self._get_db_session()
+        db_session = _db_cm.__enter__()
         try:
+
             # Set the "session is busy" flag so cron tasks skip this session
             try:
                 self._redis_client.set(
@@ -265,7 +289,7 @@ class BudAgentOrchestrator:
                 session_id=str(self._session_id),
                 packet_queue=self._packet_queue,
                 redis_client=self._redis_client,
-                db_session=self._db_session,
+                tenant_id=self._tenant_id,
                 orchestrator=self,
                 user_id=self._user.id,
             )
@@ -277,7 +301,7 @@ class BudAgentOrchestrator:
             ctx = build_agent_run_context(
                 session_id=self._session_id,
                 user=self._user,
-                db_session=self._db_session,
+                db_session=db_session,
                 user_message=user_message,
                 mode=AgentExecutionMode.INTERACTIVE,
                 local_tools=local_bridge.create_all_local_tools(),
@@ -290,6 +314,12 @@ class BudAgentOrchestrator:
                 step_number_fn=lambda: self.close_open_section_for_tool(),
                 step_increment_fn=_increment_step,
             )
+
+            # Release the DB connection back to the pool so it doesn't sit
+            # "idle in transaction" during the (potentially long) LLM call.
+            # The session remains valid — next DB operation will check out
+            # a fresh connection automatically.
+            db_session.rollback()
 
             search_context = ctx.search_context
 
@@ -322,7 +352,7 @@ class BudAgentOrchestrator:
                         ctx = build_agent_run_context(
                             session_id=new_session_id,
                             user=self._user,
-                            db_session=self._db_session,
+                            db_session=db_session,
                             user_message=user_message,
                             mode=AgentExecutionMode.INTERACTIVE,
                             local_tools=local_bridge.create_all_local_tools(),
@@ -335,6 +365,7 @@ class BudAgentOrchestrator:
                             step_number_fn=lambda: self.close_open_section_for_tool(),
                             step_increment_fn=_increment_step,
                         )
+                        db_session.rollback()
                         search_context = ctx.search_context
                         messages = self._build_messages(ctx.system_prompt)
                         local_bridge._session_id = str(new_session_id)
@@ -643,7 +674,7 @@ class BudAgentOrchestrator:
                 self._emit(AgentStopped())
                 self._step_number += 1
                 update_session_status(
-                    self._db_session,
+                    db_session,
                     self._session_id,
                     AgentSessionStatus.STOPPED,
                 )
@@ -732,7 +763,7 @@ class BudAgentOrchestrator:
                     ui_spec["intermediate_texts"] = self._iteration_texts
 
                 add_session_message(
-                    db_session=self._db_session,
+                    db_session=db_session,
                     session_id=self._session_id,
                     role=AgentMessageRole.ASSISTANT,
                     content=persist_content,
@@ -784,7 +815,7 @@ class BudAgentOrchestrator:
                         title=artifact_title,
                     ))
                     update_message_ui_spec_artifact(
-                        self._db_session,
+                        db_session,
                         self._session_id,
                         openui_lang,
                         artifact_title,
@@ -792,7 +823,7 @@ class BudAgentOrchestrator:
 
             # 10. Update session usage stats
             update_session_stats(
-                self._db_session,
+                db_session,
                 self._session_id,
                 tool_calls=self._tool_call_count,
             )
@@ -810,6 +841,12 @@ class BudAgentOrchestrator:
             self._packet_queue.put(e)
             self._emit(AgentDone())
         finally:
+            # Close the long-lived DB session
+            try:
+                _db_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+
             # Clean up Redis keys — delete individually because
             # TenantRedis._prefix_method only prefixes the first
             # positional arg, so passing multiple keys to a single
@@ -832,14 +869,15 @@ class BudAgentOrchestrator:
         llm: Any,
     ) -> UUID | None:
         """Compact session using shared compaction logic."""
-        result = compact_session(
-            db_session=self._db_session,
-            session_id=self._session_id,
-            user=self._user,
-            user_message=user_message,
-            llm=llm,
-            workspace_path=self._workspace_path,
-        )
+        with self._get_db_session() as db_session:
+            result = compact_session(
+                db_session=db_session,
+                session_id=self._session_id,
+                user=self._user,
+                user_message=user_message,
+                llm=llm,
+                workspace_path=self._workspace_path,
+            )
         if result is None:
             return None
 
@@ -866,8 +904,9 @@ class BudAgentOrchestrator:
 
     def _build_messages(self, system_prompt: str) -> list[dict[str, Any]]:
         """Build message list using shared history builder."""
-        return build_message_history(
-            db_session=self._db_session,
-            session_id=self._session_id,
-            system_prompt=system_prompt,
-        )
+        with self._get_db_session() as db_session:
+            return build_message_history(
+                db_session=db_session,
+                session_id=self._session_id,
+                system_prompt=system_prompt,
+            )
