@@ -178,34 +178,20 @@ def create_connector_tools(
         tool_name = mcp_tool.name
         gateway_id = tool_to_gateway.get(tool_name)
 
+        # Skip tools that don't belong to any enabled connector.
+        # tool_to_gateway is built from REST tool names for enabled
+        # gateways only — if a tool isn't in it, it belongs to a
+        # disabled (or unknown) connector.
+        if gateway_id is None:
+            continue
+
         # Permission resolution:
         # 1. Per-tool override  2. Connector default  3. Global fallback
-        # When REST→MCP name mapping misses, search all enabled gateways.
         perm_level: AgentToolPermissionLevel | None = None
-        if gateway_id is not None:
-            perm_key = f"{gateway_id}:{tool_name}"
-            perm_level = permissions.get(perm_key)
-            if perm_level is None:
-                perm_level = connector_defaults.get(gateway_id)
-        else:
-            # REST API didn't list this tool — search permissions across
-            # all enabled gateways by tool_name.
-            for gw_id in enabled_ids:
-                perm_level = permissions.get(f"{gw_id}:{tool_name}")
-                if perm_level is not None:
-                    gateway_id = gw_id
-                    break
-            # Fall back to connector-level defaults
-            if perm_level is None:
-                for gw_id in enabled_ids:
-                    perm_level = connector_defaults.get(gw_id)
-                    if perm_level is not None:
-                        gateway_id = gw_id
-                        break
-            # If still no gateway, default to the sole enabled gateway
-            # so the frontend can persist permissions later.
-            if gateway_id is None and len(enabled_ids) == 1:
-                gateway_id = enabled_ids[0]
+        perm_key = f"{gateway_id}:{tool_name}"
+        perm_level = permissions.get(perm_key)
+        if perm_level is None:
+            perm_level = connector_defaults.get(gateway_id)
         if perm_level is None:
             perm_level = AgentToolPermissionLevel.NEED_APPROVAL
         # In headless modes (cron, inbox) there's no frontend to approve,
