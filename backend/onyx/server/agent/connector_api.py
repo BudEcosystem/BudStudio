@@ -29,11 +29,18 @@ from onyx.db.enums import AgentToolPermissionLevel
 from onyx.db.models import AgentConnectorPreference
 from onyx.db.models import User
 from onyx.llm.factory import get_fresh_oauth_token
+from onyx.redis.redis_pool import get_redis_client
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
 
 router = APIRouter(prefix="/agent/connectors", tags=["AgentConnectors"])
+
+# Redis key prefix for tracking which user initiated an OAuth flow.
+# Desktop-app flows open a browser where a *different* Onyx user may be
+# logged in, so we need to remember the initiator.
+_OAUTH_INITIATOR_PREFIX = "oauth_initiator:"
+_OAUTH_INITIATOR_TTL = 600  # 10 minutes — generous for slow OAuth flows
 
 
 # ==============================================================================
@@ -254,6 +261,19 @@ def initiate_connector_oauth(
         enabled=True,
     )
 
+    # Remember who initiated the OAuth flow so the /complete endpoint can
+    # use the correct user's token even if the callback lands in a browser
+    # session belonging to a different Onyx user (common in desktop-app flows).
+    try:
+        redis_client = get_redis_client()
+        redis_client.set(
+            f"{_OAUTH_INITIATOR_PREFIX}{gateway_id}",
+            str(user.id),
+            ex=_OAUTH_INITIATOR_TTL,
+        )
+    except Exception:
+        logger.warning("Failed to store OAuth initiator in Redis", exc_info=True)
+
     return result
 
 
@@ -291,9 +311,54 @@ def complete_connector_oauth(
     """Mark a connector's OAuth as complete after the callback flow.
 
     Verifies with BudApp that the token is actually active before marking
-    in our DB (prevents the frontend from falsely claiming success).
+    in our DB.
+
+    Desktop-app flows open a system browser that may have a different Onyx
+    session than the user who initiated the OAuth flow.  When that happens,
+    we fall back to the initiating user's token for the BudApp check.
     """
-    token = get_fresh_oauth_token(user)
+    # Determine the *initiating* user — may differ from `user` (browser session)
+    # when the OAuth callback lands in a browser logged in as someone else.
+    effective_user = user
+    try:
+        redis_client = get_redis_client()
+        initiator_id_raw = redis_client.get(
+            f"{_OAUTH_INITIATOR_PREFIX}{gateway_id}"
+        )
+        if initiator_id_raw:
+            from uuid import UUID as UUIDType
+
+            initiator_id = UUIDType(
+                initiator_id_raw
+                if isinstance(initiator_id_raw, str)
+                else initiator_id_raw.decode()
+            )
+            if initiator_id != user.id:
+                # Look up the initiating user so we can use their token
+                initiator = db_session.query(User).filter(
+                    User.id == initiator_id
+                ).first()
+                if initiator:
+                    logger.info(
+                        "complete_connector_oauth: browser user=%s differs "
+                        "from initiator=%s, using initiator's token",
+                        user.email,
+                        initiator.email,
+                    )
+                    effective_user = initiator
+            # Clean up the Redis key
+            redis_client.delete(f"{_OAUTH_INITIATOR_PREFIX}{gateway_id}")
+    except Exception:
+        logger.warning(
+            "Failed to look up OAuth initiator from Redis", exc_info=True
+        )
+
+    logger.info(
+        "complete_connector_oauth: effective_user=%s, gateway=%s",
+        effective_user.email,
+        gateway_id,
+    )
+    token = get_fresh_oauth_token(effective_user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
@@ -307,13 +372,19 @@ def complete_connector_oauth(
         )
         raise HTTPException(status_code=502, detail=str(e))
 
+    logger.info(
+        "complete_connector_oauth: BudApp token-status response: %s",
+        status,
+    )
+
     if not status.get("connected", False):
         raise HTTPException(
             status_code=400,
             detail="OAuth token is not connected on BudApp",
         )
 
-    mark_connector_oauth_completed(db_session, user.id, gateway_id)
+    # Mark complete for the *initiating* user (not the browser session user)
+    mark_connector_oauth_completed(db_session, effective_user.id, gateway_id)
     return {"gateway_id": gateway_id, "completed": True}
 
 

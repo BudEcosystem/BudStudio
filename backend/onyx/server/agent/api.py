@@ -780,7 +780,6 @@ def execute_agent(
     orchestrator = BudAgentOrchestrator(
         session_id=session_id,
         user=user,
-        db_session=db_session,
         redis_client=redis_client,
         workspace_path=request.workspace_path or session.workspace_path,
         model=request.model,
