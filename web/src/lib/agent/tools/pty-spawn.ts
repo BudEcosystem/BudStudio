@@ -89,7 +89,8 @@ export function spawnPty(
   const cols = options.cols || 120;
   const rows = options.rows || 30;
 
-  const pty = nodePty.spawn("bash", ["-c", command], {
+  const userShell = env.SHELL || "bash";
+  const pty = nodePty.spawn(userShell, ["-l", "-c", command], {
     name: "xterm-256color",
     cols,
     rows,
