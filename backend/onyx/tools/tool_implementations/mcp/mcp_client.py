@@ -336,6 +336,12 @@ async def _discover_mcp_tools(session: ClientSession) -> list[MCPLibTool]:
         cursor = tools_response.nextCursor
         if not cursor:
             break
+    else:
+        logger.warning(
+            "MCP tool discovery reached max pages limit (%d). "
+            "Some tools may be missing.",
+            max_pages,
+        )
     logger.info(
         f"Listed {len(all_tools)} tools with server time: {time.time() - t2}"
     )
