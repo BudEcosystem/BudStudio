@@ -56,7 +56,13 @@ export class UrlBuilder {
   }
 }
 
+/** Default timeout for server-side fetches to the backend (10 seconds). */
+const SS_FETCH_TIMEOUT_MS = 10_000;
+
 export async function fetchSS(url: string, options?: RequestInit) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SS_FETCH_TIMEOUT_MS);
+
   const init = options || {
     credentials: "include",
     cache: "no-store",
@@ -67,5 +73,13 @@ export async function fetchSS(url: string, options?: RequestInit) {
         .join("; "),
     },
   };
-  return fetch(buildUrl(url), init);
+
+  try {
+    return await fetch(buildUrl(url), {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

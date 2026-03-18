@@ -15,6 +15,7 @@ export {
   createFileTools,
 } from "./file-tools";
 export { BashTool } from "./bash-tool";
+export { ProcessTool } from "./process-tool";
 export { GlobTool, GrepTool } from "./search-tools";
 // Browser tools are NOT re-exported from the barrel to avoid pulling in
 // playwright-core at import time. Use require("./browser") for lazy loading.

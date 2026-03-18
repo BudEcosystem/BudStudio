@@ -63,9 +63,16 @@ export class BrowserNavigateTool implements Tool {
 
     // Automatically take a snapshot after navigation so the agent can
     // immediately see the page without a separate browser_snapshot call.
-    const snapshot = await this.manager.takeSnapshot();
+    let snapshot = "";
+    try {
+      snapshot = await this.manager.takeSnapshot();
+    } catch {
+      // Snapshot may fail if accessibility API is unavailable — still
+      // return navigation result so the tool doesn't error out entirely.
+    }
 
-    return `[Navigated] Title: ${result.title} | URL: ${result.url}\n\n${snapshot}`;
+    const nav = `[Navigated] Title: ${result.title} | URL: ${result.url}`;
+    return snapshot ? `${nav}\n\n${snapshot}` : nav;
   }
 }
 

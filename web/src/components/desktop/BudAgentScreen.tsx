@@ -552,8 +552,8 @@ export function BudAgentScreen() {
             return;
           }
 
-          // Priority 3: Check if this tool type is always allowed (legacy)
-          if (!isMemory && isToolAlwaysAllowed(toolName)) {
+          // Priority 3: Check if this tool type is always allowed
+          if (isToolAlwaysAllowed(toolName)) {
             handleToolApprove(toolCallId, false);
             return;
           }
@@ -736,6 +736,9 @@ export function BudAgentScreen() {
           setToolPermission(LOCAL_GATEWAY_ID, toolName, "always_allow").catch(
             (err) => console.error("Failed to persist tool permission:", err)
           );
+          // Also add to session-level auto-approval so subsequent calls
+          // within the same session don't re-ask.
+          setAlwaysAllowTool(toolName);
         } else if (toolName) {
           // Connector tool — persist via gateway_id and mark for session auto-approval
           const gwId = bottomApproval?.gatewayId;

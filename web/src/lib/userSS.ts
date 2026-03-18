@@ -12,7 +12,14 @@ export interface AuthTypeMetadata {
 }
 
 export const getAuthTypeMetadataSS = async (): Promise<AuthTypeMetadata> => {
-  const res = await fetch(buildUrl("/auth/type"));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(buildUrl("/auth/type"), { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!res.ok) {
     throw new Error("Failed to fetch data");
   }
@@ -161,10 +168,13 @@ export const logoutSS = async (
 };
 
 export const getCurrentUserSS = async (): Promise<User | null> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(buildUrl("/me"), {
       credentials: "include",
       next: { revalidate: 0 },
+      signal: controller.signal,
       headers: {
         cookie: (await cookies())
           .getAll()
@@ -182,6 +192,8 @@ export const getCurrentUserSS = async (): Promise<User | null> => {
   } catch (e) {
     console.log(`Error fetching user: ${e}`);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 

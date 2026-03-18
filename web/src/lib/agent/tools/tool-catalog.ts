@@ -93,7 +93,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "bash",
     description:
-      "Execute a shell command in the workspace directory. Use for running scripts, git operations, and other terminal tasks.",
+      "Execute a shell command in the workspace directory. Supports background mode (returns session ID), wait mode (auto-background if slow), and pty mode (for TTY-requiring commands).",
     category: "local",
     requiresApproval: true,
     parameters: [
@@ -106,7 +106,83 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       {
         name: "timeout",
         type: "integer",
-        description: "Optional timeout in seconds (default: 120, max: 300).",
+        description: "Optional timeout in seconds (default: 120, max: 600).",
+        required: false,
+      },
+      {
+        name: "background",
+        type: "boolean",
+        description:
+          "Run in background and return a session ID immediately. Use the process tool to poll output, interact, or kill.",
+        required: false,
+      },
+      {
+        name: "wait",
+        type: "integer",
+        description:
+          "Wait up to this many milliseconds for the command to finish. If it finishes in time, return output normally. If not, auto-background and return a session ID.",
+        required: false,
+      },
+      {
+        name: "pty",
+        type: "boolean",
+        description:
+          "Run in a pseudo-terminal (PTY). Use for commands needing TTY detection, colored output, or interactive prompts.",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "process",
+    description:
+      "Manage background processes spawned by the bash tool. Actions: list, poll, log, write, send_keys, kill, remove.",
+    category: "local",
+    requiresApproval: false,
+    parameters: [
+      {
+        name: "action",
+        type: "string",
+        description:
+          "The action to perform: list, poll, log, write, send_keys, kill, remove.",
+        required: true,
+      },
+      {
+        name: "session_id",
+        type: "string",
+        description: "The session ID (required for all actions except list).",
+        required: false,
+      },
+      {
+        name: "timeout_ms",
+        type: "integer",
+        description:
+          "For poll action: max wait time for new output in ms (default: 5000).",
+        required: false,
+      },
+      {
+        name: "offset",
+        type: "integer",
+        description:
+          "For log action: character offset to start reading from.",
+        required: false,
+      },
+      {
+        name: "limit",
+        type: "integer",
+        description: "For log action: maximum characters to return.",
+        required: false,
+      },
+      {
+        name: "input",
+        type: "string",
+        description: "For write action: data to write to process stdin.",
+        required: false,
+      },
+      {
+        name: "keys",
+        type: "string",
+        description:
+          "For send_keys action: signal or key combo (e.g. 'ctrl+c', 'ctrl+d', 'SIGTERM', 'SIGKILL').",
         required: false,
       },
     ],

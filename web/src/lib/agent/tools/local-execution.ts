@@ -15,6 +15,7 @@ import {
   BashTool,
   GlobTool,
   GrepTool,
+  ProcessTool,
 } from "@/lib/agent/tools";
 /** Default workspace path when the requested path doesn't exist on the server. */
 const SERVER_FALLBACK_WORKSPACE = "/tmp/bud-workspace";
@@ -55,6 +56,7 @@ export async function createLocalToolRegistry(
   registry.register(new BashTool(workspacePath));
   registry.register(new GlobTool(workspacePath));
   registry.register(new GrepTool(workspacePath));
+  registry.register(new ProcessTool());
 
   // Browser automation tools — loaded lazily via dynamic import() to properly
   // await the async module (playwright-core is an external package that webpack

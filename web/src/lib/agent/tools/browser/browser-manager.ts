@@ -253,7 +253,14 @@ export class BrowserManager {
   async takeSnapshot(): Promise<string> {
     const page = await this.getActivePage();
 
-    const snapshot = (await page.accessibility.snapshot()) as AccessibilityNode | null;
+    let snapshot: AccessibilityNode | null = null;
+    try {
+      const raw = await page.accessibility?.snapshot();
+      snapshot = (raw as AccessibilityNode | null) ?? null;
+    } catch {
+      // accessibility.snapshot() may be unavailable in certain Chrome/Playwright
+      // version combos. Fall back gracefully.
+    }
     const { text, refs } = formatAccessibilityTree(snapshot);
 
     // Rebuild element refs and metadata for the new snapshot

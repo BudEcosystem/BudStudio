@@ -15,6 +15,7 @@ LOCAL_TOOLS: set[str] = {
     "write_file",
     "edit_file",
     "bash",
+    "process",
     "glob",
     "grep",
     "browser_navigate",
@@ -154,7 +155,11 @@ LOCAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "bash": {
         "name": "bash",
-        "description": "Execute a shell command in the workspace directory. Use for running scripts, git operations, and other terminal tasks.",
+        "description": (
+            "Execute a shell command in the workspace directory. "
+            "Supports background mode (returns session ID), wait mode "
+            "(auto-background if slow), and pty mode (for TTY-requiring commands)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -164,10 +169,87 @@ LOCAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Optional timeout in seconds (default: 120, max: 300).",
+                    "description": "Optional timeout in seconds (default: 120, max: 600).",
+                },
+                "background": {
+                    "type": "boolean",
+                    "description": (
+                        "Run in background and return a session ID immediately. "
+                        "Use the process tool to poll output, interact, or kill."
+                    ),
+                },
+                "wait": {
+                    "type": "integer",
+                    "description": (
+                        "Wait up to this many milliseconds for the command to finish. "
+                        "If it finishes in time, return output normally. "
+                        "If not, auto-background and return a session ID."
+                    ),
+                },
+                "pty": {
+                    "type": "boolean",
+                    "description": (
+                        "Run in a pseudo-terminal (PTY). Use for commands needing "
+                        "TTY detection, colored output, or interactive prompts."
+                    ),
                 },
             },
             "required": ["command"],
+        },
+    },
+    "process": {
+        "name": "process",
+        "description": (
+            "Manage background processes spawned by the bash tool. "
+            "Actions: list, poll, log, write, send_keys, kill, remove."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "poll", "log", "write", "send_keys", "kill", "remove"],
+                    "description": (
+                        "The action to perform: list, poll, log, write, "
+                        "send_keys, kill, remove."
+                    ),
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": (
+                        "The session ID (required for all actions except list)."
+                    ),
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "description": (
+                        "For poll action: max wait time for new output in ms "
+                        "(default: 5000)."
+                    ),
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": (
+                        "For log action: character offset to start reading from."
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "For log action: maximum characters to return.",
+                },
+                "input": {
+                    "type": "string",
+                    "description": "For write action: data to write to process stdin.",
+                },
+                "keys": {
+                    "type": "string",
+                    "description": (
+                        "For send_keys action: signal or key combo "
+                        "(e.g. 'ctrl+c', 'ctrl+d', 'SIGTERM', 'SIGKILL')."
+                    ),
+                },
+            },
+            "required": ["action"],
         },
     },
     "glob": {

@@ -305,14 +305,9 @@ impl NextServer {
     }
 
     async fn wait_for_ready_and_detect_port(&self, preferred_port: u16) -> Result<u16> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
-        let max_attempts = 240; // 120 seconds - Next.js can take a while to compile
+        let max_attempts = 240; // 120 seconds
 
-        // Ports to try: preferred, then check if port was detected from stdout
         for attempt in 1..=max_attempts {
-            // First check if we detected a port from stdout
             let detected_port = {
                 let port_guard = self.port.lock().unwrap();
                 *port_guard
@@ -321,24 +316,38 @@ impl NextServer {
             let ports_to_try: Vec<u16> = if let Some(p) = detected_port {
                 vec![p]
             } else {
-                // Try preferred port and a few alternatives
                 vec![preferred_port, preferred_port + 1, preferred_port + 2]
             };
 
+            // Use a simple TCP connect check instead of an HTTP request.
+            // HTTP requests to "/" trigger SSR which can hang when the
+            // backend is unreachable, even though the Next.js server
+            // itself is ready.
             for port in ports_to_try {
-                let url = format!("http://127.0.0.1:{}", port);
-                match client.get(&url).send().await {
-                    Ok(response) if response.status().is_success() || response.status().is_redirection() => {
-                        log::info!("Next.js server is ready on port {} (attempt {})", port, attempt);
+                match tokio::time::timeout(
+                    Duration::from_secs(2),
+                    tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
+                )
+                .await
+                {
+                    Ok(Ok(_)) => {
+                        log::info!(
+                            "Next.js server is ready on port {} (attempt {})",
+                            port,
+                            attempt
+                        );
                         return Ok(port);
                     }
-                    Ok(_) => {}
-                    Err(_) => {}
+                    _ => {}
                 }
             }
 
             if attempt % 10 == 0 {
-                log::info!("Still waiting for Next.js server... (attempt {}/{})", attempt, max_attempts);
+                log::info!(
+                    "Still waiting for Next.js server... (attempt {}/{})",
+                    attempt,
+                    max_attempts
+                );
             }
 
             sleep(Duration::from_millis(500)).await;
