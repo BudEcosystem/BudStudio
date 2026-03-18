@@ -21,6 +21,8 @@ import type {
   RawStep,
   Annotation,
   AnnotationInput,
+  StepStatus,
+  ToolSource,
 } from "@/lib/workflow/types";
 
 /* ------------------------------------------------------------------ */
@@ -45,7 +47,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status: StepStatus }) {
   switch (status) {
     case "completed":
       return (
@@ -77,7 +79,7 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
-function ToolSourceBadge({ source }: { source: string }) {
+function ToolSourceBadge({ source }: { source: ToolSource }) {
   const colorMap: Record<string, string> = {
     local: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
     remote: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
@@ -249,6 +251,7 @@ export function NodeDetailPanel({ step, onClose }: NodeDetailPanelProps) {
   // Annotations
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loadingAnnotations, setLoadingAnnotations] = useState(false);
+  const [annotationsError, setAnnotationsError] = useState<string | null>(null);
 
   // Annotation form
   const [rating, setRating] = useState(0);
@@ -285,7 +288,9 @@ export function NodeDetailPanel({ step, onClose }: NodeDetailPanelProps) {
     fetchAnnotations("step", step.id).then((res) => {
       if (cancelled) return;
       setLoadingAnnotations(false);
-      if (res.data) {
+      if (res.error) {
+        setAnnotationsError(res.error);
+      } else if (res.data) {
         setAnnotations(res.data);
       }
     });
@@ -441,6 +446,11 @@ export function NodeDetailPanel({ step, onClose }: NodeDetailPanelProps) {
             <div className="flex items-center gap-2 py-4 justify-center">
               <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
               <span className="text-sm text-neutral-400">Loading annotations...</span>
+            </div>
+          ) : annotationsError ? (
+            <div className="flex items-center gap-2 py-3 text-sm text-red-500 dark:text-red-400">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{annotationsError}</span>
             </div>
           ) : annotations.length > 0 ? (
             <div className="space-y-1">
