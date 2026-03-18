@@ -174,7 +174,8 @@ export class ProcessRegistry {
     cwd: string,
     env: NodeJS.ProcessEnv
   ): void {
-    const proc = spawn("bash", ["-c", command], {
+    const userShell = env.SHELL || "bash";
+    const proc = spawn(userShell, ["-l", "-c", command], {
       cwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],

@@ -327,7 +327,12 @@ export class BashTool implements Tool {
       let stderr = "";
       let killed = false;
 
-      const proc = spawn("bash", ["-c", command], {
+      // Use login shell (-l) so the subprocess gets the user's full
+      // environment (nvm, pyenv, cargo, etc.). This is critical when
+      // the Next.js server runs inside a Tauri app bundle with a
+      // minimal inherited environment.
+      const userShell = env.SHELL || "bash";
+      const proc = spawn(userShell, ["-l", "-c", command], {
         cwd: this.workspacePath,
         timeout: actualTimeoutMs,
         env,
