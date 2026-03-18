@@ -325,11 +325,27 @@ async def _discover_mcp_tools(session: ClientSession) -> list[MCPLibTool]:
     init_result = await session.initialize()  # sends JSON-RPC "initialize"
     logger.info(f"Initialized with server: {init_result.serverInfo}")
     logger.info(f"Initialized with server time: {time.time() - t1}")
-    # 2) tools/list
+    # 2) tools/list — paginate until nextCursor is None
     t2 = time.time()
-    tools_response = await session.list_tools()  # sends JSON-RPC "tools/list"
-    logger.info(f"Listed tools with server time: {time.time() - t2}")
-    return tools_response.tools
+    all_tools: list[MCPLibTool] = []
+    cursor: str | None = None
+    max_pages = 50  # safety limit to prevent infinite loops
+    for _ in range(max_pages):
+        tools_response = await session.list_tools(cursor=cursor)
+        all_tools.extend(tools_response.tools)
+        cursor = tools_response.nextCursor
+        if not cursor:
+            break
+    else:
+        logger.warning(
+            "MCP tool discovery reached max pages limit (%d). "
+            "Some tools may be missing.",
+            max_pages,
+        )
+    logger.info(
+        f"Listed {len(all_tools)} tools with server time: {time.time() - t2}"
+    )
+    return all_tools
 
 
 def discover_mcp_tools(

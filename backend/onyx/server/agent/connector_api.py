@@ -420,31 +420,38 @@ def list_connector_tools(
     user: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
-    """List tools for a connector with user permission levels."""
+    """List tools for a connector with user permission levels.
+
+    Fetches tools from the BudApp REST API (which already includes
+    ``inputSchema`` from the MCP source) and normalises the response
+    so the frontend receives ``name``, ``description``, ``parameters``
+    and ``permission`` — the same shape the agent sees.
+    """
     token = get_fresh_oauth_token(user)
     if not token:
         raise HTTPException(status_code=401, detail="OAuth token not available")
 
-    # Fetch tools from BudApp
+    # 1. Fetch tools for this gateway from BudApp REST
     try:
-        tools = fetch_tools_rest(token, gateway_id)
+        rest_tools = fetch_tools_rest(token, gateway_id)
     except Exception as e:
         logger.warning("Failed to fetch tools for gateway %s: %s", gateway_id, e)
-        tools = []
+        rest_tools = []
 
-    # Get permissions from DB
+    # 2. Get per-tool permissions from DB
     perms = get_tool_permissions(db_session, user.id, gateway_id)
     perms_by_name = {p.tool_name: p.permission_level.value for p in perms}
 
-    # Merge
+    # 3. Build normalised response — map inputSchema → parameters
     result: list[dict[str, Any]] = []
-    for tool in tools:
+    for tool in rest_tools:
         tool_name = tool.get("name", "")
         result.append({
-            **tool,
+            "name": tool_name,
+            "description": tool.get("description", ""),
+            "parameters": tool.get("inputSchema") or {},
             "permission": perms_by_name.get(tool_name, "need_approval"),
         })
-
     return result
 
 
