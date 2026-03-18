@@ -1,0 +1,187 @@
+name: "BudStudio: Release Orchestrator"
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 0.1.0 or v0.1.0)'
+        required: true
+        type: string
+
+jobs:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.extract_tag.outputs.release_tag }}
+      clean_tag: ${{ steps.extract_tag.outputs.clean_tag }}
+    steps:
+      - name: Extract and validate version tag
+        id: extract_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_TAG="${{ github.event.inputs.version }}"
+          else
+            RAW_TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          CLEAN_TAG="${RAW_TAG#v}"
+          echo "release_tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+          echo "clean_tag=$CLEAN_TAG" >> "$GITHUB_OUTPUT"
+
+  trigger-builds:
+    name: Trigger All Image Builds
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trigger build workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.clean_tag }}
+        run: |
+          echo "Triggering all BudStudio image builds with version: $VERSION"
+          gh workflow run budstudio-build-backend.yml -f release_tag=$VERSION
+          gh workflow run budstudio-build-web.yml -f release_tag=$VERSION
+          gh workflow run budstudio-build-model-server.yml -f release_tag=$VERSION
+          echo "All workflows triggered. Waiting for them to start..."
+          sleep 30
+
+      - name: Wait for all workflows to complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          workflows=(
+            "budstudio-build-backend.yml"
+            "budstudio-build-web.yml"
+            "budstudio-build-model-server.yml"
+          )
+
+          max_attempts=120  # 120 * 30s = 60 minutes max
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            all_completed=true
+            all_successful=true
+
+            for workflow in "${workflows[@]}"; do
+              run_status=$(gh run list --workflow="$workflow" --limit 1 --json status,conclusion --jq '.[0] | "\(.status):\(.conclusion)"')
+              status="${run_status%:*}"
+              conclusion="${run_status#*:}"
+
+              if [ "$status" != "completed" ]; then
+                echo "  Pending: $workflow ($status)"
+                all_completed=false
+              elif [ "$conclusion" != "success" ]; then
+                echo "  FAILED: $workflow ($conclusion)"
+                all_successful=false
+              else
+                echo "  OK: $workflow"
+              fi
+            done
+
+            if [ "$all_completed" = true ]; then
+              if [ "$all_successful" = true ]; then
+                echo "All builds completed successfully!"
+                exit 0
+              else
+                echo "Some builds failed!"
+                exit 1
+              fi
+            fi
+
+            attempt=$((attempt + 1))
+            sleep 30
+          done
+
+          echo "Timeout: builds did not complete within 60 minutes"
+          exit 1
+
+  update-helm:
+    name: Update Helm Chart
+    needs: [prepare, trigger-builds]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up yq
+        uses: mikefarah/yq@master
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update Chart.yaml appVersion
+        env:
+          VERSION: ${{ needs.prepare.outputs.clean_tag }}
+        run: |
+          yq -i ".appVersion = \"$VERSION\"" deployment/helm/charts/onyx/Chart.yaml
+
+      - name: Update values.yaml image tags
+        env:
+          VERSION: ${{ needs.prepare.outputs.clean_tag }}
+        run: |
+          CHART_DIR="deployment/helm/charts/onyx/values.yaml"
+          yq -i ".global.version = \"$VERSION\"" "$CHART_DIR"
+
+      - name: Create release branch and PR
+        env:
+          VERSION: ${{ needs.prepare.outputs.clean_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="release/budstudio-$VERSION"
+          git checkout -b "$BRANCH_NAME"
+          git add deployment/helm/charts/onyx/Chart.yaml deployment/helm/charts/onyx/values.yaml
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "$(cat <<'EOF'
+          chore: release BudStudio $VERSION
+
+          - Updated Chart.yaml appVersion to $VERSION
+          - Updated global.version in values.yaml to $VERSION
+          - Images published: budstudio/onyx-backend, budstudio/onyx-web-server, budstudio/onyx-model-server
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
+          EOF
+          )"
+          git push origin "$BRANCH_NAME"
+
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "chore: release BudStudio $VERSION" \
+            --body "$(cat <<EOF
+          ## Release $VERSION
+
+          ### Images Published
+          All images built and pushed to DockerHub with tags \`$VERSION\` and \`latest\`:
+          - \`budstudio/onyx-backend:$VERSION\`
+          - \`budstudio/onyx-web-server:$VERSION\`
+          - \`budstudio/onyx-model-server:$VERSION\`
+
+          ### Helm Chart Changes
+          - \`Chart.yaml\` appVersion: \`$VERSION\`
+          - \`values.yaml\` global.version: \`$VERSION\`
+
+          ### Deploy
+          \`\`\`bash
+          helm upgrade budstudio deployment/helm/charts/onyx/ -n bud-studio -f deployment/helm/charts/onyx/values.dev.yaml
+          \`\`\`
+
+          ---
+          Generated by [Release Orchestrator](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+          )" \
+            --label "release")
+
+          echo "PR created: $PR_URL"

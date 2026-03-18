@@ -1,5 +1,7 @@
 {{- if .Values.traefik.enabled }}
-apiVersion: traefik.containo.us/v1alpha1
+{{- if .Values.traefik.useIngressRoute }}
+# Traefik IngressRoute CRD - routes through nginx controller
+apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: {{ include "onyx.fullname" . }}-ingressroute
@@ -15,4 +17,66 @@ spec:
       services:
         - name: {{ include "onyx.fullname" . }}-nginx-controller
           port: 80
+{{- else }}
+# Standard Ingress with Traefik class - routes directly to services
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "onyx.fullname" . }}-https-redirect
+  labels:
+    {{- include "onyx.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "onyx.fullname" . }}-strip-api
+  labels:
+    {{- include "onyx.labels" . | nindent 4 }}
+spec:
+  stripPrefix:
+    prefixes:
+    - /api
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "onyx.fullname" . }}-ingress
+  labels:
+    {{- include "onyx.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-{{ include "onyx.fullname" . }}-https-redirect@kubernetescrd,{{ .Release.Namespace }}-{{ include "onyx.fullname" . }}-strip-api@kubernetescrd
+    {{- with .Values.traefik.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: {{ .Values.traefik.domain }}
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "onyx.fullname" . }}-api-service
+            port:
+              number: {{ .Values.api.service.servicePort }}
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "onyx.fullname" . }}-webserver
+            port:
+              number: {{ .Values.webserver.service.servicePort }}
+  tls:
+  - hosts:
+    - {{ .Values.traefik.domain }}
+    secretName: {{ include "onyx.fullname" . }}-acme-cert
+{{- end }}
 {{- end }}
