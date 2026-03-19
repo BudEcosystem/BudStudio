@@ -165,19 +165,10 @@ def _build_user_prompt(
 def _derive_task_name(user_message: str) -> str:
     """Derive a short, generic task name from the user message.
 
-    Strips entity-specific details and caps at 6 words.  Used as fallback
+    Takes the first 6 words of the user message.  Used as fallback
     when the summarizer LLM fails.
     """
-    # Take first sentence or first 60 chars
-    msg = user_message.strip()
-    # Cut at first sentence boundary
-    for sep in (".", "?", "!", "\n"):
-        idx = msg.find(sep)
-        if 0 < idx < 80:
-            msg = msg[:idx]
-            break
-    # Cap length
-    words = msg.split()[:6]
+    words = user_message.strip().split()[:6]
     if not words:
         return "Agent Task"
     name = " ".join(words)
