@@ -1,9 +1,9 @@
 apiVersion: v2
-name: onyx
-description: A Helm chart for Kubernetes
-home: https://www.onyx.app/
+name: budstudio
+description: A Helm chart for BudStudio - AI-powered chat and enterprise search platform
+home: https://bud.studio/
 sources:
-  - "https://github.com/onyx-dot-app/onyx"
+  - "https://github.com/BudEcosystem/BudStudio"
 type: application
 version: 0.4.4
 appVersion: latest

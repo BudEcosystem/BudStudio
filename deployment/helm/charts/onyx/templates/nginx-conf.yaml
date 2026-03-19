@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: onyx-nginx-conf
+  name: {{ .Values.nginxConfName | default (printf "%s-nginx-conf" (include "onyx.fullname" .)) }}
 data:
   upstreams.conf: |
     upstream api_server {

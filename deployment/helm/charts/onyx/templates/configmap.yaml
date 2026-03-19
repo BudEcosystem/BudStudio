@@ -6,22 +6,19 @@ metadata:
     {{- include "onyx.labels" . | nindent 4 }}
 data:
   INTERNAL_URL: "http://{{ include "onyx.fullname" . }}-api-service:{{ .Values.api.service.port | default 8080 }}"
-  {{- if .Values.postgresql.enabled }}
-  POSTGRES_HOST: {{ .Release.Name }}-postgresql
-  {{- end }}
+  # PostgreSQL host - overridable via configMap.POSTGRES_HOST for cross-namespace usage
+  POSTGRES_HOST: {{ default (printf "%s-postgresql" .Release.Name) .Values.configMap.POSTGRES_HOST }}
   {{- if .Values.vespa.enabled }}
   VESPA_HOST: {{ .Values.vespa.name }}.{{ .Values.vespa.service.name }}.{{ .Release.Namespace }}.svc.cluster.local
   {{- end }}
-  {{- if .Values.valkey.enabled }}
-  REDIS_HOST: {{ .Release.Name }}-valkey-primary
-  {{- end }}
+  # Redis/Valkey host - overridable via configMap.REDIS_HOST for cross-namespace usage
+  REDIS_HOST: {{ default (printf "%s-valkey-primary" .Release.Name) .Values.configMap.REDIS_HOST }}
   MODEL_SERVER_HOST: "{{ include "onyx.fullname" . }}-inference-model-service"
   INDEXING_MODEL_SERVER_HOST: "{{ include "onyx.fullname" . }}-indexing-model-service"
-{{- range $key, $value := .Values.configMap }}
-{{- if not (empty $value) }}
-  {{ $key }}: "{{ $value }}"
-{{- end }}
-{{- end }}
-  {{- if .Values.minio.enabled }}
-  S3_ENDPOINT_URL: "http://{{ .Release.Name }}-minio:{{ default 9000 .Values.minio.service.port }}"
+  {{- range $key, $value := .Values.configMap }}
+  {{- if and (not (empty $value)) (ne $key "POSTGRES_HOST") (ne $key "REDIS_HOST") (ne $key "S3_ENDPOINT_URL") }}
+  {{ $key }}: {{ tpl $value $ | quote }}
   {{- end }}
+  {{- end }}
+  # S3/MinIO endpoint - overridable via configMap.S3_ENDPOINT_URL for cross-namespace usage
+  S3_ENDPOINT_URL: {{ default (printf "http://%s-minio:%v" .Release.Name (.Values.minio.service.port | default 9000)) .Values.configMap.S3_ENDPOINT_URL | quote }}

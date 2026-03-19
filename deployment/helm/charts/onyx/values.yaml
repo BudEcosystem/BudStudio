@@ -167,6 +167,10 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# Name for the nginx config ConfigMap. Must match nginx.controller.extraVolumes reference below.
+# Override this when deploying with a different release name or as a subchart.
+nginxConfName: "budstudio-nginx-conf"
+
 nginx:
   enabled: true
   # Nginx proxy timeout settings (in seconds)
@@ -174,7 +178,15 @@ nginx:
     connect: 300  # Time to establish connection with upstream server
     send: 300     # Time to send request to upstream server
     read: 300     # Time to read response from upstream server
+  # Use release-specific naming to avoid cluster-wide IngressClass conflicts
+  # When multiple releases exist, each gets its own IngressClass (e.g., ditto-onyx-nginx)
   controller:
+    ingressClass: "nginx"  # Override in parent chart (e.g., {release}-onyx-nginx)
+    ingressClassResource:
+      enabled: true
+      default: false
+      name: "nginx"  # Override in parent chart for multi-release isolation
+      controllerValue: "k8s.io/ingress-nginx"
     containerPort:
       http: 1024
 
@@ -195,7 +207,7 @@ nginx:
     extraVolumes:
       - name: nginx-config
         configMap:
-          name: onyx-nginx-conf
+          name: budstudio-nginx-conf  # Must match nginxConfName above
     extraVolumeMounts:
       - name: nginx-config
         mountPath: /etc/nginx/custom-snippets
@@ -983,6 +995,8 @@ configMap:
 # Traefik IngressRoute Configuration
 # Enable this to expose Onyx through Traefik ingress controller
 traefik:
-  enabled: false  # Set to true to create IngressRoute
+  enabled: false  # Set to true to expose Onyx through Traefik
+  useIngressRoute: false  # true: IngressRoute CRD via nginx, false: standard Ingress with Traefik class
   domain: "onyx.local"  # Domain name for accessing Onyx
-  entryPoint: "web"  # Traefik entryPoint (use "websecure" for HTTPS)
+  entryPoint: "web"  # Traefik entryPoint (only used with useIngressRoute: true)
+  annotations: {}  # Additional annotations for the Ingress resource
