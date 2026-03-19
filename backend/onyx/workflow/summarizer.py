@@ -162,6 +162,30 @@ def _build_user_prompt(
     return "\n".join(parts)
 
 
+def _derive_task_name(user_message: str) -> str:
+    """Derive a short, generic task name from the user message.
+
+    Strips entity-specific details and caps at 6 words.  Used as fallback
+    when the summarizer LLM fails.
+    """
+    # Take first sentence or first 60 chars
+    msg = user_message.strip()
+    # Cut at first sentence boundary
+    for sep in (".", "?", "!", "\n"):
+        idx = msg.find(sep)
+        if 0 < idx < 80:
+            msg = msg[:idx]
+            break
+    # Cap length
+    words = msg.split()[:6]
+    if not words:
+        return "Agent Task"
+    name = " ".join(words)
+    # Capitalize first letter
+    name = name[0].upper() + name[1:] if len(name) > 1 else name.upper()
+    return name
+
+
 def _build_default_summary(
     user_message: str,
     tool_calls: list[dict[str, Any]],
@@ -171,7 +195,7 @@ def _build_default_summary(
 
     Used when the LLM returns invalid JSON or when an error occurs.
     """
-    task_name = existing_workflow_name or "Respond to User"
+    task_name = existing_workflow_name or _derive_task_name(user_message)
 
     if not tool_calls:
         return TurnSummary(
@@ -396,43 +420,63 @@ def summarize_turn_sync(
         HumanMessage(content=user_prompt),
     ]
 
-    try:
-        result = llm.invoke(
-            prompt=prompt,
-            timeout_override=15,
-            max_tokens=512,
-        )
+    max_attempts = 2
+    last_raw_text = ""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = llm.invoke(
+                prompt=prompt,
+                timeout_override=30,
+                max_tokens=512,
+            )
 
-        raw_text = ""
-        if hasattr(result, "content"):
-            raw_text = str(result.content).strip()
-        else:
-            raw_text = str(result).strip()
+            raw_text = ""
+            if hasattr(result, "content"):
+                raw_text = str(result.content).strip()
+            else:
+                raw_text = str(result).strip()
+            last_raw_text = raw_text
 
-        logger.debug(
-            "Summarizer LLM response (first 300 chars): %s",
-            raw_text[:300],
-        )
+            logger.info(
+                "Summarizer LLM response (attempt %d, len=%d, first 300 chars): %s",
+                attempt,
+                len(raw_text),
+                raw_text[:300],
+            )
 
-        parsed = _parse_summary_json(raw_text, existing_workflow_name)
-        if parsed is not None:
-            return parsed
+            if not raw_text:
+                logger.warning(
+                    "Summarizer LLM returned empty response on attempt %d",
+                    attempt,
+                )
+                continue
 
-        logger.warning(
-            "Failed to parse summarizer LLM response, using fallback"
-        )
-        return _build_default_summary(
-            user_message, tool_calls, existing_workflow_name
-        )
+            parsed = _parse_summary_json(raw_text, existing_workflow_name)
+            if parsed is not None:
+                return parsed
 
-    except Exception:
-        logger.warning(
-            "Summarizer LLM call failed, using fallback",
-            exc_info=True,
-        )
-        return _build_default_summary(
-            user_message, tool_calls, existing_workflow_name
-        )
+            logger.warning(
+                "Failed to parse summarizer LLM response on attempt %d",
+                attempt,
+            )
+            # Don't retry if we got non-empty but unparseable JSON
+            break
+
+        except Exception:
+            logger.warning(
+                "Summarizer LLM call failed on attempt %d",
+                attempt,
+                exc_info=True,
+            )
+
+    logger.warning(
+        "Summarizer using fallback after %d attempts (last response: %s)",
+        max_attempts,
+        last_raw_text[:200] if last_raw_text else "<empty>",
+    )
+    return _build_default_summary(
+        user_message, tool_calls, existing_workflow_name
+    )
 
 
 async def summarize_turn(

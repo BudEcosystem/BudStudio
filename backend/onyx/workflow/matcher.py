@@ -26,7 +26,7 @@ logger = setup_logger()
 
 # Cosine-similarity threshold above which we consider two task names
 # to refer to the same workflow.
-_SIMILARITY_THRESHOLD: float = 0.8
+_SIMILARITY_THRESHOLD: float = 0.75
 
 
 # ---------------------------------------------------------------------------
