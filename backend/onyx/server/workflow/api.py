@@ -18,7 +18,6 @@ from onyx.auth.users import current_user
 from onyx.db.models import User
 from onyx.utils.logger import setup_logger
 from onyx.workflow.canvas_builder import apply_merge_map_to_edges
-from onyx.workflow.canvas_builder import build_cross_workflow_edges
 from onyx.workflow.canvas_builder import merge_similar_nodes
 from onyx.workflow.models import AnnotationInput
 from onyx.workflow.neo4j_client import get_neo4j_client
@@ -279,15 +278,6 @@ async def get_unified_canvas(
 
     # Apply merge_map to edge source/target references and deduplicate
     edges = apply_merge_map_to_edges(edges, merge_map)
-
-    # -- Cross-workflow edges for semantically similar steps --------
-    existing_edge_keys: set[str] = {
-        f"{e['source']}->{e['target']}" for e in edges
-    }
-    cross_edges = build_cross_workflow_edges(
-        nodes, node_embeddings, existing_edge_keys
-    )
-    edges.extend(cross_edges)
 
     # Shared actions (canonical_actions in 2+ workflows)
     shared_actions = [
