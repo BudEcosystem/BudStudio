@@ -3,12 +3,11 @@
 # Declare variables to be passed into your templates.  
 global:
   # Global version for all Onyx components (overrides .Chart.AppVersion)
-  version: "latest"
+  version: "0.2.0"
   # Global pull policy for all Onyx component images
   pullPolicy: "Always"
   security:
     allowInsecureImages: true
-
 # PostgreSQL - Bitnami PostgreSQL Helm chart (simple StatefulSet deployment)
 # Service name: {release}-postgresql
 # Note: auth.postgresql section (below) manages the PostgreSQL authentication secret
@@ -34,7 +33,6 @@ postgresql:
       enabled: true
       size: 10Gi
       storageClass: ""
-
 vespa:
   name: da-vespa-0
   service:
@@ -73,20 +71,16 @@ vespa:
     limits:
       cpu: 8000m
       memory: 32000Mi
-
 persistent:
   storageClassName: ""
-
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
-
 autoscaling:
   # Valid options: 'hpa' (default) or 'keda'.
   # Set to 'keda' to render KEDA ScaledObjects for components that have autoscaling enabled.
   # When using KEDA you must install and manage the KEDA operator separately; it is not bundled with this chart.
   engine: hpa
-
 inferenceCapability:
   service:
     portName: modelserver
@@ -119,7 +113,6 @@ inferenceCapability:
     privileged: true
     runAsUser: 0
   nodeSelector: {}
-
 indexCapability:
   service:
     portName: modelserver
@@ -155,7 +148,6 @@ indexCapability:
   nodeSelector: {}
 config:
   envConfigMapName: env-configmap
-
 serviceAccount:
   # Specifies whether a service account should be created
   create: false
@@ -166,35 +158,31 @@ serviceAccount:
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: ""
-
 # Name for the nginx config ConfigMap. Must match nginx.controller.extraVolumes reference below.
 # Override this when deploying with a different release name or as a subchart.
 nginxConfName: "budstudio-nginx-conf"
-
 nginx:
   enabled: true
   # Nginx proxy timeout settings (in seconds)
   timeouts:
-    connect: 300  # Time to establish connection with upstream server
-    send: 300     # Time to send request to upstream server
-    read: 300     # Time to read response from upstream server
+    connect: 300 # Time to establish connection with upstream server
+    send: 300 # Time to send request to upstream server
+    read: 300 # Time to read response from upstream server
   # Use release-specific naming to avoid cluster-wide IngressClass conflicts
   # When multiple releases exist, each gets its own IngressClass (e.g., ditto-onyx-nginx)
   controller:
-    ingressClass: "nginx"  # Override in parent chart (e.g., {release}-onyx-nginx)
+    ingressClass: "nginx" # Override in parent chart (e.g., {release}-onyx-nginx)
     ingressClassResource:
       enabled: true
       default: false
-      name: "nginx"  # Override in parent chart for multi-release isolation
+      name: "nginx" # Override in parent chart for multi-release isolation
       controllerValue: "k8s.io/ingress-nginx"
     containerPort:
       http: 1024
-
     # Propagate DOMAIN into nginx so server_name continues to use the same env var
     extraEnvs:
       - name: DOMAIN
         value: localhost
-
     config:
       # Expose DOMAIN to the nginx config and pull in our custom snippets
       main-snippet: |
@@ -202,24 +190,21 @@ nginx:
       http-snippet: |
         include /etc/nginx/custom-snippets/upstreams.conf;
         include /etc/nginx/custom-snippets/server.conf;
-
     # Mount the existing nginx ConfigMap that holds the upstream and server snippets
     extraVolumes:
       - name: nginx-config
         configMap:
-          name: budstudio-nginx-conf  # Must match nginxConfName above
+          name: budstudio-nginx-conf # Must match nginxConfName above
     extraVolumeMounts:
       - name: nginx-config
         mountPath: /etc/nginx/custom-snippets
         readOnly: true
-
     service:
       type: LoadBalancer
       ports:
         http: 80
       targetPorts:
         http: http
-
 webserver:
   replicaCount: 1
   image:
@@ -231,27 +216,23 @@ webserver:
   podAnnotations: {}
   podLabels:
     app: web-server
-  podSecurityContext:
-    {}
-    # fsGroup: 2000
+  podSecurityContext: {}
+  # fsGroup: 2000
 
-  securityContext:
-    {}
-    # capabilities:
-    #   drop:
-    #   - ALL
-    # readOnlyRootFilesystem: true
-    # runAsNonRoot: true
-    # runAsUser: 1000
+  securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
 
   containerPorts:
     server: 3000
-
   service:
     type: ClusterIP
     servicePort: 3000
     targetPort: http
-
   resources:
     requests:
       cpu: 200m
@@ -259,7 +240,6 @@ webserver:
     limits:
       cpu: 1000m
       memory: 1Gi
-
   autoscaling:
     enabled: false
     minReplicas: 1
@@ -267,11 +247,11 @@ webserver:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     # Example: customTriggers: []
     #   - type: prometheus
@@ -280,7 +260,6 @@ webserver:
     #       metricName: http_requests_per_second
     #       threshold: '100'
     customTriggers: []
-
   # Additional volumes on the output Deployment definition.
   volumes: []
   # - name: foo
@@ -297,7 +276,6 @@ webserver:
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 api:
   replicaCount: 1
   image:
@@ -310,29 +288,24 @@ api:
   podLabels:
     scope: onyx-backend
     app: api-server
-
   containerPorts:
     server: 8080
+  podSecurityContext: {}
+  # fsGroup: 2000
 
-  podSecurityContext:
-    {}
-    # fsGroup: 2000
-
-  securityContext:
-    {}
-    # capabilities:
-    #   drop:
-    #   - ALL
-    # readOnlyRootFilesystem: true
-    # runAsNonRoot: true
-    # runAsUser: 1000
+  securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
 
   service:
     type: ClusterIP
     servicePort: 8080
     targetPort: api-server-port
     portName: api-server-port
-
   resources:
     requests:
       cpu: 1000m
@@ -340,7 +313,6 @@ api:
     limits:
       cpu: 2000m
       memory: 2Gi
-
   autoscaling:
     enabled: false
     minReplicas: 1
@@ -348,11 +320,11 @@ api:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     # Example: customTriggers: []
     #   - type: prometheus
@@ -361,7 +333,6 @@ api:
     #       metricName: http_requests_per_second
     #       threshold: '100'
     customTriggers: []
-
   # Additional volumes on the output Deployment definition.
   volumes: []
   # - name: foo
@@ -377,18 +348,15 @@ api:
 
   nodeSelector: {}
   tolerations: []
-
-
 ######################################################################
 #
 # Background workers
 #
 ######################################################################
-
 celery_shared:
   image:
     repository: budstudio/onyx-backend
-    tag: ""  # Overrides the image tag whose default is the chart appVersion.
+    tag: "" # Overrides the image tag whose default is the chart appVersion.
   startupProbe:
     # startupProbe fails after 2m
     exec:
@@ -413,7 +381,6 @@ celery_shared:
   securityContext:
     privileged: true
     runAsUser: 0
-
 celery_beat:
   replicaCount: 1
   podAnnotations: {}
@@ -429,12 +396,11 @@ celery_beat:
     limits:
       cpu: 1000m
       memory: 1Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_heavy:
   replicaCount: 1
   autoscaling:
@@ -444,11 +410,11 @@ celery_worker_heavy:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -464,12 +430,11 @@ celery_worker_heavy:
     limits:
       cpu: 2500m
       memory: 5Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_docprocessing:
   replicaCount: 1
   autoscaling:
@@ -479,11 +444,11 @@ celery_worker_docprocessing:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -499,12 +464,11 @@ celery_worker_docprocessing:
     limits:
       cpu: 1000m
       memory: 12Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_light:
   replicaCount: 1
   autoscaling:
@@ -514,11 +478,11 @@ celery_worker_light:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -534,12 +498,11 @@ celery_worker_light:
     limits:
       cpu: 2000m
       memory: 4Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_monitoring:
   replicaCount: 1
   autoscaling:
@@ -549,11 +512,11 @@ celery_worker_monitoring:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -569,12 +532,11 @@ celery_worker_monitoring:
     limits:
       cpu: 2000m
       memory: 4Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_primary:
   replicaCount: 1
   autoscaling:
@@ -584,11 +546,11 @@ celery_worker_primary:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -604,12 +566,11 @@ celery_worker_primary:
     limits:
       cpu: 2000m
       memory: 16Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_user_files_indexing:
   replicaCount: 1
   autoscaling:
@@ -619,11 +580,11 @@ celery_worker_user_files_indexing:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -639,12 +600,11 @@ celery_worker_user_files_indexing:
     limits:
       cpu: 4000m
       memory: 12Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 celery_worker_user_file_processing:
   replicaCount: 1
   autoscaling:
@@ -654,11 +614,11 @@ celery_worker_user_file_processing:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -674,28 +634,25 @@ celery_worker_user_file_processing:
     limits:
       cpu: 4000m
       memory: 12Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 slackbot:
   enabled: true
   replicaCount: 1
   image:
     repository: budstudio/onyx-backend
-    tag: ""  # Overrides the image tag whose default is the chart appVersion.
+    tag: "" # Overrides the image tag whose default is the chart appVersion.
   podAnnotations: {}
   podLabels:
     scope: onyx-backend
     app: slack-bot
   deploymentLabels:
     app: slack-bot
-  podSecurityContext:
-    {}
-  securityContext:
-    {}
+  podSecurityContext: {}
+  securityContext: {}
   resources:
     requests:
       cpu: "500m"
@@ -704,7 +661,6 @@ slackbot:
       cpu: "1000m"
       memory: "2000Mi"
   nodeSelector: {}
-
 celery_worker_docfetching:
   replicaCount: 1
   autoscaling:
@@ -714,11 +670,11 @@ celery_worker_docfetching:
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
     # KEDA specific configurations (only used when autoscaling.engine is set to 'keda')
-    pollingInterval: 30  # seconds
-    cooldownPeriod: 300  # seconds
-    idleReplicaCount: 1  # minimum replicas when idle
-    failureThreshold: 3  # number of failures before fallback
-    fallbackReplicas: 1  # replicas to maintain on failure
+    pollingInterval: 30 # seconds
+    cooldownPeriod: 300 # seconds
+    idleReplicaCount: 1 # minimum replicas when idle
+    failureThreshold: 3 # number of failures before fallback
+    fallbackReplicas: 1 # replicas to maintain on failure
     # Custom triggers for advanced KEDA configurations
     customTriggers: []
   podAnnotations: {}
@@ -734,12 +690,11 @@ celery_worker_docfetching:
     limits:
       cpu: 2000m
       memory: 16Gi
-  volumes: []  # Additional volumes on the output Deployment definition.
-  volumeMounts: []  # Additional volumeMounts on the output Deployment definition.
+  volumes: [] # Additional volumes on the output Deployment definition.
+  volumeMounts: [] # Additional volumeMounts on the output Deployment definition.
   nodeSelector: {}
   tolerations: []
   affinity: {}
-
 ######################################################################
 #
 # End background workers section
@@ -780,7 +735,6 @@ valkey:
       accessModes:
         - ReadWriteOnce
       size: 1Gi
-
 minio:
   enabled: true
   mode: standalone
@@ -799,7 +753,6 @@ minio:
   consoleService:
     type: ClusterIP
     port: 9001
-
 ingress:
   enabled: false
   className: ""
@@ -807,11 +760,9 @@ ingress:
     host: onyx.local
   webserver:
     host: onyx.local
-
 letsencrypt:
   enabled: false
   email: "abc@abc.com"
-
 # -- Governs all Secrets created or used by this chart. Values set by this chart will be base64 encoded in the k8s cluster.
 auth:
   postgresql:
@@ -896,7 +847,6 @@ auth:
     # -- Secrets values IF existingSecret is empty. Key here must match the value in secretKeys to be used. Values will be base64 encoded in the k8s cluster.
     values:
       smtp_pass: ""
-
 configMap:
   # Change this for production uses unless Onyx is only accessible behind VPN
   AUTH_TYPE: "oidc"
@@ -917,14 +867,14 @@ configMap:
   SMTP_SERVER: ""
   # For sending verification emails, if unspecified then defaults to '587'
   SMTP_PORT: ""
-# 'your-email@company.com'
+  # 'your-email@company.com'
   SMTP_USER: ""
   # 'your-gmail-password'
   # SMTP_PASS: ""
   # 'your-email@company.com' SMTP_USER missing used instead
   EMAIL_FROM: ""
   # MinIO/S3 Configuration override
-  S3_ENDPOINT_URL: ""  # only used if minio is not enabled
+  S3_ENDPOINT_URL: "" # only used if minio is not enabled
   S3_FILE_STORE_BUCKET_NAME: ""
   # Gen AI Settings
   GEN_AI_MAX_TOKENS: ""
@@ -987,16 +937,14 @@ configMap:
   DOMAIN: "localhost"
   # Chat Configs
   HARD_DELETE_CHATS: ""
-
   BUD_FOUNDRY_API_BASE: "https://gateway.dev.bud.studio"
   BUD_FOUNDRY_APP_BASE: "https://app.dev.bud.studio"
   BUD_DEFAULT_MCP_SERVERS: ""
-
 # Traefik IngressRoute Configuration
 # Enable this to expose Onyx through Traefik ingress controller
 traefik:
-  enabled: false  # Set to true to expose Onyx through Traefik
-  useIngressRoute: false  # true: IngressRoute CRD via nginx, false: standard Ingress with Traefik class
-  domain: "onyx.local"  # Domain name for accessing Onyx
-  entryPoint: "web"  # Traefik entryPoint (only used with useIngressRoute: true)
-  annotations: {}  # Additional annotations for the Ingress resource
+  enabled: false # Set to true to expose Onyx through Traefik
+  useIngressRoute: false # true: IngressRoute CRD via nginx, false: standard Ingress with Traefik class
+  domain: "onyx.local" # Domain name for accessing Onyx
+  entryPoint: "web" # Traefik entryPoint (only used with useIngressRoute: true)
+  annotations: {} # Additional annotations for the Ingress resource
