@@ -8,8 +8,12 @@ pub struct AppConfig {
     pub backend_url: String,
     pub window_title: String,
     pub next_port: u16,
-    #[serde(default)]
+    #[serde(default = "default_is_configured")]
     pub is_configured: bool,
+}
+
+fn default_is_configured() -> bool {
+    false
 }
 
 impl Default for AppConfig {
