@@ -372,7 +372,12 @@ export async function POST(request: NextRequest): Promise<Response> {
   debugLog(`Workspace path resolved: ${resolvedWorkspacePath}`);
 
   // Create local tool registry with the resolved path (async to await browser tools)
-  const registry = await createLocalToolRegistry(resolvedWorkspacePath);
+  const registry = await createLocalToolRegistry(
+    resolvedWorkspacePath,
+    sessionId,
+    apiBaseUrl,
+    cookieString
+  );
 
   // Create a TransformStream for SSE
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
