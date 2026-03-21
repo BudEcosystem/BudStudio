@@ -21,7 +21,7 @@ from agents import FunctionTool
 from agents import RawResponsesStreamEvent
 from agents import RunConfig
 from agents import ToolCallItem
-from agents.models.openai_provider import OpenAIProvider
+from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
@@ -104,11 +104,14 @@ def build_run_config(llm: Any, model_name: str) -> RunConfig:
         base_url=api_base,
         default_headers=extra_headers if extra_headers else None,
     )
-    provider = OpenAIProvider(
+    model = OpenAIChatCompletionsModel(
+        model=model_name,
         openai_client=client,
-        use_responses=False,
+        # Always replay reasoning_content on assistant messages so the
+        # provider sees prior chain-of-thought across turns.
+        should_replay_reasoning_content=lambda _ctx: True,
     )
-    return RunConfig(model_provider=provider)
+    return RunConfig(model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -214,11 +217,27 @@ def build_agent_run_context(
         db_session=db_session,
         user_id=user.id,
     )
+
+    # Step 6b: resolve LLM early so artifact tool can use it
+    llm, _ = get_default_llms(user=user)
+    model_name: str = (
+        llm.config.model_name
+        if (not model or model == "auto")
+        else model
+    )
+    # When the user picks a specific model, override the LLM's internal
+    # model version so downstream callers (e.g. artifact generation) use
+    # the same model.  llm.config is a property that creates a new
+    # LLMConfig each time, so we must set the backing attribute directly.
+    if model_name != llm.config.model_name:
+        llm._model_version = model_name
+
     artifact_tools = create_artifact_tool(
         session_id=session_id,
         packet_queue=resolved_packet_queue,
         step_number_fn=resolved_step_number_fn,
         db_session=db_session,
+        llm=llm,
     )
     ask_user_tools = create_ask_user_tool(
         session_id=session_id,
@@ -266,6 +285,7 @@ def build_agent_run_context(
         db_session=db_session,
         available_tools=available_tool_names,
         mode=mode.value,
+        user_message=user_message,
     )
     all_tools.extend(skill_tools)
 
@@ -291,15 +311,7 @@ def build_agent_run_context(
         skills_catalog=skills_catalog,
     )
 
-    # Step 13: resolve LLM and model name
-    llm, _ = get_default_llms(user=user)
-    model_name: str = (
-        llm.config.model_name
-        if (not model or model == "auto")
-        else model
-    )
-
-    # Step 14: build RunConfig
+    # Step 13: build RunConfig (LLM resolved in step 6b above)
     run_config = build_run_config(llm, model_name)
 
     # Step 15: create the Agent
@@ -392,6 +404,24 @@ def build_message_history(
         if msg.role == AgentMessageRole.USER:
             history.append({"role": "user", "content": msg.content or ""})
         elif msg.role == AgentMessageRole.ASSISTANT:
+            # Include reasoning/thinking from prior turns so the model
+            # can see its own chain of thought.  The Agents SDK converter
+            # (use_responses=False) recognises "type": "reasoning" items
+            # and maps them to the appropriate provider field
+            # (thinking blocks for Claude, reasoning_content for
+            # DeepSeek).  We emit both summary and content so either
+            # path works.
+            if msg.thinking_content:
+                history.append({
+                    "type": "reasoning",
+                    "id": f"rs_{msg.id}",
+                    "summary": [
+                        {"type": "summary_text", "text": msg.thinking_content}
+                    ],
+                    "content": [
+                        {"type": "reasoning_text", "text": msg.thinking_content}
+                    ],
+                })
             if msg.content:
                 history.append({"role": "assistant", "content": msg.content})
 
@@ -404,7 +434,14 @@ def build_message_history(
     if budget < 0:
         budget = 50_000
 
-    total_chars = sum(len(str(m.get("content", ""))) for m in history)
+    def _item_chars(m: dict[str, Any]) -> int:
+        """Estimate char count for a history item (message or reasoning)."""
+        if m.get("type") == "reasoning":
+            summaries = m.get("summary", [])
+            return sum(len(s.get("text", "")) for s in summaries)
+        return len(str(m.get("content", "")))
+
+    total_chars = sum(_item_chars(m) for m in history)
     if total_chars > budget:
         logger.info(
             "Truncating history for session %s: %d chars > %d budget",
@@ -414,7 +451,7 @@ def build_message_history(
         )
         while history and total_chars > budget:
             dropped = history.pop(0)
-            total_chars -= len(str(dropped.get("content", "")))
+            total_chars -= _item_chars(dropped)
 
     messages.extend(history)
     return messages

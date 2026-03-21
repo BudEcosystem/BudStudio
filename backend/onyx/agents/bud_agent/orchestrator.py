@@ -27,18 +27,15 @@ from onyx.agents.bud_agent.agent_context import AgentExecutionMode
 from onyx.agents.bud_agent.agent_context import build_agent_run_context
 from onyx.agents.bud_agent.agent_context import build_message_history
 from onyx.agents.bud_agent.agent_context import compact_session
-from onyx.agents.bud_agent.artifact_llm import maybe_generate_artifact
 from onyx.agents.bud_agent.local_tool_bridge import LocalToolBridge
 from onyx.db.agent import add_session_message
 from onyx.db.engine.sql_engine import get_session_with_tenant
-from onyx.db.agent import update_message_ui_spec_artifact
 from onyx.db.agent import update_session_stats
 from onyx.db.agent import update_session_status
 from onyx.db.enums import AgentMessageRole
 from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import User
 from onyx.server.query_and_chat.streaming_models import AgentDone
-from onyx.server.query_and_chat.streaming_models import ArtifactGeneration
 from onyx.server.query_and_chat.streaming_models import AgentSessionCompacted
 from onyx.server.query_and_chat.streaming_models import AgentStopped
 from onyx.server.query_and_chat.streaming_models import CitationDelta
@@ -104,10 +101,10 @@ class BudAgentOrchestrator:
         self._last_tool_step: int | None = None
         self._iteration_texts: list[str] = []
         self._current_iteration_text = ""
-        self._artifact_tool_used = False
         self._stop_redis_key = f"bud_agent_stop:{self._session_id}"
         self._running_redis_key = f"bud_agent_running:{self._session_id}"
         self._running_redis_ttl = 600  # matches soft_time_limit
+        self._turn_count = 0
 
     @property
     def step_number(self) -> int:
@@ -489,6 +486,7 @@ class BudAgentOrchestrator:
             last_call_is_final = False
 
             while not last_call_is_final and not self._is_stopped():
+                self._turn_count += 1
                 if self._tool_call_count >= MAX_TOOL_CALLS:
                     logger.warning(
                         "Max tool calls (%d) reached for session %s",
@@ -599,8 +597,6 @@ class BudAgentOrchestrator:
                         self._tool_call_count += 1
                         raw = getattr(ev.item, "raw_item", None)
                         tool_name = (getattr(raw, "name", None) or (raw.get("name") if isinstance(raw, dict) else None) or "unknown").replace("\n", " ")
-                        if tool_name == "render_artifact":
-                            self._artifact_tool_used = True
                         logger.info(
                             "Tool call #%d: %s (session %s)",
                             self._tool_call_count,
@@ -684,24 +680,6 @@ class BudAgentOrchestrator:
                 self._step_number += 1
                 self._emit(OverallStop())
 
-                # Dispatch workflow sync (non-blocking, fire-and-forget)
-                try:
-                    from onyx.background.celery.apps.client import celery_app
-
-                    _sync_kwargs = {
-                        "session_id": str(self._session_id),
-                        "tenant_id": self._tenant_id or "",
-                        "user_id": str(self._user.id) if self._user else "",
-                    }
-                    logger.info(f"Dispatching workflow sync for session={self._session_id}")
-                    celery_app.send_task(
-                        "sync_turn_to_neo4j_task",
-                        kwargs=_sync_kwargs,
-                    )
-                    logger.info("Workflow sync task dispatched successfully")
-                except Exception as e:
-                    logger.warning(f"Failed to dispatch workflow sync: {e}", exc_info=True)
-
             # 8. Persist the assistant response
             if self._full_response_text:
                 # Use processed text (with [[N]](link) citations) if available
@@ -772,63 +750,49 @@ class BudAgentOrchestrator:
                     ui_spec=ui_spec,
                 )
 
-            # 9. Post-response artifact generation
-            # Skip if the agent already rendered an artifact via render_artifact tool
-            logger.info(
-                "[ARTIFACT-AGENT] Post-response check: "
-                "response_len=%d, is_stopped=%s, artifact_tool_used=%s, "
-                "model=%s, preview=%r",
-                len(self._full_response_text),
-                self._is_stopped(),
-                self._artifact_tool_used,
-                ctx.model_name,
-                self._full_response_text[:100],
-            )
-            if (
-                self._full_response_text
-                and not self._is_stopped()
-                and not self._artifact_tool_used
-            ):
-                from onyx.agents.bud_agent.artifact_llm import should_attempt_artifact
-
-                pre_filter = should_attempt_artifact(self._full_response_text)
-                logger.info("[ARTIFACT-AGENT] Pre-filter result: %s", pre_filter)
-
-                artifact_result = maybe_generate_artifact(
-                    llm=ctx.llm,
-                    response_text=self._full_response_text,
-                )
-                logger.info(
-                    "[ARTIFACT-AGENT] maybe_generate_artifact returned: %s",
-                    artifact_result is not None,
-                )
-                if artifact_result is not None:
-                    openui_lang, artifact_title = artifact_result
-                    logger.info(
-                        "[ARTIFACT-AGENT] Emitting ArtifactGeneration: "
-                        "title=%r, openui_lang=%r",
-                        artifact_title,
-                        openui_lang[:100],
-                    )
-                    self._emit(ArtifactGeneration(
-                        openui_lang=openui_lang,
-                        title=artifact_title,
-                    ))
-                    update_message_ui_spec_artifact(
-                        db_session,
-                        self._session_id,
-                        openui_lang,
-                        artifact_title,
-                    )
-
-            # 10. Update session usage stats
+            # 9. Update session usage stats
             update_session_stats(
                 db_session,
                 self._session_id,
                 tool_calls=self._tool_call_count,
             )
 
-            # 11. Signal that we are done
+            # 11. Skill evolution pipeline (after response is fully persisted)
+            try:
+                _should_run_pipeline = False
+                _user_msg_count = 0
+                try:
+                    from sqlalchemy import func, select
+                    from onyx.db.models import AgentMessage
+                    _user_msg_count = db_session.scalar(
+                        select(func.count(AgentMessage.id)).where(
+                            AgentMessage.session_id == self._session_id,
+                            AgentMessage.role == "USER",
+                        )
+                    ) or 0
+                    if _user_msg_count >= 4 and _user_msg_count % 4 == 0:
+                        _should_run_pipeline = True
+                except Exception:
+                    logger.warning("Failed to count user messages", exc_info=True)
+
+                if _should_run_pipeline:
+                    import asyncio as _asyncio
+                    logger.info(
+                        "Skill pipeline triggered at msg_count=%d for session %s",
+                        _user_msg_count, self._session_id,
+                    )
+                    try:
+                        _loop = _asyncio.new_event_loop()
+                        _loop.run_until_complete(
+                            self._run_skill_pipeline(ctx.llm)
+                        )
+                        _loop.close()
+                    except Exception:
+                        logger.warning("Skill pipeline run failed", exc_info=True)
+            except Exception:
+                logger.warning("Skill pipeline trigger failed", exc_info=True)
+
+            # 12. Signal that we are done
             self._emit(AgentDone())
 
         except Exception as e:
@@ -862,6 +826,24 @@ class BudAgentOrchestrator:
                     exc_info=True,
                 )
             self._packet_queue.put(_SENTINEL)
+
+    async def _run_skill_pipeline(self, llm: Any) -> None:
+        """Run the post-conversation skill evolution pipeline.
+
+        Called synchronously after the agent response is fully persisted
+        (after OverallStop). Uses the orchestrator's authenticated LLM.
+        """
+        try:
+            from onyx.workflow.pipeline import run_post_conversation_pipeline
+
+            await run_post_conversation_pipeline(
+                session_id=str(self._session_id),
+                tenant_id=self._tenant_id or "public",
+                user_id=str(self._user.id) if self._user else "",
+                llm=llm,
+            )
+        except Exception:
+            logger.warning("Skill pipeline failed", exc_info=True)
 
     def _compact_session(
         self,

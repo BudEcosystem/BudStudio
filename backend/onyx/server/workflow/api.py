@@ -22,6 +22,7 @@ from onyx.workflow.canvas_builder import merge_similar_nodes
 from onyx.workflow.models import AnnotationInput
 from onyx.workflow.neo4j_client import get_neo4j_client
 from onyx.workflow.neo4j_client import Neo4jClient
+from onyx.workflow.quality_tracker import process_annotation
 
 logger = setup_logger()
 
@@ -137,6 +138,26 @@ async def get_unified_canvas(
             "shared_actions": [],
         }
 
+    # Fetch derived skills for each workflow
+    skill_map: dict[str, dict[str, Any]] = {}
+    try:
+        wf_ids = [w["id"] for w in workflows if w.get("id")]
+        if wf_ids:
+            skill_result = await client.execute_read(
+                "MATCH (sn:SkillNode)-[:DERIVED_FROM]->(w:Workflow) "
+                "WHERE w.id IN $wfIds "
+                "RETURN w.id AS workflow_id, sn.skill_id AS skill_id, "
+                "       sn.skill_slug AS skill_slug",
+                {"wfIds": wf_ids},
+            )
+            for record in skill_result:
+                skill_map[record["workflow_id"]] = {
+                    "skill_id": record["skill_id"],
+                    "skill_slug": record["skill_slug"],
+                }
+    except Exception:
+        pass  # Non-critical — skill badges just won't appear
+
     # Fetch aggregated nodes (per workflow x canonical_action) with embeddings
     node_rows = await client.execute_read(
         """
@@ -171,24 +192,31 @@ async def get_unified_canvas(
 
         action_to_workflows.setdefault(action, set()).add(wf_id)
 
+        node_data: dict[str, Any] = {
+            "workflow_id": wf_id,
+            "workflow_name": row["workflow_name"],
+            "canonical_action": action,
+            "name": row["name"] or action,
+            "description": row["description"] or "",
+            "frequency": row["frequency"],
+            "total_executions": row["exec_count"],
+            "status": row["status"] or "completed",
+            "avg_duration_ms": row["avg_duration_ms"] or 0,
+            "node_type": row.get("node_type") or "compute",
+            "input_source": row.get("input_source") or None,
+        }
+        # Attach derived skill info if this workflow has one
+        wf_skill = skill_map.get(wf_id)
+        if wf_skill:
+            node_data["derived_skill_slug"] = wf_skill["skill_slug"]
+            node_data["derived_skill_id"] = wf_skill["skill_id"]
+
         raw_nodes.append(
             {
                 "id": node_id,
                 "type": "workflowStep",
                 "position": {"x": 0, "y": 0},
-                "data": {
-                    "workflow_id": wf_id,
-                    "workflow_name": row["workflow_name"],
-                    "canonical_action": action,
-                    "name": row["name"] or action,
-                    "description": row["description"] or "",
-                    "frequency": row["frequency"],
-                    "total_executions": row["exec_count"],
-                    "status": row["status"] or "completed",
-                    "avg_duration_ms": row["avg_duration_ms"] or 0,
-                    "node_type": row.get("node_type") or "compute",
-                    "input_source": row.get("input_source") or None,
-                },
+                "data": node_data,
             }
         )
         if embedding:
@@ -712,6 +740,26 @@ async def annotate_step(
         raise HTTPException(
             status_code=500, detail="Failed to create annotation"
         )
+
+    # Update skill quality from annotation
+    try:
+        from shared_configs.contextvars import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+        await process_annotation(
+            annotation_target_id=step_id,
+            annotation_target_type="step",
+            score=annotation.score,
+            label=annotation.label,
+            comment=annotation.comment,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to process annotation for skill quality", exc_info=True
+        )
+
     return rows[0]["an"]
 
 
@@ -791,6 +839,26 @@ async def annotate_execution(
         raise HTTPException(
             status_code=500, detail="Failed to create annotation"
         )
+
+    # Update skill quality from annotation
+    try:
+        from shared_configs.contextvars import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+        await process_annotation(
+            annotation_target_id=execution_id,
+            annotation_target_type="execution",
+            score=annotation.score,
+            label=annotation.label,
+            comment=annotation.comment,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to process annotation for skill quality", exc_info=True
+        )
+
     return rows[0]["an"]
 
 
@@ -813,7 +881,8 @@ async def workflow_health(
 
 
 # ---------------------------------------------------------------------------
-# 11. Force sync (admin)
+# 11. Force sync (admin) — REMOVED
+# Per-turn sync replaced by the post-conversation Judge pipeline.
 # ---------------------------------------------------------------------------
 
 
@@ -822,31 +891,9 @@ async def force_sync(
     session_id: str,
     user: User | None = Depends(current_admin_user),
 ) -> dict[str, str]:
-    """Manually trigger Neo4j sync for a session (admin only)."""
-    user_id = _user_id_from(user)
-
-    # Lazy import to avoid circular dependencies
-    try:
-        from onyx.background.celery.tasks.workflow.tasks import (
-            sync_turn_to_neo4j_task,
-        )
-
-        sync_turn_to_neo4j_task.apply_async(
-            kwargs={
-                "session_id": session_id,
-                "tenant_id": "",
-                "user_id": user_id,
-            },
-        )
-        return {"status": "sync_queued", "session_id": session_id}
-    except ImportError:
-        logger.warning(
-            "Workflow sync task not available; attempting direct sync"
-        )
-        # Fallback: if the Celery task isn't wired up yet, return a helpful
-        # message rather than crashing.
-        return {
-            "status": "sync_not_available",
-            "session_id": session_id,
-            "detail": "Workflow sync Celery task is not yet registered",
-        }
+    """Per-turn sync has been removed. Use the post-conversation pipeline instead."""
+    return {
+        "status": "removed",
+        "session_id": session_id,
+        "detail": "Per-turn sync has been removed. Workflows are now created by the post-conversation Judge pipeline.",
+    }

@@ -90,6 +90,8 @@ interface RawCanvasNode {
     isGoldenPath?: boolean;
     workflow_id?: string;
     workflow_name?: string;
+    derived_skill_slug?: string;
+    derived_skill_id?: number;
   };
 }
 
@@ -206,6 +208,8 @@ export async function fetchUnifiedCanvas(
             const is = (d as Record<string, unknown>).input_source as string | undefined;
             return is === "human" || is === "agent" ? is : null;
           })(),
+          derivedSkillSlug: d.derived_skill_slug,
+          derivedSkillName: d.derived_skill_slug,
         },
       };
     });

@@ -47,17 +47,22 @@ class Neo4jClient:
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (rs:RawStep) REQUIRE rs.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artifact) REQUIRE a.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (an:Annotation) REQUIRE an.id IS UNIQUE",
+                "CREATE CONSTRAINT IF NOT EXISTS FOR (sv:SkillVersion) REQUIRE sv.id IS UNIQUE",
             ]
             for constraint in constraints:
                 await session.run(constraint)
 
             # Additional indexes for common queries
+            # Note: (:Skill)-[:DERIVED_FROM]->(:Workflow) relationships link
+            # PostgreSQL Skill records to Neo4j Workflow nodes for evolution tracking.
             indexes: list[str] = [
                 "CREATE INDEX IF NOT EXISTS FOR (w:Workflow) ON (w.user_id)",
                 "CREATE INDEX IF NOT EXISTS FOR (w:Workflow) ON (w.tenant_id)",
+                "CREATE INDEX IF NOT EXISTS FOR (w:Workflow) ON (w.pattern_summary)",
                 "CREATE INDEX IF NOT EXISTS FOR (e:Execution) ON (e.agent_session_id)",
                 "CREATE INDEX IF NOT EXISTS FOR (s:Step) ON (s.canonical_action)",
                 "CREATE INDEX IF NOT EXISTS FOR (rs:RawStep) ON (rs.agent_message_id)",
+                "CREATE INDEX IF NOT EXISTS FOR (sv:SkillVersion) ON (sv.skill_id)",
             ]
             for index in indexes:
                 await session.run(index)

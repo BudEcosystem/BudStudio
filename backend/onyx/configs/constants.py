@@ -416,6 +416,10 @@ class OnyxRedisLocks:
     # Agent cron
     CHECK_AGENT_CRON_BEAT_LOCK = "da_lock:check_agent_cron_beat"
 
+    # Skill evolution pipeline
+    CHECK_CONVERSATION_CLOSE_BEAT_LOCK = "da_lock:check_conversation_close_beat"
+    CHECK_SKILL_EVOLUTION_BEAT_LOCK = "da_lock:check_skill_evolution_beat"
+
     # KG processing
     KG_PROCESSING_LOCK = "da_lock:kg_processing"
 
@@ -560,6 +564,12 @@ class OnyxCeleryTask:
 
     # Agent inbox messaging
     PROCESS_INBOX_MESSAGE = "process_inbox_message"
+
+    # Skill evolution pipeline
+    CHECK_CONVERSATION_CLOSE = "check_conversation_close"
+    RUN_POST_CONVERSATION_PIPELINE = "run_post_conversation_pipeline_task"
+    CHECK_SKILL_EVOLUTION = "check_skill_evolution"
+    RUN_SKILL_FEEDBACK_DESCENT = "run_skill_feedback_descent"
 
 
 # this needs to correspond to the matching entry in supervisord
