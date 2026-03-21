@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID
 
 from celery import shared_task
@@ -123,12 +124,13 @@ def check_conversation_close(self: Task, *, tenant_id: str) -> None:
 
 
 def _find_qualifying_sessions(
-    db_session: "Session",  # type: ignore[name-defined]
+    db_session: Any,
 ) -> list[tuple[str, str]]:
     """Query PostgreSQL for sessions eligible for the post-conversation pipeline.
 
     Returns a list of (session_id_str, user_id_str) tuples.
     """
+    seen: set[tuple[str, str]] = set()
     results: list[tuple[str, str]] = []
 
     # ---- Criterion 1: Inbox conversations with closed goals ----
@@ -157,7 +159,10 @@ def _find_qualifying_sessions(
         )
         inbox_rows = db_session.execute(inbox_stmt).all()
         for row in inbox_rows:
-            results.append((str(row.session_id), str(row.user_id)))
+            pair = (str(row.session_id), str(row.user_id))
+            if pair not in seen:
+                seen.add(pair)
+                results.append(pair)
     except Exception:
         task_logger.warning(
             "check_conversation_close: inbox goal query failed",
@@ -205,8 +210,10 @@ def _find_qualifying_sessions(
             sid = str(row.session_id)
             uid = str(row.user_id)
             # Avoid duplicates from criterion 1
-            if (sid, uid) not in results:
-                results.append((sid, uid))
+            pair = (sid, uid)
+            if pair not in seen:
+                seen.add(pair)
+                results.append(pair)
     except Exception:
         task_logger.warning(
             "check_conversation_close: idle session query failed",

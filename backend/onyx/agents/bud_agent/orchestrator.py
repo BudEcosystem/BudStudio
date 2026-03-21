@@ -770,7 +770,11 @@ class BudAgentOrchestrator:
                             AgentMessage.role == "USER",
                         )
                     ) or 0
-                    if _user_msg_count >= 4 and _user_msg_count % 4 == 0:
+                    _PIPELINE_TRIGGER_INTERVAL = 4
+                    if (
+                        _user_msg_count >= _PIPELINE_TRIGGER_INTERVAL
+                        and _user_msg_count % _PIPELINE_TRIGGER_INTERVAL == 0
+                    ):
                         _should_run_pipeline = True
                 except Exception:
                     logger.warning("Failed to count user messages", exc_info=True)
@@ -782,11 +786,7 @@ class BudAgentOrchestrator:
                         _user_msg_count, self._session_id,
                     )
                     try:
-                        _loop = _asyncio.new_event_loop()
-                        _loop.run_until_complete(
-                            self._run_skill_pipeline(ctx.llm)
-                        )
-                        _loop.close()
+                        _asyncio.run(self._run_skill_pipeline(ctx.llm))
                     except Exception:
                         logger.warning("Skill pipeline run failed", exc_info=True)
             except Exception:
