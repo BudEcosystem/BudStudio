@@ -102,6 +102,9 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   // Node type classification
   nodeType?: "input" | "compute" | "output";
   inputSource?: "human" | "agent" | null;
+  // Derived skill info (if this workflow has an auto-created skill)
+  derivedSkillSlug?: string;
+  derivedSkillName?: string;
 }
 
 export interface WorkflowCanvasNode {

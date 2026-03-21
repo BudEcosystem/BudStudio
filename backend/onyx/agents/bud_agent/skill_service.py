@@ -25,6 +25,7 @@ def create_skill_tools(
     db_session: Session | None,
     available_tools: set[str],
     mode: str,
+    user_message: str | None = None,
 ) -> tuple[list[Any], str]:
     """Create the ``use_skill`` FunctionTool and return the skill catalog text.
 
@@ -32,6 +33,8 @@ def create_skill_tools(
         db_session: Database session for loading DB skills.
         available_tools: Set of tool names available in this context.
         mode: Current agent mode (interactive, inbox, cron).
+        user_message: Optional user message for proactive skill discovery.
+            When provided, relevant skills are suggested in the catalog.
 
     Returns:
         ``(tools, catalog_text)`` — a list containing the ``use_skill``
@@ -48,6 +51,24 @@ def create_skill_tools(
     # Build lookup dict for the handler
     skill_map: dict[str, SkillDefinition] = {s.slug: s for s in active_skills}
     catalog_text = format_skill_catalog(active_skills)
+
+    # Proactive skill discovery: append suggestions based on user message
+    if user_message and active_skills:
+        try:
+            from onyx.workflow.skill_discovery import (
+                discover_relevant_skills,
+                format_skill_suggestions,
+            )
+
+            suggestions = discover_relevant_skills(user_message, active_skills)
+            suggestion_text = format_skill_suggestions(suggestions)
+            if suggestion_text:
+                catalog_text += suggestion_text
+        except Exception:
+            logger.warning(
+                "Proactive skill discovery failed — continuing without suggestions",
+                exc_info=True,
+            )
 
     async def _handle_use_skill(
         _ctx: RunContextWrapper[Any], json_string: str

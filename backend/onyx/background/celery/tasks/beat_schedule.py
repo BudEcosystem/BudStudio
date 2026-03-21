@@ -72,6 +72,10 @@ beat_task_templates: list[dict] = [
             "expires": BEAT_EXPIRES_DEFAULT,
         },
     },
+    # NOTE: check-conversation-close and check-skill-evolution removed.
+    # The skill pipeline is triggered inline from the orchestrator after every
+    # 4th user message, using the orchestrator's authenticated LLM.
+    # Background Celery tasks can't authenticate with Bud Foundry gateway.
     {
         "name": "check-for-kg-processing",
         "task": OnyxCeleryTask.CHECK_KG_PROCESSING,

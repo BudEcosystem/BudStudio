@@ -14,6 +14,8 @@ class WorkflowNode(BaseModel):
     name: str  # "Draft MOM Email"
     description: str
     name_embedding: list[float] = []
+    pattern_summary: str | None = None  # canonical pattern description for matching
+    pattern_embedding: list[float] | None = None  # embedding of pattern_summary
     execution_count: int = 0
     last_run_at: datetime | None = None
     avg_duration_ms: float = 0
@@ -39,6 +41,13 @@ class ExecutionNode(BaseModel):
     step_count: int = 0
     raw_step_count: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Judgment (populated by LLM Judge after conversation close)
+    quality: str | None = None  # "success" | "partial" | "failure" | "abandoned"
+    pattern_summary: str | None = None  # for cross-conversation matching
+    root_cause: str | None = None  # only if quality != "success"
+    confidence: float | None = None
+    judged_at: str | None = None  # ISO timestamp
 
 
 class StepNode(BaseModel):
@@ -133,3 +142,61 @@ class TurnSummary(BaseModel):
 
     task_name: str
     steps: list[StepSummary]
+
+
+# Skill evolution pipeline models
+
+
+class FlowStep(BaseModel):
+    """A clean, human-readable step synthesized by the Judge from a conversation."""
+
+    name: str  # e.g. "Query user data"
+    description: str  # e.g. "Search DB by name/email, return matching records"
+
+
+class ConversationJudgment(BaseModel):
+    """Output of the LLM Judge — clean flow + quality assessment."""
+
+    # Clean flow (replaces per-turn sync)
+    flow: list[FlowStep]
+    pattern_summary: str  # e.g. "multi-step data export with validation"
+
+    # Quality assessment
+    quality: str  # "success" | "partial" | "failure" | "abandoned"
+    failure_steps: list[str] = []  # e.g. ["step 3: used wrong table schema"]
+    root_cause: str | None = None
+    confidence: float = 0.0
+
+
+class ProposerOutput(BaseModel):
+    """Output of the Skill Proposer — diagnosis of what skill to create/edit."""
+
+    action: str  # "create" | "edit"
+    target_skill: str | None = None  # slug of skill to edit (if action="edit")
+    proposed_skill: str  # description of what to build/change
+    justification: str  # why, with references to traces
+    related_iterations: list[str] = []
+
+
+class GeneratorOutput(BaseModel):
+    """Output of the Skill Generator — actual skill content."""
+
+    slug: str
+    name: str
+    description: str
+    instructions: str  # full .md content — skill body
+
+
+class SkillVersionNode(BaseModel):
+    """Tracks versions of a skill in Neo4j for evolution tracking."""
+
+    id: str = ""
+    skill_id: str = ""  # Links to PostgreSQL Skill.id
+    version: int = 1
+    instructions_hash: str = ""  # Content hash of instructions
+    quality_score: float = 0.0
+    execution_count: int = 0
+    success_rate: float = 0.0
+    created_at: str = ""
+    source: str = ""  # "auto_created" | "evolution" | "human"
+    source_workflow_id: str = ""  # Which Workflow pattern spawned this version
