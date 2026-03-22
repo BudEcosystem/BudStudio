@@ -17,6 +17,17 @@ import type { Tool, ToolParameter } from "./base";
 import { ProcessRegistry } from "./process-registry";
 import { createShellEnv } from "./shell-env";
 
+// Debug logging
+function debugLog(message: string): void {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] [cli-agent] ${message}\n`;
+  try {
+    fs.appendFileSync("/tmp/bud-agent-debug.log", logLine);
+  } catch {
+    // Ignore file write errors
+  }
+}
+
 /**
  * Sandbox level options for Codex execution.
  */
@@ -108,6 +119,8 @@ export class CliAgentTool implements Tool {
    * @returns A promise that resolves to a session ID and status message
    */
   async execute(params: Record<string, unknown>): Promise<string> {
+    debugLog(`CliAgentTool.execute() called with params: ${JSON.stringify(params).substring(0, 200)}`);
+
     const prompt = params.prompt as string | undefined;
     const workingDirectory = params.working_directory as string | undefined;
     const sandbox = params.sandbox as SandboxLevel | undefined;
@@ -116,8 +129,10 @@ export class CliAgentTool implements Tool {
 
     // Validate required parameter
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
+      debugLog("Error: Prompt parameter is required and must be a non-empty string");
       throw new Error("Prompt parameter is required and must be a non-empty string");
     }
+    debugLog(`Prompt validated: ${prompt.substring(0, 100)}...`);
 
     // Resolve working directory
     let cwd = this.workspacePath;
@@ -145,30 +160,42 @@ export class CliAgentTool implements Tool {
 
     // Build the Codex command
     const command = this.buildCodexCommand(prompt, sandbox, ephemeral);
+    debugLog(`Built command: ${command}`);
 
     // Spawn the process
-    const registry = ProcessRegistry.getInstance();
-    const env = createShellEnv();
-    const sessionId = registry.spawn(command, cwd, { pty: true, env });
+    try {
+      const registry = ProcessRegistry.getInstance();
+      const env = createShellEnv();
+      debugLog(`Spawning process with cwd: ${cwd}, pty: true`);
+      const sessionId = registry.spawn(command, cwd, { pty: true, env });
+      debugLog(`Process spawned with sessionId: ${sessionId}`);
 
-    // Register callback if provided
-    if (this.onSessionComplete) {
-      registry.registerOnExit(
-        sessionId,
-        (output: string, exitCode: number | null) => {
-          this.onSessionComplete!(sessionId, output, exitCode);
-        }
+      // Register callback if provided
+      if (this.onSessionComplete) {
+        debugLog(`Registering onExit callback for sessionId: ${sessionId}`);
+        registry.registerOnExit(
+          sessionId,
+          (output: string, exitCode: number | null) => {
+            this.onSessionComplete!(sessionId, output, exitCode);
+          }
+        );
+      }
+
+      const sandboxLevel = sandbox || "workspace-write";
+      const response = (
+        `CLI agent started in session ${sessionId}\n` +
+        `Working directory: ${cwd}\n` +
+        `Sandbox level: ${sandboxLevel}\n` +
+        `Status: Running in background — I will automatically follow up when complete.\n` +
+        `You can also use the process tool (action: log, poll, list) to check status.`
       );
+      debugLog(`Returning response: ${response}`);
+      return response;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : "Unknown error";
+      debugLog(`Error during spawn: ${error}`);
+      throw err;
     }
-
-    const sandboxLevel = sandbox || "workspace-write";
-    return (
-      `CLI agent started in session ${sessionId}\n` +
-      `Working directory: ${cwd}\n` +
-      `Sandbox level: ${sandboxLevel}\n` +
-      `Status: Running in background — I will automatically follow up when complete.\n` +
-      `You can also use the process tool (action: log, poll, list) to check status.`
-    );
   }
 
   /**
