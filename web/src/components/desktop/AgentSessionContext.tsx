@@ -34,6 +34,8 @@ export interface AgentMessage {
   toolCalls?: ToolCallInfo[];
   /** Packet data for unified rendering (streaming + history). */
   packets?: Packet[];
+  /** Accumulated reasoning/thinking content from the model. */
+  thinkingContent?: string;
 }
 
 export interface AgentSession {
@@ -181,18 +183,25 @@ function convertBackendMessages(
         status: "complete",
       });
     } else if (msg.role === "assistant") {
-      // Flush any pending agent message
-      if (currentAgentMsg) {
-        result.push(currentAgentMsg);
+      if (!currentAgentMsg) {
+        // First assistant in this turn — create agent message
+        currentAgentMsg = {
+          id: msg.id,
+          role: "agent",
+          content: msg.content || "",
+          timestamp: new Date(msg.created_at),
+          status: "complete",
+          toolCalls: [],
+        };
+      } else if (msg.content) {
+        // Subsequent assistant with content — update the existing
+        // agent message's content (don't flush/create new).
+        // This keeps all tool calls and content from one user
+        // request in a single agent message block.
+        currentAgentMsg.content = msg.content;
       }
-      currentAgentMsg = {
-        id: msg.id,
-        role: "agent",
-        content: msg.content || "",
-        timestamp: new Date(msg.created_at),
-        status: "complete",
-        toolCalls: [],
-      };
+      // else: intermediate thinking-only assistant — skip,
+      // keep accumulating tools into the existing currentAgentMsg
     } else if (msg.role === "tool") {
       // Attach to current agent message as a tool call
       if (currentAgentMsg) {

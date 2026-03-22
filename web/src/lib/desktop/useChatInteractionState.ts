@@ -46,6 +46,7 @@ export function useChatInteractionState() {
 
   // ── Streaming refs ─────────────────────────────────────────────────
   const accumulatedContentRef = useRef<string>("");
+  const thinkingContentRef = useRef<string>("");
   const toolCallsRef = useRef<ToolCallInfo[]>([]);
   const packetsRef = useRef<Packet[]>([]);
   const messageFinalizedRef = useRef<boolean>(false);
@@ -56,6 +57,7 @@ export function useChatInteractionState() {
   /** Reset only streaming refs (start of a new agent turn). */
   const resetStreamingRefs = () => {
     accumulatedContentRef.current = "";
+    thinkingContentRef.current = "";
     toolCallsRef.current = [];
     packetsRef.current = [];
     messageFinalizedRef.current = false;
@@ -90,6 +92,7 @@ export function useChatInteractionState() {
 
     // Refs
     accumulatedContentRef,
+    thinkingContentRef,
     toolCallsRef,
     packetsRef,
     messageFinalizedRef,

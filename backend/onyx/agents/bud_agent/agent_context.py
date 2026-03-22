@@ -84,6 +84,7 @@ class AgentRunContext:
     db_context: dict[str, str]
     compaction_summary: str | None
     mode: AgentExecutionMode
+    packet_queue: queue.Queue | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +335,7 @@ def build_agent_run_context(
         db_context=db_context,
         compaction_summary=compaction_summary,
         mode=mode,
+        packet_queue=resolved_packet_queue,
     )
 
 
@@ -366,14 +368,55 @@ def build_message_history(
 
     history: list[dict[str, Any]] = []
 
-    # Buffer consecutive TOOL messages so they can be flushed as
-    # Responses-API-format function_call + function_call_output pairs.
-    pending_tools: list[Any] = []
+    # ── Pre-process: group messages into turns ──
+    # The DB may store TOOL results before their ASSISTANT message
+    # (remote tools execute during the LLM stream, so their results
+    # are persisted before the assistant message).  We need to
+    # reorder so that reasoning + assistant content always precedes
+    # the function_call items.  We do this by scanning ahead.
+    #
+    # Build a list of (ASSISTANT, [TOOL...]) groups.  Any TOOL
+    # messages that appear before an ASSISTANT are associated with
+    # the next ASSISTANT in sequence.
 
-    def _flush_tools() -> None:
-        if not pending_tools:
-            return
-        for t in pending_tools:
+    msg_list = list(previous_messages)
+
+    def _emit_reasoning(thinking: str, msg_id: Any) -> None:
+        """Append a reasoning item to history."""
+        history.append({
+            "type": "reasoning",
+            "id": f"rs_{msg_id}",
+            "summary": [
+                {"type": "summary_text", "text": thinking}
+            ],
+            "content": [
+                {"type": "reasoning_text", "text": thinking}
+            ],
+        })
+
+    def _emit_tool_pairs(
+        tools: list[Any],
+        thinking: str | None = None,
+        thinking_msg_id: Any = None,
+    ) -> None:
+        """Emit tool calls in Responses-API format.
+
+        All function_call items are emitted FIRST, then all
+        function_call_output items.  This prevents the SDK converter
+        from flushing the assistant message between tool calls, which
+        would lose the reasoning_content on subsequent calls.
+
+        The SDK converter groups consecutive function_call items into
+        a single assistant message and attaches pending reasoning
+        blocks to it.  By keeping all function_calls together (before
+        any function_call_output), the reasoning is preserved on the
+        one assistant message that holds all tool_calls.
+        """
+        if thinking:
+            _emit_reasoning(thinking, thinking_msg_id)
+
+        # First: all function_call items (grouped into one assistant msg by SDK)
+        for t in tools:
             call_id: str = t.tool_call_id or t.tool_name or "unknown"
             history.append({
                 "type": "function_call",
@@ -381,6 +424,10 @@ def build_message_history(
                 "name": t.tool_name or "unknown",
                 "arguments": json.dumps(t.tool_input) if t.tool_input else "{}",
             })
+
+        # Then: all function_call_output items
+        for t in tools:
+            call_id = t.tool_call_id or t.tool_name or "unknown"
             output: str = (
                 json.dumps(t.tool_output)
                 if t.tool_output
@@ -391,42 +438,73 @@ def build_message_history(
                 "call_id": call_id,
                 "output": output,
             })
-        pending_tools.clear()
 
-    for msg in previous_messages:
-        if msg.role == AgentMessageRole.TOOL:
-            pending_tools.append(msg)
-            continue
+    pending_tools: list[Any] = []
 
-        # Flush any buffered tool messages before the next non-tool msg
-        _flush_tools()
+    i = 0
+    while i < len(msg_list):
+        msg = msg_list[i]
 
         if msg.role == AgentMessageRole.USER:
+            # Flush any orphaned tools before the user message
+            if pending_tools:
+                _emit_tool_pairs(pending_tools)
+                pending_tools = []
             history.append({"role": "user", "content": msg.content or ""})
+            i += 1
+
+        elif msg.role == AgentMessageRole.TOOL:
+            # Buffer — will be flushed when we hit ASSISTANT or end
+            pending_tools.append(msg)
+            i += 1
+
         elif msg.role == AgentMessageRole.ASSISTANT:
-            # Include reasoning/thinking from prior turns so the model
-            # can see its own chain of thought.  The Agents SDK converter
-            # (use_responses=False) recognises "type": "reasoning" items
-            # and maps them to the appropriate provider field
-            # (thinking blocks for Claude, reasoning_content for
-            # DeepSeek).  We emit both summary and content so either
-            # path works.
-            if msg.thinking_content:
-                history.append({
-                    "type": "reasoning",
-                    "id": f"rs_{msg.id}",
-                    "summary": [
-                        {"type": "summary_text", "text": msg.thinking_content}
-                    ],
-                    "content": [
-                        {"type": "reasoning_text", "text": msg.thinking_content}
-                    ],
-                })
-            if msg.content:
+            # Collect all tools associated with this assistant turn:
+            # pending tools (persisted before ASSISTANT) + following tools.
+            all_turn_tools: list[Any] = list(pending_tools)
+            pending_tools = []
+
+            j = i + 1
+            while j < len(msg_list) and msg_list[j].role == AgentMessageRole.TOOL:
+                all_turn_tools.append(msg_list[j])
+                j += 1
+
+            has_tools = len(all_turn_tools) > 0
+
+            if has_tools:
+                # Emit all function_calls grouped together (then all
+                # outputs) so the SDK converter creates ONE assistant
+                # message with all tool_calls + reasoning_content.
+                _emit_tool_pairs(
+                    all_turn_tools,
+                    thinking=msg.thinking_content,
+                    thinking_msg_id=msg.id,
+                )
+            else:
+                # No tools — emit reasoning + assistant message normally.
+                if msg.thinking_content:
+                    _emit_reasoning(msg.thinking_content, msg.id)
+                # Only emit assistant message when there's actual text.
+                # Don't emit empty {role: "assistant", content: ""}
+                # for thinking-only turns — the reasoning block suffices.
+                if msg.content:
+                    history.append({
+                        "role": "assistant",
+                        "content": msg.content,
+                    })
+
+            # If there's text content alongside tools, emit it after
+            if has_tools and msg.content:
                 history.append({"role": "assistant", "content": msg.content})
 
-    # Flush remaining tool messages at the end
-    _flush_tools()
+            i = j
+        else:
+            i += 1
+
+    # Flush any remaining tool messages at the end
+    if pending_tools:
+        _emit_tool_pairs(pending_tools)
+        pending_tools = []
 
     # Truncate history from the front when exceeding budget
     system_chars = len(system_prompt)

@@ -2,12 +2,15 @@
 
 import { useRef, useCallback, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
-import type { UserQuestionItem } from "@/app/chat/services/streamingModels";
+import type { Packet, UserQuestionItem } from "@/app/chat/services/streamingModels";
 
 // ── Callback interface (mirrors AgentEventCallbacks from useAgentSSE) ──
 
 export interface AgentSocketCallbacks {
+  /** Called with a synthesized Packet for the existing packet-based UI. */
+  onPacket?: (packet: Packet) => void;
   onThinking?: () => void;
+  onThinkingDelta?: (content: string) => void;
   onText?: (content: string) => void;
   onToolStart?: (
     toolName: string,
@@ -65,6 +68,56 @@ const GATEWAY_PORT: number = process.env.NEXT_PUBLIC_GATEWAY_PORT
   ? parseInt(process.env.NEXT_PUBLIC_GATEWAY_PORT, 10)
   : 3031;
 
+/**
+ * Determine whether to connect via the local gateway relay (desktop/Tauri)
+ * or directly to the backend's Socket.IO endpoint (cloud deployment).
+ */
+function getSocketConfig(backendUrl: string): {
+  url: string;
+  opts: Parameters<typeof io>[1];
+} {
+  // Only check real Tauri runtime indicators — NOT localStorage, which can
+  // persist across environments and cause false positives in cloud mode.
+  const isDesktop =
+    typeof window !== "undefined" &&
+    // @ts-ignore
+    (window.__TAURI__ !== undefined ||
+      // @ts-ignore
+      window.__TAURI_INTERNALS__ !== undefined ||
+      navigator.userAgent.includes("Tauri"));
+
+  if (isDesktop) {
+    // Desktop: connect to local gateway relay server
+    return {
+      url: `http://127.0.0.1:${GATEWAY_PORT}`,
+      opts: {
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
+        timeout: 10000,
+      },
+    };
+  }
+
+  // Cloud: connect directly to backend Socket.IO endpoint.
+  // The backend mounts Socket.IO at /ws/agent.
+  // Use the page origin so the request goes through the ingress/proxy.
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : backendUrl;
+  return {
+    url: origin,
+    opts: {
+      path: "/api/ws/agent/",
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
+      timeout: 10000,
+    },
+  };
+}
+
 const RELAY_EVENTS: string[] = [
   "agent:message_start",
   "agent:message_delta",
@@ -88,7 +141,7 @@ const RELAY_EVENTS: string[] = [
 ];
 
 export function useAgentSocket(
-  _backendUrl: string,
+  backendUrl: string,
   _authToken: string
 ): UseAgentSocketReturn {
   const socketRef = useRef<Socket | null>(null);
@@ -111,13 +164,8 @@ export function useAgentSocket(
 
       socketRef.current?.disconnect();
 
-      const socket = io(`http://127.0.0.1:${GATEWAY_PORT}`, {
-        transports: ["websocket", "polling"],
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10000,
-        timeout: 10000,
-      });
+      const config = getSocketConfig(backendUrl);
+      const socket = io(config.url, config.opts);
 
       for (const event of RELAY_EVENTS) {
         socket.on(event, (data: unknown) => {
@@ -227,9 +275,31 @@ function dispatchEvent(
 ): void {
   const cbs = callbacksRef.current;
 
+  // Helper: synthesize a Packet and forward to onPacket callback.
+  const ind = (data.ind as number) ?? 0;
+  const emitPacket = (obj: Record<string, unknown>) => {
+    cbs.onPacket?.({ ind, obj: obj as Packet["obj"] });
+  };
+
   switch (event) {
     case "agent:reasoning_start":
+      emitPacket({ type: "reasoning_start" });
       cbs.onThinking?.();
+      break;
+
+    case "agent:reasoning_delta": {
+      const reasoning = (data.reasoning as string) || "";
+      emitPacket({ type: "reasoning_delta", reasoning });
+      cbs.onThinkingDelta?.(reasoning);
+      break;
+    }
+
+    case "agent:section_end":
+      emitPacket({ type: "section_end" });
+      break;
+
+    case "agent:message_start":
+      emitPacket({ type: "message_start" });
       break;
 
     case "agent:message_delta": {
@@ -239,13 +309,23 @@ function dispatchEvent(
       break;
     }
 
-    case "tool:start":
+    case "tool:start": {
+      const toolName = data.tool_name as string;
+      // Map tool_name to the correct packet type for the renderer
+      if (toolName === "web_search") {
+        emitPacket({ type: "internal_search_tool_start", is_internet_search: true });
+      } else if (toolName === "open_url") {
+        emitPacket({ type: "fetch_tool_start", queries: null, documents: null });
+      } else {
+        emitPacket({ type: "custom_tool_start", tool_name: toolName });
+      }
       cbs.onToolStart?.(
-        data.tool_name as string,
+        toolName,
         {},
         data.tool_call_id as string
       );
       break;
+    }
 
     case "tool:request": {
       const toolName = data.tool_name as string;
@@ -253,9 +333,9 @@ function dispatchEvent(
       const toolCallId = data.tool_call_id as string;
 
       if (toolName === "ask_user") {
-        const questions = toolInput.questions as UserQuestionItem[];
-        cbs.onUserQuestions?.(questions, toolCallId);
+        cbs.onUserQuestions?.(toolInput.questions as UserQuestionItem[], toolCallId);
       } else {
+        emitPacket({ type: "custom_tool_start", tool_name: toolName });
         cbs.onToolStart?.(toolName, toolInput, toolCallId);
       }
       break;
@@ -272,6 +352,27 @@ function dispatchEvent(
         typeof rawData === "string"
           ? rawData
           : JSON.stringify(rawData ?? "");
+
+      // Map tool_name to correct packet type for the renderer
+      if (toolName === "web_search" && rawData && typeof rawData === "object") {
+        const results = rawData as Record<string, unknown>;
+        emitPacket({
+          type: "internal_search_tool_delta",
+          queries: (results.results as unknown[])?.map((r: unknown) => (r as Record<string, string>).title) ?? [],
+          documents: null,
+        });
+      } else {
+        emitPacket({
+          type: "custom_tool_delta",
+          tool_name: toolName,
+          response_type: responseType,
+          data: rawData,
+          openui_response: data.openui_response ?? null,
+          file_ids: data.file_ids ?? null,
+        });
+      }
+      // Section end after tool delta (mirrors SSE behavior)
+      emitPacket({ type: "section_end" });
 
       cbs.onToolResult?.(
         toolName,
@@ -325,11 +426,13 @@ function dispatchEvent(
       break;
 
     case "agent:stopped":
+      emitPacket({ type: "stop" });
       cbs.onStopped?.();
       cbs.onDone?.();
       break;
 
     case "agent:done":
+      emitPacket({ type: "stop" });
       cbs.onComplete?.(accumulatedContentRef.current);
       cbs.onDone?.();
       break;

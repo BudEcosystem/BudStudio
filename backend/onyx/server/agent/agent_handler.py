@@ -137,7 +137,7 @@ class AgentHandler:
         from onyx.db.models import User as UserModel
 
         stmt = select(UserModel).where(UserModel.id == user_id)
-        return db_session.execute(stmt).scalar_one_or_none()
+        return db_session.execute(stmt).unique().scalar_one_or_none()
 
     def _load_always_allowed_tools(
         self, db_session: Session, user_id: UUID | None
@@ -908,19 +908,23 @@ class AgentHandler:
                 "ind": step_number,
             })
 
-        # Persist assistant message
-        if full_response_text:
-            persist_content = (
-                processed_response_text
-                if processed_response_text
-                else full_response_text
-            )
+        # Final drain of packet queue (tools may have emitted packets
+        # Persist assistant message.
+        # Always persist when there's text, thinking, or tool calls so that
+        # build_message_history can reconstruct reasoning blocks for
+        # providers that require reasoning_content on every assistant turn.
+        persist_content = (
+            processed_response_text
+            if processed_response_text
+            else full_response_text
+        ) or None
+        if persist_content or thinking_content or pending_tool_calls:
             with self._get_db_session() as db_session:
                 add_session_message(
                     db_session=db_session,
                     session_id=session_id,
                     role=AgentMessageRole.ASSISTANT,
-                    content=persist_content,
+                    content=persist_content or "",
                     step_number=step_number,
                     thinking_content=thinking_content or None,
                 )
@@ -947,22 +951,40 @@ class AgentHandler:
             else:
                 remote_calls.append(tc)
 
-        # Execute all remote tools first (inline, server-side)
+        # Remote tools were already executed by the SDK's on_invoke_tool
+        # callbacks during Runner.run_streamed(). Those callbacks persist
+        # the TOOL message (with output) to the DB. We only need to emit
+        # UI events here — do NOT create duplicate TOOL rows.
+        #
+        # Pre-load tool results from DB once (reversed = newest first).
+        # Use a consumed-index set so duplicate tool names each get
+        # their own result row.
         step_number += 1
+
+        db_tool_rows: list[Any] = []
+        if remote_calls:
+            try:
+                with self._get_db_session() as db_session:
+                    from onyx.db.agent import get_session_messages
+                    all_msgs = get_session_messages(
+                        db_session=db_session,
+                        session_id=session_id,
+                    )
+                    db_tool_rows = [
+                        m for m in reversed(all_msgs)
+                        if m.role == AgentMessageRole.TOOL
+                    ]
+            except Exception:
+                logger.debug(
+                    "Could not load tool results for session %s",
+                    session_id,
+                )
+
+        consumed: set[int] = set()
+
         for tc in remote_calls:
             tc_name = tc["name"]
-            tc_input = tc["input"]
             tc_id = tc["id"]
-
-            with self._get_db_session() as db_session:
-                add_tool_message(
-                    db_session=db_session,
-                    session_id=session_id,
-                    tool_name=tc_name,
-                    tool_input=tc_input,
-                    tool_call_id=tc_id,
-                    step_number=step_number,
-                )
 
             await self._emit("tool:start", {
                 "session_id": session_id_str,
@@ -971,24 +993,27 @@ class AgentHandler:
                 "tool_call_id": tc_id,
             })
 
-            # Remote tools are executed by the agent's on_invoke_tool
-            # callbacks during the Runner.run_streamed() call.  The
-            # result is already in the streamed output as a
-            # function_call_output.  We persist it from the stream.
-            # For the Socket.IO path, remote tools were already executed
-            # during the stream (the Agent has stop_on_first_tool but
-            # remote tool handlers are wired via on_invoke_tool).
-            # We need to emit tool:delta for the UI.
-            # Since the tool was executed during the stream, the result
-            # is embedded in the stream output.  We emit a
-            # placeholder delta here.
+            # Find the most recent unconsumed DB row for this tool_name
+            tool_data: Any = None
+            openui_resp: str | None = None
+            for idx, tm in enumerate(db_tool_rows):
+                if idx in consumed:
+                    continue
+                if tm.tool_name == tc_name:
+                    tool_data = tm.tool_output
+                    if isinstance(tool_data, dict):
+                        openui_resp = tool_data.get("openui_lang")
+                    consumed.add(idx)
+                    break
+
             await self._emit("tool:delta", {
                 "session_id": session_id_str,
                 "ind": step_number,
                 "tool_name": tc_name,
                 "tool_call_id": tc_id,
                 "response_type": "success",
-                "data": None,
+                "data": tool_data,
+                **({"openui_response": openui_resp} if openui_resp else {}),
             })
 
             step_number += 1

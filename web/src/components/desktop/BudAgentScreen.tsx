@@ -291,6 +291,7 @@ export function BudAgentScreen() {
     sidebarSourcesMsgId, setSidebarSourcesMsgId,
     bottomApproval, setBottomApproval,
     accumulatedContentRef,
+    thinkingContentRef,
     toolCallsRef,
     packetsRef,
     messageFinalizedRef,
@@ -514,6 +515,14 @@ export function BudAgentScreen() {
 
         onThinking: () => {
           updateAgentMsg({ status: "thinking" });
+        },
+
+        onThinkingDelta: (content) => {
+          thinkingContentRef.current += content;
+          updateAgentMsg({
+            status: "thinking",
+            thinkingContent: thinkingContentRef.current,
+          });
         },
 
         onText: (content) => {

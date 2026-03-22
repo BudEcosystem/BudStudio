@@ -48,8 +48,11 @@ else:
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins=_cors_origins,
-    ping_interval=25,
-    ping_timeout=20,
+    # Generous timeouts to accommodate long-running tool executions
+    # (web_search retries, open_url scraping, etc.) that can block
+    # the async event loop for 30-60+ seconds.
+    ping_interval=120,
+    ping_timeout=60,
     logger=False,
     engineio_logger=False,
 )

@@ -630,15 +630,25 @@ def get_application(
 
     # Wrap the FastAPI app with Socket.IO so that both REST/SSE endpoints
     # and the Socket.IO WebSocket endpoint are served from the same process.
-    # Requests to ``/ws/agent/`` are routed to the Socket.IO server; all
-    # other requests fall through to the FastAPI app unchanged.
+    # Requests to ``/ws/agent/`` (or ``/api/ws/agent/`` when behind an
+    # ingress that keeps the /api prefix) are routed to the Socket.IO
+    # server; all other requests fall through to the FastAPI app unchanged.
     combined_app = socketio_lib.ASGIApp(
         agent_sio,
         other_asgi_app=application,
         socketio_path="/ws/agent",
     )
 
-    return combined_app
+    # Also mount on /api/ws/agent so cloud deployments where the ingress
+    # routes /api/* to the backend can reach the Socket.IO endpoint
+    # without an extra ingress rule.
+    combined_app_with_api_prefix = socketio_lib.ASGIApp(
+        agent_sio,
+        other_asgi_app=combined_app,
+        socketio_path="/api/ws/agent",
+    )
+
+    return combined_app_with_api_prefix
 
 
 # NOTE: needs to be outside of the `if __name__ == "__main__"` block so that the
