@@ -418,11 +418,10 @@ class DefaultMultiLLM(LLM):
                 # streaming choice
                 stream=stream,
                 # model params
-                temperature=(
-                    1
-                    if self.config.model_name in ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
-                    else self._temperature
-                ),
+                # Omit temperature entirely — let the provider use its
+                # default.  Some models (e.g. kimi-k25) reject any value
+                # other than their fixed default and return 400.
+                # temperature=self._temperature,
                 timeout=timeout_override or self._timeout,
                 # For now, we don't support parallel tool calls
                 # NOTE: we can't pass this in if tools are not specified

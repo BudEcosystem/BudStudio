@@ -863,41 +863,41 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "render_artifact": {
         "name": "render_artifact",
         "description": (
-            "Render structured content as a rich visual artifact panel. "
+            "Render content as a rich visual artifact panel beside the chat. "
             "Use this INSTEAD of writing tables, charts, emails, code blocks, "
-            "or structured reports as plain markdown text. The artifact will "
-            "appear as an interactive UI component beside the chat.\n\n"
-            "Supported types and their data schemas:\n"
-            "- chart: {data: [{key: value, ...}], xKey: str, yKey: str, "
-            "type?: 'bar'|'line'|'pie', title?: str}\n"
-            "- table: {columns: [{key: str, label: str, type?: 'string'|'number'}], "
-            "rows: [{key: value, ...}], title?: str}\n"
-            "- email: {to: [str], cc?: [str], subject: str, body: str}\n"
-            "- code: {code: str, language: str, filename?: str}\n"
-            "- report: {title: str, summary: str, "
-            "sections: [{heading: str, body: str}]}"
+            "reports, step-by-step guides, comparisons, or any structured "
+            "content as plain markdown text.\n\n"
+            "Provide the full content you want rendered in the 'content' "
+            "field (markdown, text, data, email body, code, etc.) and a "
+            "'type' hint for the visual style.\n\n"
+            "Common types: chart, table, email, code, report, steps, "
+            "comparison, form — but any descriptive type is accepted."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "type": {
                     "type": "string",
-                    "enum": ["chart", "table", "email", "code", "report"],
-                    "description": "The type of artifact to render.",
+                    "description": (
+                        "Visual style hint for the artifact "
+                        "(e.g. chart, table, email, code, report, "
+                        "steps, comparison, form)."
+                    ),
                 },
                 "title": {
                     "type": "string",
                     "description": "Display title for the artifact panel.",
                 },
-                "data": {
-                    "type": "object",
+                "content": {
+                    "type": "string",
                     "description": (
-                        "Structured data for the artifact. "
-                        "Schema depends on the type field."
+                        "The full content to render — markdown, text, "
+                        "code, email body, data rows, etc. Include all "
+                        "the actual data and text you want displayed."
                     ),
                 },
             },
-            "required": ["type", "title", "data"],
+            "required": ["type", "title", "content"],
         },
     },
 }
