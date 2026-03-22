@@ -6,6 +6,7 @@ Tool names are case-sensitive. Call tools exactly as listed.
 - write_file: Create or overwrite files on the user's local filesystem
 - edit_file: Make precise edits to files on the user's local filesystem
 - bash: Run shell commands in the workspace
+- cli_agent: Spawn an autonomous CLI sub-agent for long-running tasks. Returns immediately with a session ID; the agent runs in the background and automatically resumes when complete.
 - glob: Find files by glob pattern
 - grep: Search file contents for regex patterns
 - memory_store: Store important facts for future recall

@@ -154,13 +154,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
         required: false,
       },
       {
-        name: "model",
-        type: "string",
-        description:
-          "Override the model (e.g. 'o3'). If not specified, Codex uses its default.",
-        required: false,
-      },
-      {
         name: "sandbox",
         type: "string",
         description:
