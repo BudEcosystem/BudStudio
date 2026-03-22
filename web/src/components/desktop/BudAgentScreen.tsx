@@ -17,7 +17,7 @@ import { useAgentsContext } from "@/refresh-components/contexts/AgentsContext";
 import { useLlmManager, useFilters } from "@/lib/hooks";
 import { useProjectsContext } from "@/app/chat/projects/ProjectsContext";
 import {
-  useAgentSSE,
+  useAgentSocket,
   createToolCallInfo,
   updateToolCallWithResult,
   updateToolCallApprovalRequired,
@@ -82,6 +82,14 @@ const LOCAL_GATEWAY_ID = "__local__";
 
 /** Local tool names that can require approval. */
 const LOCAL_APPROVAL_TOOLS = new Set(["bash", "write_file", "edit_file"]);
+
+/**
+ * Returns the backend URL from (in priority order):
+ * 1. NEXT_PUBLIC_BUD_BACKEND_URL environment variable
+ * 2. Default fallback "http://127.0.0.1:8080"
+ */
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BUD_BACKEND_URL?.trim() || "http://127.0.0.1:8080";
 
 /**
  * Default fallback workspace path used when no configuration is provided.
@@ -268,7 +276,7 @@ function AgentArtifactCard({
 
 /**
  * BudAgent Screen - Autonomous agent chat interface
- * Uses SSE streaming from the local agent API for real-time updates
+ * Uses Socket.IO streaming via the LocalGateway for real-time updates
  */
 export function BudAgentScreen() {
   const { resolvedTheme } = useTheme();
@@ -327,8 +335,11 @@ export function BudAgentScreen() {
     isOperationAllowed,
   } = useAgentSession();
 
-  // SSE streaming hook
-  const { execute, abort } = useAgentSSE();
+  // Socket.IO streaming hook
+  // TODO: Replace empty authToken with actual JWT/session token once auth
+  // is wired through the Socket.IO gateway. The gateway currently also
+  // supports cookie-based auth from the browser, so this may work as-is.
+  const { execute, abort, stop, approve } = useAgentSocket(BACKEND_URL, "");
 
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
@@ -432,7 +443,7 @@ export function BudAgentScreen() {
 
   const handleSubmit = useCallback(async (overrideMessage?: string) => {
     const effectiveMessage = overrideMessage ?? message;
-    if (!effectiveMessage.trim() || isProcessing) return;
+    if (!effectiveMessage.trim()) return;
 
     // The active session is auto-loaded by the context on mount.
     // If for some reason it's not available yet, bail out.
@@ -440,6 +451,18 @@ export function BudAgentScreen() {
     if (!sessionId) {
       console.error("No active session available");
       return;
+    }
+
+    // If the agent is currently processing, stop it first before sending
+    // the new message (user interruption / stop-then-execute pattern).
+    if (isProcessing) {
+      stop(sessionId);
+      // Reset streaming state so the new message starts fresh.
+      // The onStopped / onDone callback from the stop will also fire,
+      // but we proactively reset here so there's no visual delay.
+      setIsProcessing(false);
+      setChatState("input");
+      resetStreamingRefs();
     }
 
     const userMessage = effectiveMessage.trim();
@@ -475,7 +498,7 @@ export function BudAgentScreen() {
       updateMessage(activeSessionId, activeMessageId, updates);
     };
 
-    // Execute the agent via SSE
+    // Execute the agent via Socket.IO
     execute(
       {
         sessionId: activeSessionId,
@@ -661,8 +684,18 @@ export function BudAgentScreen() {
         },
 
         onSessionCompacted: (newSessionId) => {
-          // Seamlessly switch to the new compacted session
+          // Seamlessly switch to the new compacted session (task 4.7)
           switchToSession(newSessionId);
+        },
+
+        onSessionUpdated: (_sessionId, source, _messageCount) => {
+          // TODO: Refresh message history from the REST API when the
+          // session is updated externally (e.g. cron result injection,
+          // inbox escalation). For now, log the event so we can verify
+          // the Socket.IO event is received correctly.
+          console.log(
+            `[BudAgentScreen] Session updated externally (source=${source})`
+          );
         },
 
         onDone: () => {
@@ -687,6 +720,7 @@ export function BudAgentScreen() {
     addMessage,
     updateMessage,
     execute,
+    stop,
     sessionPreferences,
     isToolAlwaysAllowed,
     setAlwaysAllowMemoryUpdates,
@@ -695,18 +729,15 @@ export function BudAgentScreen() {
   ]);
 
   const stopProcessing = useCallback(() => {
-    abort();
-    // Also signal the backend to stop the agent loop
+    // Signal the backend to stop the agent loop via Socket.IO
     if (currentSessionId) {
-      fetch(`/api/agent/sessions/${currentSessionId}/stop`, {
-        method: "POST",
-      }).catch((err) => console.error("Failed to stop agent:", err));
+      stop(currentSessionId);
     }
 
     // Explicitly reset state to ensure chat is ready for new input
     setIsProcessing(false);
     setChatState("input");
-  }, [abort, currentSessionId]);
+  }, [stop, currentSessionId]);
 
   /**
    * Handle tool approval - send approval to the backend and continue execution.
@@ -753,29 +784,13 @@ export function BudAgentScreen() {
         }
       }
 
-      try {
-        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tool_call_id: toolCallId,
-            approved: true,
-          }),
-        });
-
-        if (!response.ok) {
-          console.error("Failed to approve tool:", await response.text());
-        }
-      } catch (error) {
-        console.error("Error approving tool:", error);
-      }
+      // Send approval via Socket.IO
+      approve(currentSessionId, toolCallId, true);
 
       // Clear bottom approval UI
       setBottomApproval(null);
     },
-    [currentSessionId, setAlwaysAllowOperation, bottomApproval, setAlwaysAllowTool]
+    [currentSessionId, setAlwaysAllowOperation, bottomApproval, setAlwaysAllowTool, approve]
   );
 
   /**
@@ -790,28 +805,12 @@ export function BudAgentScreen() {
         setAlwaysAllowMemoryUpdates(true);
       }
 
-      try {
-        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tool_call_id: toolCallId,
-            approved: true,
-          }),
-        });
-
-        if (!response.ok) {
-          console.error("Failed to approve memory update:", await response.text());
-        }
-      } catch (error) {
-        console.error("Error approving memory update:", error);
-      }
+      // Send approval via Socket.IO
+      approve(currentSessionId, toolCallId, true);
 
       setPendingMemoryUpdate(null);
     },
-    [currentSessionId, setAlwaysAllowMemoryUpdates]
+    [currentSessionId, setAlwaysAllowMemoryUpdates, approve]
   );
 
   /**
@@ -821,38 +820,22 @@ export function BudAgentScreen() {
     async (toolCallId: string) => {
       if (!currentSessionId) return;
 
-      try {
-        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tool_call_id: toolCallId,
-            approved: false,
-          }),
-        });
+      // Send denial via Socket.IO
+      approve(currentSessionId, toolCallId, false);
 
-        if (!response.ok) {
-          console.error("Failed to deny memory update:", await response.text());
-        }
-
-        // Update the tool call status to show it was denied
-        toolCallsRef.current = toolCallsRef.current.map((tc) =>
-          tc.id === toolCallId
-            ? { ...tc, status: "error" as const, error: "Memory update denied by user" }
-            : tc
-        );
-        updateCurrentAgentMessage({
-          toolCalls: toolCallsRef.current,
-        });
-      } catch (error) {
-        console.error("Error denying memory update:", error);
-      }
+      // Update the tool call status to show it was denied
+      toolCallsRef.current = toolCallsRef.current.map((tc) =>
+        tc.id === toolCallId
+          ? { ...tc, status: "error" as const, error: "Memory update denied by user" }
+          : tc
+      );
+      updateCurrentAgentMessage({
+        toolCalls: toolCallsRef.current,
+      });
 
       setPendingMemoryUpdate(null);
     },
-    [currentSessionId, updateCurrentAgentMessage]
+    [currentSessionId, updateCurrentAgentMessage, approve]
   );
 
   /**
@@ -869,39 +852,23 @@ export function BudAgentScreen() {
     async (toolCallId: string) => {
       if (!currentSessionId) return;
 
-      try {
-        const response = await fetch(`/api/agent/sessions/${currentSessionId}/approval`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tool_call_id: toolCallId,
-            approved: false,
-          }),
-        });
+      // Send denial via Socket.IO
+      approve(currentSessionId, toolCallId, false);
 
-        if (!response.ok) {
-          console.error("Failed to deny tool:", await response.text());
-        }
-
-        // Update the tool call status to show it was denied
-        toolCallsRef.current = toolCallsRef.current.map((tc) =>
-          tc.id === toolCallId
-            ? { ...tc, status: "error" as const, error: "Tool execution denied by user" }
-            : tc
-        );
-        updateCurrentAgentMessage({
-          toolCalls: toolCallsRef.current,
-        });
-      } catch (error) {
-        console.error("Error denying tool:", error);
-      }
+      // Update the tool call status to show it was denied
+      toolCallsRef.current = toolCallsRef.current.map((tc) =>
+        tc.id === toolCallId
+          ? { ...tc, status: "error" as const, error: "Tool execution denied by user" }
+          : tc
+      );
+      updateCurrentAgentMessage({
+        toolCalls: toolCallsRef.current,
+      });
 
       // Clear bottom approval UI
       setBottomApproval(null);
     },
-    [currentSessionId, updateCurrentAgentMessage]
+    [currentSessionId, updateCurrentAgentMessage, approve]
   );
 
   const handleArtifactClose = useCallback(() => {
@@ -931,11 +898,8 @@ export function BudAgentScreen() {
   const handleNewChat = useCallback(async () => {
     // Stop any running agent first
     if (isProcessing) {
-      abort();
       if (currentSessionId) {
-        fetch(`/api/agent/sessions/${currentSessionId}/stop`, {
-          method: "POST",
-        }).catch(() => {});
+        stop(currentSessionId);
       }
     }
 
@@ -970,7 +934,7 @@ export function BudAgentScreen() {
     // If session creation failed, the user will see the welcome screen.
     // The next handleSubmit call will log "No active session available"
     // and the user can retry or reload.
-  }, [isProcessing, abort, currentSessionId, deleteSession, clearCurrentSession, resetAll, createSession]);
+  }, [isProcessing, stop, currentSessionId, deleteSession, clearCurrentSession, resetAll, createSession]);
 
   return (
     <div

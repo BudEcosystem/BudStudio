@@ -6,12 +6,14 @@ from uuid import UUID
 
 import redis
 from sqlalchemy import desc
+from sqlalchemy import exists
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from onyx.db.enums import AgentMemorySource
 from onyx.db.enums import AgentMessageRole
+from onyx.db.enums import AgentSessionExecutionStatus
 from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import AgentMemory
 from onyx.db.models import AgentMessage
@@ -413,6 +415,172 @@ def is_session_busy(
     """
     key = f"bud_agent_running:{session_id}"
     return redis_client.exists(key) > 0
+
+
+# --- Session execution status helpers ---
+
+_STOP_FLAG_KEY_PREFIX = "bud_agent_stop"
+_STOP_FLAG_TTL_SECONDS = 300
+
+
+def set_session_execution_status(
+    db_session: Session,
+    session_id: UUID,
+    status: AgentSessionExecutionStatus,
+) -> None:
+    """Update the real-time execution status of an agent session."""
+    stmt = select(AgentSession).where(AgentSession.id == session_id)
+    session = db_session.execute(stmt).scalar_one_or_none()
+    if session is None:
+        raise ValueError(f"Agent session {session_id} not found")
+
+    session.execution_status = status
+    db_session.commit()
+
+
+def get_session_execution_status(
+    db_session: Session,
+    session_id: UUID,
+) -> AgentSessionExecutionStatus:
+    """Get the current execution status of an agent session."""
+    stmt = select(AgentSession.execution_status).where(
+        AgentSession.id == session_id
+    )
+    result = db_session.execute(stmt).scalar_one_or_none()
+    if result is None:
+        raise ValueError(f"Agent session {session_id} not found")
+    return result
+
+
+def set_session_stop_flag(
+    redis_client: redis.Redis,  # type: ignore[type-arg]
+    session_id: UUID,
+) -> None:
+    """Set the stop flag for a session in Redis.
+
+    The stop flag is stored in Redis (not the DB) because it needs to be
+    checked frequently during LLM streaming without DB round-trip overhead.
+    Key format: ``bud_agent_stop:{session_id}``
+    """
+    key = f"{_STOP_FLAG_KEY_PREFIX}:{session_id}"
+    redis_client.set(key, "1", ex=_STOP_FLAG_TTL_SECONDS)
+
+
+def is_session_stopped(
+    redis_client: redis.Redis,  # type: ignore[type-arg]
+    session_id: UUID,
+) -> bool:
+    """Check whether the stop flag is set for a session.
+
+    Returns True if the ``bud_agent_stop:{session_id}`` key exists in Redis.
+    """
+    key = f"{_STOP_FLAG_KEY_PREFIX}:{session_id}"
+    return redis_client.exists(key) > 0
+
+
+def clear_session_stop_flag(
+    redis_client: redis.Redis,  # type: ignore[type-arg]
+    session_id: UUID,
+) -> None:
+    """Remove the stop flag for a session from Redis."""
+    key = f"{_STOP_FLAG_KEY_PREFIX}:{session_id}"
+    redis_client.delete(key)
+
+
+def persist_pending_local_tools(
+    db_session: Session,
+    session_id: UUID,
+    tools: list[dict[str, Any]],
+) -> None:
+    """Store a list of pending local tool calls on the session.
+
+    These represent tool calls the LLM requested in parallel that still
+    need to be dispatched to the client one at a time.
+    """
+    stmt = select(AgentSession).where(AgentSession.id == session_id)
+    session = db_session.execute(stmt).scalar_one_or_none()
+    if session is None:
+        raise ValueError(f"Agent session {session_id} not found")
+
+    session.pending_local_tools = tools
+    db_session.commit()
+
+
+def load_pending_local_tools(
+    db_session: Session,
+    session_id: UUID,
+) -> list[dict[str, Any]]:
+    """Load the list of pending local tool calls for a session.
+
+    Returns an empty list if no pending tools are stored.
+    """
+    stmt = select(AgentSession.pending_local_tools).where(
+        AgentSession.id == session_id
+    )
+    result = db_session.execute(stmt).scalar_one_or_none()
+    if result is None:
+        return []
+    return result
+
+
+def tool_result_exists(
+    db_session: Session,
+    session_id: UUID,
+    tool_call_id: str,
+) -> bool:
+    """Check whether a tool result has already been persisted for a given tool call.
+
+    Used as an idempotency guard so duplicate ``tool:result`` messages
+    from the client are silently ignored.
+    """
+    stmt = exists(
+        select(AgentMessage.id).where(
+            AgentMessage.session_id == session_id,
+            AgentMessage.tool_call_id == tool_call_id,
+            AgentMessage.role == AgentMessageRole.TOOL,
+            AgentMessage.tool_output.isnot(None),
+        )
+    ).select()
+    return db_session.execute(stmt).scalar() or False
+
+
+def get_tool_message(
+    db_session: Session,
+    session_id: UUID,
+    tool_call_id: str,
+) -> AgentMessage | None:
+    """Get a tool message by session_id and tool_call_id.
+
+    Used to look up the tool name and input when an approval arrives so we
+    can emit a ``tool:request`` for the approved tool.
+    """
+    stmt = select(AgentMessage).where(
+        AgentMessage.session_id == session_id,
+        AgentMessage.tool_call_id == tool_call_id,
+        AgentMessage.role == AgentMessageRole.TOOL,
+    )
+    return db_session.execute(stmt).scalar_one_or_none()
+
+
+def get_next_step_number(
+    db_session: Session,
+    session_id: UUID,
+) -> int:
+    """Return the next step number for a session.
+
+    Finds the maximum step_number among existing messages and returns
+    ``max + 1``.  Returns ``0`` if no messages exist yet.
+    """
+    from sqlalchemy import func as sa_func
+
+    result = db_session.execute(
+        select(sa_func.max(AgentMessage.step_number)).where(
+            AgentMessage.session_id == session_id,
+        )
+    ).scalar()
+    if result is None:
+        return 0
+    return result + 1
 
 
 def create_compacted_session(

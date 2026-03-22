@@ -62,6 +62,7 @@ from onyx.db.enums import (
     AgentInboxMessageStatus,
     AgentMemorySource,
     AgentMessageRole,
+    AgentSessionExecutionStatus,
     AgentSessionStatus,
     AgentToolPermissionLevel,
     EmbeddingPrecision,
@@ -3982,6 +3983,16 @@ class AgentSession(Base):
         Enum(AgentSessionStatus, native_enum=False),
         default=AgentSessionStatus.ACTIVE,
         index=True,
+    )
+    # Real-time execution status (what the agent is doing right now)
+    execution_status: Mapped[AgentSessionExecutionStatus] = mapped_column(
+        Enum(AgentSessionExecutionStatus, native_enum=False),
+        default=AgentSessionExecutionStatus.IDLE,
+        server_default="IDLE",
+    )
+    # Queue of pending local tool calls (for parallel tool execution)
+    pending_local_tools: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        postgresql.JSONB(), nullable=True
     )
     # Reference to the LLM model configuration used for this session
     model_config_id: Mapped[int | None] = mapped_column(

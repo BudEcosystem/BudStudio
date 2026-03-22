@@ -756,6 +756,8 @@ def delete_agent_workspace_file(
 # ==============================================================================
 
 
+# DEPRECATED: Replaced by Socket.IO stateless handler (agent_handler.py).
+# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.1.
 @router.post("/sessions/{session_id}/execute")
 def execute_agent(
     session_id: UUID,
@@ -763,7 +765,12 @@ def execute_agent(
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> StreamingResponse:
-    """Execute the agent for a session, streaming results via SSE."""
+    """Execute the agent for a session, streaming results via SSE.
+
+    DEPRECATED: This SSE-based endpoint is replaced by the Socket.IO
+    `agent:execute` event in socketio_server.py / agent_handler.py.
+    Kept for backward compatibility during migration.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -797,6 +804,8 @@ def execute_agent(
     )
 
 
+# DEPRECATED: Replaced by Socket.IO `tool:result` event handler (socketio_server.py).
+# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.3.
 @router.post("/sessions/{session_id}/tool-result")
 def submit_tool_result(
     session_id: UUID,
@@ -804,7 +813,11 @@ def submit_tool_result(
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> StatusResponse:
-    """Submit a tool execution result from the desktop."""
+    """Submit a tool execution result from the desktop.
+
+    DEPRECATED: This HTTP endpoint is replaced by the Socket.IO `tool:result`
+    event in socketio_server.py. Kept for backward compatibility during migration.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -835,6 +848,8 @@ def submit_tool_result(
     return StatusResponse(status="submitted")
 
 
+# DEPRECATED: Replaced by Socket.IO `tool:approval` event handler (socketio_server.py).
+# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.3.
 @router.post("/sessions/{session_id}/approval")
 def submit_approval(
     session_id: UUID,
@@ -842,7 +857,11 @@ def submit_approval(
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> StatusResponse:
-    """Submit a tool approval decision from the user."""
+    """Submit a tool approval decision from the user.
+
+    DEPRECATED: This HTTP endpoint is replaced by the Socket.IO `tool:approval`
+    event in socketio_server.py. Kept for backward compatibility during migration.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
