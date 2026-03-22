@@ -192,7 +192,7 @@ def _parse_openui_response(text: str) -> str | None:
 
     openui_lang = "\n".join(openui_lines).strip()
 
-    if not openui_lang or "root =" not in openui_lang:
+    if not openui_lang or not openui_lang.startswith("root ="):
         return None
 
     return openui_lang
