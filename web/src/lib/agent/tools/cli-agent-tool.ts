@@ -213,6 +213,9 @@ export class CliAgentTool implements Tool {
   ): string {
     let command = "codex exec";
 
+    // Skip git repo check since we might be in temp directories
+    command += " --skip-git-repo-check";
+
     // Add sandbox flag (validate it's a known value)
     const sandboxLevel = sandbox || "workspace-write";
     const validSandboxLevels = ["read-only", "workspace-write", "danger-full-access"];
