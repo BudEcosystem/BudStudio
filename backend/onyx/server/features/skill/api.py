@@ -32,7 +32,7 @@ router = APIRouter(prefix="/skill")
 @router.get("")
 def list_skills(
     db_session: Session = Depends(get_session),
-    _: User | None = Depends(current_user),
+    user: User | None = Depends(current_user),
 ) -> list[SkillSnapshot]:
     # Start with built-in .md skills
     builtin_defs = load_builtin_skills()
@@ -51,8 +51,10 @@ def list_skills(
             user_id=None,
         )
 
-    # Overlay DB skills (override built-in by slug)
-    db_skills = get_skills(db_session, only_enabled=False)
+    # Overlay DB skills (override built-in by slug), filtered to this user
+    db_skills = get_skills(
+        db_session, only_enabled=False, user_id=user.id if user else None
+    )
     for s in db_skills:
         merged[s.slug] = SkillSnapshot.from_model(s)
 

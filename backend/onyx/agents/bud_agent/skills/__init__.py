@@ -151,6 +151,7 @@ def get_active_skills(
     db_session: Session | None,
     available_tools: set[str],
     mode: str,
+    user_id: "UUID | None" = None,
 ) -> list[SkillDefinition]:
     """Return the list of skills that should be available in the current context.
 
@@ -170,7 +171,7 @@ def get_active_skills(
         try:
             from onyx.db.skills import get_skills
 
-            db_skills = get_skills(db_session, only_enabled=False)
+            db_skills = get_skills(db_session, only_enabled=False, user_id=user_id)
             for db_skill in db_skills:
                 merged[db_skill.slug] = SkillDefinition(
                     slug=db_skill.slug,

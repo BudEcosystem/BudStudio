@@ -241,6 +241,7 @@ async def run_post_conversation_pipeline(
             action=proposal.action,
             target_skill_slug=proposal.target_skill,
             tenant_id=tenant_id,
+            user_id=user_id,
         )
 
         if skill_id is None:
@@ -688,6 +689,7 @@ def _auto_promote_skill(
     action: str,
     target_skill_slug: str | None,
     tenant_id: str,
+    user_id: str | None = None,
 ) -> int | None:
     """Create or update a skill in PostgreSQL.
 
@@ -721,6 +723,7 @@ def _auto_promote_skill(
                     )
                     return updated.id
 
+                from uuid import UUID as _UUID
                 skill = create_skill__no_commit(
                     slug=result.slug,
                     name=result.name,
@@ -728,6 +731,7 @@ def _auto_promote_skill(
                     instructions=result.instructions,
                     db_session=db_session,
                     enabled=True,
+                    user_id=_UUID(user_id) if user_id else None,
                 )
                 db_session.commit()
                 logger.info(

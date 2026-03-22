@@ -8,6 +8,7 @@ its existing tools.
 
 import json
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,7 @@ def create_skill_tools(
     available_tools: set[str],
     mode: str,
     user_message: str | None = None,
+    user_id: UUID | None = None,
 ) -> tuple[list[Any], str]:
     """Create the ``use_skill`` FunctionTool and return the skill catalog text.
 
@@ -43,7 +45,7 @@ def create_skill_tools(
     """
     from agents import FunctionTool, RunContextWrapper
 
-    active_skills = get_active_skills(db_session, available_tools, mode)
+    active_skills = get_active_skills(db_session, available_tools, mode, user_id=user_id)
 
     if not active_skills:
         return [], ""
