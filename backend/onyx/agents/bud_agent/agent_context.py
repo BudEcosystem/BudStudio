@@ -286,6 +286,7 @@ def build_agent_run_context(
         available_tools=available_tool_names,
         mode=mode.value,
         user_message=user_message,
+        user_id=user.id,
     )
     all_tools.extend(skill_tools)
 

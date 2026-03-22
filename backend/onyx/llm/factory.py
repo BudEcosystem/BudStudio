@@ -515,15 +515,10 @@ def get_llm_model_and_settings_for_persona(
     if not llm_provider:
         raise ValueError("No LLM provider found")
 
-    # Resolve "auto" model for Bud Foundry provider
+    # For Bud Foundry: always check user-preferred model first, then fall
+    # back to provider default or auto-resolution.
     is_bud_foundry = llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME
-    if is_bud_foundry and model == "auto":
-        if not user:
-            raise ValueError(
-                "OAuth authentication required for Bud Foundry. "
-                "Please log in with your SSO account."
-            )
-
+    if is_bud_foundry and user:
         user_preferred_model = _get_user_preferred_model(user)
         if user_preferred_model:
             logger.info(
@@ -532,7 +527,7 @@ def get_llm_model_and_settings_for_persona(
                 user.id,
             )
             model = user_preferred_model
-        else:
+        elif model == "auto":
             resolved_model = _resolve_bud_foundry_model(user=user)
             if not resolved_model:
                 raise ValueError(
@@ -540,6 +535,11 @@ def get_llm_model_and_settings_for_persona(
                     "Please check your permissions with your administrator."
                 )
             model = resolved_model
+    elif is_bud_foundry and model == "auto":
+        raise ValueError(
+            "OAuth authentication required for Bud Foundry. "
+            "Please log in with your SSO account."
+        )
 
     # For Bud Foundry, use OAuth token as api_key
     api_key = llm_provider.api_key
@@ -724,13 +724,10 @@ def get_default_llms(
     if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user:
         user_oauth_token = get_fresh_oauth_token(user)
 
-    # Resolve "auto" model for Bud Foundry provider
-    if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and model_name == "auto":
-        if not user:
-            raise ValueError(
-                "OAuth authentication required for Bud Foundry. Please log in with your SSO account."
-            )
-
+    # For Bud Foundry: always check user-preferred model first, then fall
+    # back to provider default or auto-resolution.  The user's choice is
+    # more specific and should override the provider-level default.
+    if llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and user:
         user_preferred_model = _get_user_preferred_model(user)
         if user_preferred_model:
             logger.info(
@@ -740,7 +737,7 @@ def get_default_llms(
             )
             model_name = user_preferred_model
             fast_model_name = user_preferred_model
-        else:
+        elif model_name == "auto":
             resolved_model = _resolve_bud_foundry_model(
                 user=user,
             )
@@ -750,7 +747,11 @@ def get_default_llms(
                     "Please check your permissions with your administrator."
                 )
             model_name = resolved_model
-            fast_model_name = resolved_model  # Use same model for fast operations
+            fast_model_name = resolved_model
+    elif llm_provider.name == BUD_FOUNDRY_PROVIDER_DISPLAY_NAME and model_name == "auto":
+        raise ValueError(
+            "OAuth authentication required for Bud Foundry. Please log in with your SSO account."
+        )
 
     if not model_name:
         raise ValueError("No default model name found")

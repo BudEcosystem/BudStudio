@@ -11,11 +11,20 @@ from onyx.db.models import Skill
 def get_skills(
     db_session: Session,
     only_enabled: bool = True,
+    user_id: UUID | None = None,
 ) -> list[Skill]:
-    """Return all skills, optionally filtering to enabled-only."""
+    """Return skills, optionally filtering to enabled-only.
+
+    When *user_id* is provided, only skills owned by that user (or with
+    no owner, i.e. built-in / shared) are returned.
+    """
     stmt = select(Skill)
     if only_enabled:
         stmt = stmt.where(Skill.enabled.is_(True))
+    if user_id is not None:
+        stmt = stmt.where(
+            (Skill.user_id == user_id) | (Skill.user_id.is_(None))
+        )
     stmt = stmt.order_by(Skill.slug)
     return list(db_session.scalars(stmt).all())
 
