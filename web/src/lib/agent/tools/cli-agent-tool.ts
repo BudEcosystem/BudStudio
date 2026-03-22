@@ -1,7 +1,7 @@
 /**
  * CLI Agent tool for BudAgent.
  *
- * Provides the ability to spawn a Codex agent (Claude Code) in various sandbox modes
+ * Provides the ability to spawn a Codex agent in various sandbox modes
  * for autonomous code analysis and modification tasks within a workspace.
  *
  * Supports:
@@ -34,7 +34,7 @@ export class CliAgentTool implements Tool {
 
   /** Human-readable description */
   description =
-    "Spawn a Codex agent (Claude Code) to autonomously analyze and modify code. " +
+    "Spawn a Codex agent to autonomously analyze and modify code. " +
     "Supports multiple sandbox levels for security control. " +
     "Returns a session ID for tracking progress via the process tool.";
 
@@ -44,21 +44,14 @@ export class CliAgentTool implements Tool {
       name: "prompt",
       type: "string",
       description:
-        "The task prompt for the Codex agent. Should clearly describe what analysis or modifications are needed.",
+        "The task prompt for the agent. Should clearly describe what analysis or modifications are needed.",
       required: true,
     },
     {
       name: "working_directory",
       type: "string",
       description:
-        "The working directory for the Codex agent. Must exist. Defaults to workspace root.",
-      required: false,
-    },
-    {
-      name: "model",
-      type: "string",
-      description:
-        "The LLM model to use for the Codex agent (e.g., 'claude-opus', 'claude-sonnet'). Optional.",
+        "The working directory for the agent. Must exist. Defaults to workspace root.",
       required: false,
     },
     {
@@ -117,7 +110,6 @@ export class CliAgentTool implements Tool {
   async execute(params: Record<string, unknown>): Promise<string> {
     const prompt = params.prompt as string | undefined;
     const workingDirectory = params.working_directory as string | undefined;
-    const model = params.model as string | undefined;
     const sandbox = params.sandbox as SandboxLevel | undefined;
     const skipGitCheck = params.skip_git_check as boolean | undefined;
     const ephemeral = params.ephemeral as boolean | undefined;
@@ -152,12 +144,7 @@ export class CliAgentTool implements Tool {
     }
 
     // Build the Codex command
-    const command = this.buildCodexCommand(
-      prompt,
-      model,
-      sandbox,
-      ephemeral
-    );
+    const command = this.buildCodexCommand(prompt, sandbox, ephemeral);
 
     // Spawn the process
     const registry = ProcessRegistry.getInstance();
@@ -176,7 +163,7 @@ export class CliAgentTool implements Tool {
 
     const sandboxLevel = sandbox || "workspace-write";
     return (
-      `Codex agent started in session ${sessionId}\n` +
+      `CLI agent started in session ${sessionId}\n` +
       `Working directory: ${cwd}\n` +
       `Sandbox level: ${sandboxLevel}\n` +
       `Status: Running in background — I will automatically follow up when complete.\n` +
@@ -188,24 +175,16 @@ export class CliAgentTool implements Tool {
    * Builds the Codex command with proper escaping and flags.
    *
    * @param prompt - The task prompt
-   * @param model - Optional model override
    * @param sandbox - Sandbox level
    * @param ephemeral - Whether session is ephemeral
    * @returns The complete command string
    */
   private buildCodexCommand(
     prompt: string,
-    model: string | undefined,
     sandbox: SandboxLevel | undefined,
     ephemeral: boolean | undefined
   ): string {
-    let command = "claude code";
-
-    // Add model flag if specified (with proper shell escaping)
-    if (model) {
-      const escapedModel = this.escapeShellArg(model);
-      command += ` --model ${escapedModel}`;
-    }
+    let command = "codex";
 
     // Add sandbox flag (validate it's a known value)
     const sandboxLevel = sandbox || "workspace-write";
