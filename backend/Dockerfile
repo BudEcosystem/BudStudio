@@ -27,6 +27,7 @@ RUN apt-get update && \
     apt-get install -y \
         cmake \
         curl \
+        git \
         zip \
         ca-certificates \
         libgnutls30 \
