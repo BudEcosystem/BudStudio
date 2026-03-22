@@ -13,6 +13,7 @@ import functools
 from dataclasses import dataclass
 from dataclasses import field
 from importlib import resources
+from uuid import UUID
 from typing import Any
 
 import yaml
@@ -151,7 +152,7 @@ def get_active_skills(
     db_session: Session | None,
     available_tools: set[str],
     mode: str,
-    user_id: "UUID | None" = None,
+    user_id: UUID | None = None,
 ) -> list[SkillDefinition]:
     """Return the list of skills that should be available in the current context.
 

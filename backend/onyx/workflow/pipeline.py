@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 from uuid import uuid4
 
 from onyx.utils.logger import setup_logger
@@ -723,7 +724,6 @@ def _auto_promote_skill(
                     )
                     return updated.id
 
-                from uuid import UUID as _UUID
                 skill = create_skill__no_commit(
                     slug=result.slug,
                     name=result.name,
@@ -731,7 +731,7 @@ def _auto_promote_skill(
                     instructions=result.instructions,
                     db_session=db_session,
                     enabled=True,
-                    user_id=_UUID(user_id) if user_id else None,
+                    user_id=UUID(user_id) if user_id else None,
                 )
                 db_session.commit()
                 logger.info(
