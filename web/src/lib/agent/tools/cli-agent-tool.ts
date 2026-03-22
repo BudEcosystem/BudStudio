@@ -184,7 +184,7 @@ export class CliAgentTool implements Tool {
     sandbox: SandboxLevel | undefined,
     ephemeral: boolean | undefined
   ): string {
-    let command = "codex";
+    let command = "codex exec";
 
     // Add sandbox flag (validate it's a known value)
     const sandboxLevel = sandbox || "workspace-write";
@@ -193,12 +193,7 @@ export class CliAgentTool implements Tool {
       throw new Error(`Invalid sandbox level: ${sandboxLevel}`);
     }
     const escapedSandbox = this.escapeShellArg(sandboxLevel);
-    command += ` --sandbox ${escapedSandbox}`;
-
-    // Add ephemeral flag if explicitly set
-    if (ephemeral === true) {
-      command += " --ephemeral";
-    }
+    command += ` -s ${escapedSandbox}`;
 
     // Add prompt (with proper shell escaping)
     const escapedPrompt = this.escapeShellArg(prompt);
