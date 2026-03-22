@@ -902,55 +902,8 @@ def stream_chat_message_objects(
                             full_response_text += packet.obj.content
                 yield packet
 
-        # Post-response artifact generation — reuse the already-initialized LLM
-        logger.info(
-            f"[ARTIFACT] Post-response check: llm={llm is not None}, "
-            f"response_len={len(full_response_text)}, "
-            f"preview={full_response_text[:100]!r}"
-        )
-        if llm is not None and full_response_text:
-            from onyx.agents.bud_agent.artifact_llm import maybe_generate_artifact
-            from onyx.agents.bud_agent.artifact_llm import should_attempt_artifact
-            from onyx.server.query_and_chat.streaming_models import ArtifactGeneration
-
-            pre_filter = should_attempt_artifact(full_response_text)
-            logger.info(f"[ARTIFACT] Pre-filter result: {pre_filter}")
-
-            try:
-                artifact_result = maybe_generate_artifact(
-                    llm=llm,
-                    response_text=full_response_text,
-                )
-                logger.info(f"[ARTIFACT] maybe_generate_artifact returned: {artifact_result is not None}")
-                if artifact_result is not None:
-                    openui_lang, artifact_title = artifact_result
-                    logger.info(
-                        f"[ARTIFACT] Emitting ArtifactGeneration: title={artifact_title!r}, "
-                        f"openui_lang={openui_lang[:100]!r}"
-                    )
-                    # Persist artifact to DB BEFORE yielding, because
-                    # code after yield may not execute if the client
-                    # disconnects and the generator is garbage-collected.
-                    from onyx.db.chat import update_chat_message_artifact
-
-                    update_chat_message_artifact(
-                        db_session=db_session,
-                        chat_message_id=reserved_message_id,
-                        openui_lang=openui_lang,
-                        title=artifact_title,
-                    )
-                    yield Packet(
-                        ind=0,
-                        obj=ArtifactGeneration(
-                            openui_lang=openui_lang,
-                            title=artifact_title,
-                        ),
-                    )
-            except Exception:
-                logger.warning(
-                    "Artifact generation failed in chat stream, skipping",
-                    exc_info=True,
-                )
+        # Post-response artifact generation removed — artifacts are now
+        # generated inline by the render_artifact tool via LLM call.
 
     except ValueError as e:
         logger.exception("Failed to process chat message.")
