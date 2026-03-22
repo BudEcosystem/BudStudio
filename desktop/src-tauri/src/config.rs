@@ -54,6 +54,8 @@ impl AppConfig {
         let config: AppConfig = serde_json::from_str(&config_str)
             .context("Failed to parse config file")?;
 
+        log::info!("Loaded config - is_configured: {}, needs_setup: {}", config.is_configured, config.needs_setup());
+
         Ok(config)
     }
 
