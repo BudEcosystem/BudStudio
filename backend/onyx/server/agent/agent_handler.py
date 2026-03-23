@@ -387,15 +387,37 @@ class AgentHandler:
                 })
             elif is_connector:
                 # Connector tool already always-allowed — execute server-side
-                # immediately (not via client tool:request).
-                await self._execute_and_continue_connector_tool(
-                    session_id=session_id,
-                    session_id_str=session_id_str,
-                    tool_name=next_tool_name,
-                    tool_input=next_tool_input,
-                    tool_call_id=next_tool_call_id,
-                    step=next_step,
+                # immediately, then feed the result back through
+                # handle_tool_result so remaining pending tools are processed.
+                from onyx.agents.bud_agent.connector_service import (
+                    execute_connector_tool,
                 )
+                user = None
+                if self._user_email:
+                    from onyx.db.users import get_user_by_email
+                    with self._get_db_session() as db_session:
+                        user = get_user_by_email(self._user_email, db_session)
+
+                if user is None:
+                    await self.handle_tool_result({
+                        "session_id": session_id_str,
+                        "tool_call_id": next_tool_call_id,
+                        "error": "Could not resolve user for connector tool execution",
+                    })
+                else:
+                    result, err = await execute_connector_tool(
+                        user=user,
+                        session_id=session_id,
+                        tool_name=next_tool_name,
+                        tool_input=next_tool_input,
+                        tool_call_id=next_tool_call_id,
+                    )
+                    await self.handle_tool_result({
+                        "session_id": session_id_str,
+                        "tool_call_id": next_tool_call_id,
+                        **({"output": result} if result else {}),
+                        **({"error": err} if err else {}),
+                    })
             else:
                 await self._emit("tool:request", {
                     "session_id": session_id_str,
