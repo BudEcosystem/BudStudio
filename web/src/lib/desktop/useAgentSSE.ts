@@ -1,3 +1,12 @@
+/**
+ * DEPRECATED: This SSE-based hook is replaced by useAgentSocket.ts, which uses
+ * Socket.IO for bidirectional communication with the backend agent. The Socket.IO
+ * approach eliminates the need for SSE streaming, the Next.js proxy route, and
+ * HTTP-based tool result submission. Use useAgentSocket.ts for all new code.
+ * Remove after Socket.IO migration is validated.
+ * See plans/agent-websocket-tasks.md Phase 7.5.
+ */
+
 "use client";
 
 import { useRef, useCallback } from "react";

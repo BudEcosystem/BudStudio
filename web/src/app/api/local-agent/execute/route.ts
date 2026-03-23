@@ -1,6 +1,13 @@
 /**
  * Local Agent Execution API Route (Proxy + Local Tool Executor)
  *
+ * DEPRECATED: This entire Next.js SSE proxy route is replaced by the Socket.IO
+ * LocalGateway (web/src/lib/agent/gateway.ts) which connects directly to the
+ * backend Socket.IO server. The gateway handles tool execution via `tool:request`
+ * / `tool:result` events instead of intercepting SSE streams and POSTing results
+ * to HTTP endpoints. Remove after Socket.IO migration is validated.
+ * See plans/agent-websocket-tasks.md Phase 7.4.
+ *
  * This route acts as a bridge between the browser and the backend agent orchestrator.
  * It proxies the backend SSE stream to the browser, translating event types.
  * When the backend requests a local tool execution, this route executes the tool

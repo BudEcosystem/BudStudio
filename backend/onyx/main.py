@@ -8,6 +8,7 @@ from typing import Any
 from typing import cast
 
 import sentry_sdk
+import socketio as socketio_lib
 import uvicorn
 from fastapi import APIRouter
 from fastapi import FastAPI
@@ -91,6 +92,7 @@ from onyx.server.features.tool.api import admin_router as admin_tool_router
 from onyx.server.features.tool.api import router as tool_router
 from onyx.server.features.user_oauth_token.api import router as user_oauth_token_router
 from onyx.server.agent.api import router as agent_router
+from onyx.server.agent.socketio_server import sio as agent_sio
 from onyx.server.agent.connector_api import router as agent_connector_router
 from onyx.server.agent.cron_api import router as agent_cron_router
 from onyx.server.agent.events_api import router as agent_events_router
@@ -380,7 +382,9 @@ def log_http_error(request: Request, exc: Exception) -> JSONResponse:
     )
 
 
-def get_application(lifespan_override: Lifespan | None = None) -> FastAPI:
+def get_application(
+    lifespan_override: Lifespan | None = None,
+) -> socketio_lib.ASGIApp:
     application = FastAPI(
         title="Onyx Backend",
         version=__version__,
@@ -624,7 +628,27 @@ def get_application(lifespan_override: Lifespan | None = None) -> FastAPI:
 
     use_route_function_names_as_operation_ids(application)
 
-    return application
+    # Wrap the FastAPI app with Socket.IO so that both REST/SSE endpoints
+    # and the Socket.IO WebSocket endpoint are served from the same process.
+    # Requests to ``/ws/agent/`` (or ``/api/ws/agent/`` when behind an
+    # ingress that keeps the /api prefix) are routed to the Socket.IO
+    # server; all other requests fall through to the FastAPI app unchanged.
+    combined_app = socketio_lib.ASGIApp(
+        agent_sio,
+        other_asgi_app=application,
+        socketio_path="/ws/agent",
+    )
+
+    # Also mount on /api/ws/agent so cloud deployments where the ingress
+    # routes /api/* to the backend can reach the Socket.IO endpoint
+    # without an extra ingress rule.
+    combined_app_with_api_prefix = socketio_lib.ASGIApp(
+        agent_sio,
+        other_asgi_app=combined_app,
+        socketio_path="/api/ws/agent",
+    )
+
+    return combined_app_with_api_prefix
 
 
 # NOTE: needs to be outside of the `if __name__ == "__main__"` block so that the

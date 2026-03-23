@@ -15,6 +15,13 @@ export interface UserQuestionsPanelProps {
   toolCallId: string;
   sessionId: string;
   onSubmitted: () => void;
+  /** Send tool result via Socket.IO instead of HTTP POST. */
+  onSendToolResult?: (
+    sessionId: string,
+    toolCallId: string,
+    output: string | null,
+    error: string | null
+  ) => void;
 }
 
 /**
@@ -30,6 +37,7 @@ export function UserQuestionsPanel({
   toolCallId,
   sessionId,
   onSubmitted,
+  onSendToolResult,
 }: UserQuestionsPanelProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selections, setSelections] = useState<Record<number, string>>({});
@@ -55,19 +63,26 @@ export function UserQuestionsPanel({
       }));
 
       try {
-        const response = await fetch(`/api/agent/sessions/${sessionId}/tool-result`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tool_call_id: toolCallId,
-            output: JSON.stringify(answers),
-          }),
-        });
+        if (onSendToolResult) {
+          // Socket.IO path
+          onSendToolResult(sessionId, toolCallId, JSON.stringify(answers), null);
+          onSubmitted();
+        } else {
+          // Fallback: HTTP POST (SSE path)
+          const response = await fetch(`/api/agent/sessions/${sessionId}/tool-result`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tool_call_id: toolCallId,
+              output: JSON.stringify(answers),
+            }),
+          });
 
-        if (!response.ok) {
-          throw new Error(`Server responded with ${response.status}`);
+          if (!response.ok) {
+            throw new Error(`Server responded with ${response.status}`);
+          }
+          onSubmitted();
         }
-        onSubmitted();
       } catch (err) {
         console.error("Failed to submit user answers:", err);
         setSubmitting(false);

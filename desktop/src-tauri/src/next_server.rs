@@ -81,6 +81,10 @@ impl NextServer {
 
         // In debug mode, use Next.js dev server for hot reload
         // In release mode, use the standalone build
+        // Gateway relay server port (Next.js port + 1)
+        let gateway_port = self.preferred_port + 1;
+        let gateway_port_str = gateway_port.to_string();
+
         let mut group_child = if cfg!(debug_assertions) {
             // Development mode: run `npm run dev` in the web directory
             let web_dir = std::path::Path::new(&standalone_path)
@@ -101,6 +105,8 @@ impl NextServer {
                 .env("WEB_DOMAIN", &web_domain)
                 .env("OVERRIDE_API_PRODUCTION", "true")
                 .env("BUD_BROWSER_ALLOW_PRIVATE_IPS", "true")
+                .env("GATEWAY_PORT", &gateway_port_str)
+                .env("NEXT_PUBLIC_GATEWAY_PORT", &gateway_port_str)
                 .current_dir(web_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -128,6 +134,8 @@ impl NextServer {
                 .env("WEB_DOMAIN", &web_domain)
                 .env("OVERRIDE_API_PRODUCTION", "true")
                 .env("BUD_BROWSER_ALLOW_PRIVATE_IPS", "true")
+                .env("GATEWAY_PORT", &gateway_port_str)
+                .env("NEXT_PUBLIC_GATEWAY_PORT", &gateway_port_str)
                 .current_dir(&server_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

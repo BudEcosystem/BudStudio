@@ -1,12 +1,12 @@
 export { useIsDesktop, isDesktopApp } from "./hooks";
 export {
-  useAgentSSE,
+  useAgentSocket,
   createToolCallInfo,
   updateToolCallWithResult,
   updateToolCallApprovalRequired,
-  type AgentExecuteParams,
-  type AgentEventCallbacks,
-} from "./useAgentSSE";
+  type AgentSocketParams,
+  type AgentSocketCallbacks,
+} from "./useAgentSocket";
 export {
   useChatInteractionState,
   type PendingMemoryUpdate,
