@@ -66,9 +66,6 @@ interface ProcessSession {
   /** Resolve function for long-poll waiters. */
   pollWaiters: Array<(data: string) => void>;
 
-  /** Callbacks to invoke when process exits. */
-  onExitCallbacks: Array<(output: string, exitCode: number | null) => void>;
-
   /** The underlying handle. */
   childProcess: ChildProcess | null;
   ptyHandle: PtyHandle | null;
@@ -125,7 +122,6 @@ export class ProcessRegistry {
       aggregatedOutput: "",
       pendingOutput: "",
       pollWaiters: [],
-      onExitCallbacks: [],
       childProcess: null,
       ptyHandle: null,
     };
@@ -169,16 +165,6 @@ export class ProcessRegistry {
       session.finishedAt = Date.now();
       // Wake up any poll waiters
       this.flushWaiters(session);
-      // Fire onExit callbacks with error handling
-      for (const cb of session.onExitCallbacks) {
-        try {
-          cb(session.aggregatedOutput, session.exitCode);
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          console.error(`[ProcessRegistry] Error in onExit callback for session ${session.sessionId}:`, errorMessage);
-        }
-      }
-      session.onExitCallbacks = [];
     });
   }
 
@@ -210,16 +196,6 @@ export class ProcessRegistry {
       session.status = "finished";
       session.finishedAt = Date.now();
       this.flushWaiters(session);
-      // Fire onExit callbacks with error handling
-      for (const cb of session.onExitCallbacks) {
-        try {
-          cb(session.aggregatedOutput, session.exitCode);
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          console.error(`[ProcessRegistry] Error in onExit callback for session ${session.sessionId}:`, errorMessage);
-        }
-      }
-      session.onExitCallbacks = [];
     });
 
     proc.on("error", (err: Error) => {
@@ -228,16 +204,6 @@ export class ProcessRegistry {
       session.exitCode = -1;
       session.finishedAt = Date.now();
       this.flushWaiters(session);
-      // Fire onExit callbacks with error handling
-      for (const cb of session.onExitCallbacks) {
-        try {
-          cb(session.aggregatedOutput, session.exitCode);
-        } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          console.error(`[ProcessRegistry] Error in onExit callback for session ${session.sessionId}:`, errorMessage);
-        }
-      }
-      session.onExitCallbacks = [];
     });
   }
 
@@ -401,34 +367,6 @@ export class ProcessRegistry {
         session.childProcess.kill(signal.toUpperCase() as NodeJS.Signals);
       }
     }
-  }
-
-  /**
-   * Register a callback to be invoked when a process session exits.
-   *
-   * If the session has already finished, the callback is called immediately.
-   * Otherwise, the callback is queued and called when the process exits.
-   *
-   * @param sessionId - The session to monitor
-   * @param callback - Function called with (output, exitCode) when process exits
-   */
-  registerOnExit(
-    sessionId: string,
-    callback: (output: string, exitCode: number | null) => void
-  ): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-
-    // If already finished, call callback immediately
-    if (session.status !== "running") {
-      callback(session.aggregatedOutput, session.exitCode);
-      return;
-    }
-
-    // Otherwise queue it for later
-    session.onExitCallbacks.push(callback);
   }
 
   /**
