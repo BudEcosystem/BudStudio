@@ -19,7 +19,7 @@ export async function register() {
         "http://127.0.0.1:8080"
       );
       const authToken = process.env.GATEWAY_AUTH_TOKEN || "";
-      const workspacePath = process.env.GATEWAY_WORKSPACE_PATH || process.cwd();
+      const workspacePath = process.env.GATEWAY_WORKSPACE_PATH || require("os").homedir();
 
       try {
         const { startGatewayServer } = await import(

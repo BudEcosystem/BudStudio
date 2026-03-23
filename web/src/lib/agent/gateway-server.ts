@@ -99,6 +99,20 @@ export async function startGatewayServer(
       gatewayInstance?.approve(data.session_id, data.tool_call_id, data.approved);
     });
 
+    // Forward tool:result from browser to cloud backend.
+    // This handles "pause" tools like ask_user_questions where the
+    // user answers in the WebView and the result needs to reach the backend.
+    socket.on("tool:result", (data: {
+      session_id: string;
+      tool_call_id: string;
+      output: string | null;
+      error: string | null;
+    }) => {
+      if (gatewayInstance?.isConnected()) {
+        gatewayInstance.sendToolResultDirect(data);
+      }
+    });
+
     socket.on("tool:delta", () => { /* no-op */ });
   });
 

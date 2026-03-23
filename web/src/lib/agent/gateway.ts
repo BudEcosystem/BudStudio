@@ -130,7 +130,10 @@ export class LocalGateway {
 
     const tool = this.registry.get(tool_name);
     if (!tool) {
-      this.sendToolResult(session_id, tool_call_id, null, `Unknown local tool: ${tool_name}`);
+      // Not a local tool — it's a "pause" tool like ask_user_questions
+      // that needs user interaction. The event was already forwarded to
+      // the WebView (line above). The WebView will show the UI and send
+      // tool:result back through the relay. Don't send an error.
       return;
     }
 
@@ -180,6 +183,15 @@ export class LocalGateway {
       const result = this.pendingResults.shift()!;
       this.socket?.emit("tool:result", result);
     }
+  }
+
+  /**
+   * Forward a tool:result from the browser directly to the cloud backend.
+   * Used for "pause" tools like ask_user_questions where the WebView
+   * collects user input and sends the result.
+   */
+  sendToolResultDirect(data: ToolResultPayload): void {
+    this.sendToolResult(data.session_id, data.tool_call_id, data.output, data.error);
   }
 
   execute(sessionId: string, message: string, model?: string): void {
