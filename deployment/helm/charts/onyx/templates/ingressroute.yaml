@@ -1,33 +1,6 @@
 {{- if .Values.traefik.enabled }}
 {{- if .Values.traefik.useIngressRoute }}
-# Traefik IngressRoute CRD - routes directly to services
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: {{ include "onyx.fullname" . }}-strip-api
-  labels:
-    {{- include "onyx.labels" . | nindent 4 }}
-spec:
-  stripPrefix:
-    prefixes:
-    - /api
----
-{{- if .Values.traefik.certManager }}
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: {{ include "onyx.fullname" . }}-acme-cert
-  labels:
-    {{- include "onyx.labels" . | nindent 4 }}
-spec:
-  secretName: {{ include "onyx.fullname" . }}-acme-cert
-  issuerRef:
-    name: {{ .Values.traefik.certManager.issuer | default "letsencrypt-http01" }}
-    kind: {{ .Values.traefik.certManager.issuerKind | default "ClusterIssuer" }}
-  dnsNames:
-    - {{ .Values.traefik.domain }}
----
-{{- end }}
+# Traefik IngressRoute CRD - routes through nginx controller
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -37,22 +10,13 @@ metadata:
     {{- include "onyx.labels" . | nindent 4 }}
 spec:
   entryPoints:
-    - {{ .Values.traefik.entryPoint | default "websecure" }}
+    - {{ .Values.traefik.entryPoint }}
   routes:
-    - match: Host(`{{ .Values.traefik.domain }}`) && PathPrefix(`/api`)
-      kind: Rule
-      middlewares:
-        - name: {{ include "onyx.fullname" . }}-strip-api
-      services:
-        - name: {{ include "onyx.fullname" . }}-api-service
-          port: {{ .Values.api.service.servicePort | default 8080 }}
     - match: Host(`{{ .Values.traefik.domain }}`)
       kind: Rule
       services:
-        - name: {{ include "onyx.fullname" . }}-webserver
-          port: {{ .Values.webserver.service.servicePort | default 3000 }}
-  tls:
-    secretName: {{ include "onyx.fullname" . }}-acme-cert
+        - name: {{ include "onyx.fullname" . }}-nginx-controller
+          port: 80
 {{- else }}
 # Standard Ingress with Traefik class - routes directly to services
 ---

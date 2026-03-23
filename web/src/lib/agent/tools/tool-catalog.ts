@@ -3,7 +3,6 @@ export interface ToolParameter {
   type: string;
   description: string;
   required: boolean;
-  enum?: string[];
 }
 
 export interface ToolCatalogEntry {
@@ -129,48 +128,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
         type: "boolean",
         description:
           "Run in a pseudo-terminal (PTY). Use for commands needing TTY detection, colored output, or interactive prompts.",
-        required: false,
-      },
-    ],
-  },
-  {
-    name: "cli_agent",
-    description:
-      "Spawn Codex CLI as an autonomous sub-agent for long-running coding tasks. Returns immediately with session ID. Codex runs in the background and automatically resumes the agent when complete.",
-    category: "local",
-    requiresApproval: true,
-    parameters: [
-      {
-        name: "prompt",
-        type: "string",
-        description: "The task/instruction to give to Codex.",
-        required: true,
-      },
-      {
-        name: "working_directory",
-        type: "string",
-        description:
-          "Absolute path to the working directory. Defaults to workspace root.",
-        required: false,
-      },
-      {
-        name: "sandbox",
-        type: "string",
-        description:
-          "Sandbox level: 'read-only', 'workspace-write' (default), or 'danger-full-access'.",
-        required: false,
-        enum: ["read-only", "workspace-write", "danger-full-access"],
-      },
-      {
-        name: "skip_git_check",
-        type: "boolean",
-        description: "If true, skip the git repository check. Default: false.",
-        required: false,
-      },
-      {
-        name: "ephemeral",
-        type: "boolean",
-        description: "If false, persist the session after completion. Default: true.",
         required: false,
       },
     ],

@@ -8,12 +8,8 @@ pub struct AppConfig {
     pub backend_url: String,
     pub window_title: String,
     pub next_port: u16,
-    #[serde(default = "default_is_configured")]
+    #[serde(default)]
     pub is_configured: bool,
-}
-
-fn default_is_configured() -> bool {
-    false
 }
 
 impl Default for AppConfig {
@@ -53,8 +49,6 @@ impl AppConfig {
 
         let config: AppConfig = serde_json::from_str(&config_str)
             .context("Failed to parse config file")?;
-
-        log::info!("Loaded config - is_configured: {}, needs_setup: {}", config.is_configured, config.needs_setup());
 
         Ok(config)
     }

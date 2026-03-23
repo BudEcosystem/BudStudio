@@ -391,31 +391,6 @@ function isDomainAllowed(hostname: string, allowedDomains: string[]): boolean {
  * @throws Error if the URL is blocked for any reason
  */
 export async function validateNavigationUrl(url: string): Promise<void> {
-  // --- Step 0: Skip all network checks if private IPs are allowed -----------
-  if (process.env.BUD_BROWSER_ALLOW_PRIVATE_IPS === "true") {
-    // Still parse the URL and block dangerous schemes, but allow private IPs.
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new Error(`Invalid URL: unable to parse "${url}"`);
-    }
-
-    const scheme = parsed.protocol;
-    if (scheme === "about:" && parsed.pathname === "blank") return;
-    if (BLOCKED_SCHEMES.includes(scheme)) {
-      throw new Error(
-        `Blocked URL scheme "${scheme}" — navigation to ${scheme} URLs is not allowed`
-      );
-    }
-    if (scheme !== "http:" && scheme !== "https:") {
-      throw new Error(
-        `Unsupported URL scheme "${scheme}" — only http: and https: are allowed`
-      );
-    }
-    return;
-  }
-
   // --- Step 1: Parse the URL ------------------------------------------------
   let parsed: URL;
   try {

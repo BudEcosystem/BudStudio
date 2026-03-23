@@ -12,7 +12,6 @@ import React, {
 import type { Packet } from "@/app/chat/services/streamingModels";
 import { useEventStreamContext } from "./EventStreamContext";
 import type { EventStreamEvent } from "@/lib/desktop/useEventStream";
-import type { AgentExecuteParams, AgentEventCallbacks } from "@/lib/desktop/useAgentSSE";
 
 /**
  * Tool call information for display in the UI.
@@ -81,7 +80,6 @@ interface AgentSessionContextType {
   setAlwaysAllowOperation: (operationHash: string) => void;
   isOperationAllowed: (operationHash: string) => boolean;
   createOperationHash: (toolName: string, toolInput: Record<string, unknown>) => string;
-  executeRef: React.MutableRefObject<((params: AgentExecuteParams, callbacks: AgentEventCallbacks) => Promise<void>) | null>;
 }
 
 const AgentSessionContext = createContext<AgentSessionContextType | undefined>(undefined);
@@ -235,8 +233,6 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   );
   // Track which sessions have had their messages loaded from the backend
   const loadedSessionsRef = useRef<Set<string>>(new Set());
-  // Ref to store the execute function for resume_execute event handling
-  const executeRef = useRef<((params: AgentExecuteParams, callbacks: AgentEventCallbacks) => Promise<void>) | null>(null);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
 
@@ -428,39 +424,6 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     };
   }, [registerHandler, unregisterHandler, currentSessionId, loadSessionMessages, switchToSession]);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Resume execute event handler for cli_agent completions
-  // ──────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const handleResumeExecute = (event: EventStreamEvent) => {
-      const { session_id, message } = event.data as { session_id: string; message: string };
-      if (!session_id) return;
-
-      // Switch to the session if needed
-      if (session_id !== currentSessionId) {
-        switchToSession(session_id);
-      }
-
-      // Fire execute with the completion message
-      if (executeRef.current) {
-        const session = sessions.find(s => s.id === session_id);
-        const workspacePath = session ? (session as any).workspacePath || "" : "";
-
-        executeRef.current(
-          { sessionId: session_id, message, workspacePath },
-          { }
-        ).catch((err) => {
-          console.error("Error executing resume_execute:", err);
-        });
-      }
-    };
-
-    registerHandler("resume_execute", handleResumeExecute);
-    return () => {
-      unregisterHandler("resume_execute", handleResumeExecute);
-    };
-  }, [registerHandler, unregisterHandler, currentSessionId, switchToSession, sessions]);
-
   const deleteSession = useCallback(
     (sessionId: string) => {
       // Remove from local state immediately
@@ -626,7 +589,6 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         setAlwaysAllowOperation,
         isOperationAllowed,
         createOperationHash,
-        executeRef,
       }}
     >
       {children}

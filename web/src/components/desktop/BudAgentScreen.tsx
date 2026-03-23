@@ -330,15 +330,6 @@ export function BudAgentScreen() {
   // SSE streaming hook
   const { execute, abort } = useAgentSSE();
 
-  // Wire execute function into AgentSessionContext for resume_execute event handling
-  const { executeRef } = useAgentSession();
-  useEffect(() => {
-    executeRef.current = execute;
-    return () => {
-      executeRef.current = null;
-    };
-  }, [execute, executeRef]);
-
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
   const { agents: availableAssistants, currentAgent } = useAgentsContext();
