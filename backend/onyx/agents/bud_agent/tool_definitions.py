@@ -15,6 +15,7 @@ LOCAL_TOOLS: set[str] = {
     "write_file",
     "edit_file",
     "bash",
+    "cli_agent",
     "process",
     "glob",
     "grep",
@@ -47,6 +48,7 @@ REMOTE_TOOLS: set[str] = {
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
     "bash",
+    "cli_agent",
     "write_file",
     "edit_file",
     "browser_navigate",
@@ -250,6 +252,47 @@ LOCAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["action"],
+        },
+    },
+    "cli_agent": {
+        "name": "cli_agent",
+        "description": (
+            "Spawn an autonomous CLI sub-agent for long-running tasks. "
+            "Returns immediately with a session ID. The agent runs in the background "
+            "and automatically resumes when complete."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "The task/instruction to give to Codex.",
+                },
+                "working_directory": {
+                    "type": "string",
+                    "description": (
+                        "Absolute path to the working directory. "
+                        "Defaults to workspace root."
+                    ),
+                },
+                "sandbox": {
+                    "type": "string",
+                    "enum": ["read-only", "workspace-write", "danger-full-access"],
+                    "description": (
+                        "Sandbox level: 'read-only', 'workspace-write' (default), "
+                        "or 'danger-full-access'."
+                    ),
+                },
+                "skip_git_check": {
+                    "type": "boolean",
+                    "description": "If true, skip the git repository check. Default: false.",
+                },
+                "ephemeral": {
+                    "type": "boolean",
+                    "description": "If false, persist the session after completion. Default: true.",
+                },
+            },
+            "required": ["prompt"],
         },
     },
     "glob": {

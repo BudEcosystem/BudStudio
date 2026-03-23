@@ -16,6 +16,7 @@ import {
   GlobTool,
   GrepTool,
   ProcessTool,
+  CliAgentTool,
 } from "@/lib/agent/tools";
 /** Default workspace path when the requested path doesn't exist on the server. */
 const SERVER_FALLBACK_WORKSPACE = "/tmp/bud-workspace";
@@ -45,9 +46,17 @@ export function resolveWorkspacePath(requestedPath: string): string {
  * This function is async because browser tools use playwright-core which
  * webpack wraps as an async module. The dynamic import() ensures we properly
  * await the async module initialization.
+ *
+ * @param workspacePath - The path to the workspace directory
+ * @param budSessionId - Optional session ID for background CLI completion callback
+ * @param apiBaseUrl - Optional API base URL for background CLI completion callback
+ * @param cookieString - Optional cookie string for background CLI completion callback
  */
 export async function createLocalToolRegistry(
-  workspacePath: string
+  workspacePath: string,
+  budSessionId?: string,
+  apiBaseUrl?: string,
+  cookieString?: string
 ): Promise<ToolRegistry> {
   const registry = new ToolRegistry(workspacePath);
   registry.register(new ReadFileTool(workspacePath));
@@ -57,6 +66,43 @@ export async function createLocalToolRegistry(
   registry.register(new GlobTool(workspacePath));
   registry.register(new GrepTool(workspacePath));
   registry.register(new ProcessTool());
+
+  // Register CliAgentTool with optional completion callback
+  const onComplete = budSessionId && apiBaseUrl
+    ? async (sessionId: string, output: string, exitCode: number | null) => {
+        try {
+          // POST completion event to backend via the background-complete endpoint
+          // This publishes a resume_execute event that triggers the agent to continue
+          const response = await fetch(`${apiBaseUrl}/api/local-agent/background-complete`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Cookie: cookieString ?? "",
+            },
+            body: JSON.stringify({
+              budSessionId,
+              output,
+              exitCode,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "Unknown error");
+            console.error(
+              `[local-execution] Failed to notify backend of CLI completion (${sessionId}): HTTP ${response.status}`,
+              errorText
+            );
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[local-execution] Failed to notify backend of CLI completion (${sessionId}):`,
+            errorMessage
+          );
+        }
+      }
+    : undefined;
+  registry.register(new CliAgentTool(workspacePath, onComplete));
 
   // Browser automation tools — loaded lazily via dynamic import() to properly
   // await the async module (playwright-core is an external package that webpack
