@@ -104,6 +104,7 @@ class AgentSessionSnapshot(BaseModel):
     title: str | None
     description: str | None
     status: str
+    execution_status: str | None = None
     workspace_path: str | None
     total_tokens_used: int
     total_tool_calls: int
@@ -112,6 +113,11 @@ class AgentSessionSnapshot(BaseModel):
     completed_at: datetime | None
     parent_session_id: str | None = None
     compaction_summary: str | None = None
+
+
+class ExecutionStatusResponse(BaseModel):
+    execution_status: str
+    pending_local_tools: list[dict[str, Any]]
 
 
 class SessionListResponse(BaseModel):
@@ -273,6 +279,11 @@ def _session_to_snapshot(s: Any) -> AgentSessionSnapshot:
         title=s.title,
         description=s.description,
         status=s.status.value,
+        execution_status=(
+            s.execution_status.value
+            if hasattr(s, "execution_status") and s.execution_status
+            else None
+        ),
         workspace_path=s.workspace_path,
         total_tokens_used=s.total_tokens_used,
         total_tool_calls=s.total_tool_calls,
@@ -341,6 +352,33 @@ def get_agent_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     return _session_to_snapshot(session)
+
+
+@router.get("/sessions/{session_id}/execution-status")
+def get_execution_status(
+    session_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> ExecutionStatusResponse:
+    """Lightweight endpoint returning only the execution status of a session.
+
+    Used by the frontend after a Socket.IO reconnect to determine whether
+    to wait for resumed events, re-fetch history, or re-display a tool
+    request.
+    """
+    user_id = user.id if user is not None else None
+    session = get_session_for_user(
+        db_session=db_session,
+        session_id=session_id,
+        user_id=user_id,
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return ExecutionStatusResponse(
+        execution_status=session.execution_status.value if session.execution_status else "IDLE",
+        pending_local_tools=session.pending_local_tools or [],
+    )
 
 
 @router.get("/sessions/{session_id}/history")
@@ -756,6 +794,8 @@ def delete_agent_workspace_file(
 # ==============================================================================
 
 
+# DEPRECATED: Replaced by Socket.IO stateless handler (agent_handler.py).
+# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.1.
 @router.post("/sessions/{session_id}/execute")
 def execute_agent(
     session_id: UUID,
@@ -763,7 +803,12 @@ def execute_agent(
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> StreamingResponse:
-    """Execute the agent for a session, streaming results via SSE."""
+    """Execute the agent for a session, streaming results via SSE.
+
+    DEPRECATED: This SSE-based endpoint is replaced by the Socket.IO
+    `agent:execute` event in socketio_server.py / agent_handler.py.
+    Kept for backward compatibility during migration.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -797,6 +842,8 @@ def execute_agent(
     )
 
 
+# DEPRECATED: Replaced by Socket.IO `tool:result` event handler (socketio_server.py).
+# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.3.
 @router.post("/sessions/{session_id}/tool-result")
 def submit_tool_result(
     session_id: UUID,
@@ -804,7 +851,11 @@ def submit_tool_result(
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> StatusResponse:
-    """Submit a tool execution result from the desktop."""
+    """Submit a tool execution result from the desktop.
+
+    DEPRECATED: This HTTP endpoint is replaced by the Socket.IO `tool:result`
+    event in socketio_server.py. Kept for backward compatibility during migration.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -835,6 +886,8 @@ def submit_tool_result(
     return StatusResponse(status="submitted")
 
 
+# DEPRECATED: Replaced by Socket.IO `tool:approval` event handler (socketio_server.py).
+# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.3.
 @router.post("/sessions/{session_id}/approval")
 def submit_approval(
     session_id: UUID,
@@ -842,7 +895,11 @@ def submit_approval(
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> StatusResponse:
-    """Submit a tool approval decision from the user."""
+    """Submit a tool approval decision from the user.
+
+    DEPRECATED: This HTTP endpoint is replaced by the Socket.IO `tool:approval`
+    event in socketio_server.py. Kept for backward compatibility during migration.
+    """
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 

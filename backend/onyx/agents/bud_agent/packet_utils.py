@@ -33,10 +33,11 @@ def translate_agent_messages_to_packets(
     """Convert a list of AgentMessage rows into packet turns.
 
     Returns a list of turns, where each turn is a list of Packets.
-    A turn is delimited by user messages: every user message starts a
-    new turn that includes the subsequent assistant and tool messages.
+    Turns are delimited by USER messages — all assistant + tool
+    messages between two user messages form one turn.  The frontend
+    merges intermediate assistant rows (thinking-only) into a single
+    agent message, so one packet turn per user request is correct.
     """
-    # Group messages into turns (user -> assistant/tool messages until next user)
     turns: list[list[AgentMessage]] = []
     current_turn: list[AgentMessage] = []
 

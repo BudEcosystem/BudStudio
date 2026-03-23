@@ -34,6 +34,8 @@ export interface AgentMessage {
   toolCalls?: ToolCallInfo[];
   /** Packet data for unified rendering (streaming + history). */
   packets?: Packet[];
+  /** Accumulated reasoning/thinking content from the model. */
+  thinkingContent?: string;
 }
 
 export interface AgentSession {
@@ -80,6 +82,7 @@ interface AgentSessionContextType {
   setAlwaysAllowOperation: (operationHash: string) => void;
   isOperationAllowed: (operationHash: string) => boolean;
   createOperationHash: (toolName: string, toolInput: Record<string, unknown>) => string;
+  reloadSessionMessages: (sessionId: string) => void;
 }
 
 const AgentSessionContext = createContext<AgentSessionContextType | undefined>(undefined);
@@ -181,18 +184,25 @@ function convertBackendMessages(
         status: "complete",
       });
     } else if (msg.role === "assistant") {
-      // Flush any pending agent message
-      if (currentAgentMsg) {
-        result.push(currentAgentMsg);
+      if (!currentAgentMsg) {
+        // First assistant in this turn — create agent message
+        currentAgentMsg = {
+          id: msg.id,
+          role: "agent",
+          content: msg.content || "",
+          timestamp: new Date(msg.created_at),
+          status: "complete",
+          toolCalls: [],
+        };
+      } else if (msg.content) {
+        // Subsequent assistant with content — update the existing
+        // agent message's content (don't flush/create new).
+        // This keeps all tool calls and content from one user
+        // request in a single agent message block.
+        currentAgentMsg.content = msg.content;
       }
-      currentAgentMsg = {
-        id: msg.id,
-        role: "agent",
-        content: msg.content || "",
-        timestamp: new Date(msg.created_at),
-        status: "complete",
-        toolCalls: [],
-      };
+      // else: intermediate thinking-only assistant — skip,
+      // keep accumulating tools into the existing currentAgentMsg
     } else if (msg.role === "tool") {
       // Attach to current agent message as a tool call
       if (currentAgentMsg) {
@@ -320,6 +330,15 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching session messages:", err);
     }
   }, []);
+
+  /** Force-reload messages for a session, bypassing the loaded cache. */
+  const reloadSessionMessages = useCallback(
+    (sessionId: string) => {
+      loadedSessionsRef.current.delete(sessionId);
+      loadSessionMessages(sessionId);
+    },
+    [loadSessionMessages]
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // Event stream handler registration (moved after switchToSession definition)
@@ -589,6 +608,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         setAlwaysAllowOperation,
         isOperationAllowed,
         createOperationHash,
+        reloadSessionMessages,
       }}
     >
       {children}

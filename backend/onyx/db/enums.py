@@ -210,6 +210,22 @@ class AgentSessionStatus(str, PyEnum):
         return self in terminal_states
 
 
+class AgentSessionExecutionStatus(str, PyEnum):
+    """Real-time execution status of an agent session.
+
+    Tracks what the agent is currently doing within an ACTIVE session.
+    This is orthogonal to AgentSessionStatus which tracks the session lifecycle.
+
+    Values must be UPPERCASE to match what SQLAlchemy stores with
+    ``Enum(..., native_enum=False)`` (it persists ``.name``, not ``.value``).
+    """
+
+    IDLE = "IDLE"
+    RUNNING = "RUNNING"
+    AWAITING_TOOL = "AWAITING_TOOL"
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+
+
 class AgentMessageRole(str, PyEnum):
     """Role of a message in an agent session"""
 

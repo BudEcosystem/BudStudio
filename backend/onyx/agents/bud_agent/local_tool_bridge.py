@@ -1,5 +1,11 @@
 """Local tool bridge -- creates FunctionTool objects that delegate execution to the desktop.
 
+DEPRECATED: This entire module is replaced by the Socket.IO stateless handler
+(agent_handler.py) and the ToolRouter/ToolExecutor abstraction (tool_router.py,
+tool_executor.py). The Redis BLPOP blocking pattern is no longer needed because
+Socket.IO events deliver tool results asynchronously without holding a thread.
+Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.2.
+
 When the LLM requests a local tool (file ops, bash, etc.), the bridge:
 1. Emits Packet objects (CustomToolStart, AgentLocalToolRequest, etc.)
 2. Persists tool messages to the database

@@ -161,8 +161,18 @@ class BudAgentOrchestrator:
         self._last_tool_step = self._step_number
         return self._step_number
 
+    # DEPRECATED: Replaced by Socket.IO stateless handler (agent_handler.py).
+    # The Socket.IO approach uses _run_llm_turn() which emits events via
+    # sio.emit() instead of yielding SSE packets through a thread-safe queue.
+    # Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.6/7.7.
     def run(self, user_message: str) -> Generator[str, None, None]:
-        """Run the agent loop and yield JSON-line packets for SSE streaming."""
+        """Run the agent loop and yield JSON-line packets for SSE streaming.
+
+        DEPRECATED: This SSE generator is replaced by the stateless AgentHandler
+        in agent_handler.py, which uses Socket.IO events instead of SSE streaming.
+        The queue-based packet pattern, keepalive logic, and sentinel are no longer
+        needed in the Socket.IO architecture.
+        """
         # Persist the user message before starting the agent loop
         with self._get_db_session() as db_session:
             add_session_message(
