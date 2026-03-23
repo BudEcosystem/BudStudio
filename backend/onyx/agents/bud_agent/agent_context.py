@@ -10,6 +10,7 @@ import json
 import queue
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 from typing import Any
 from typing import cast
@@ -85,6 +86,8 @@ class AgentRunContext:
     compaction_summary: str | None
     mode: AgentExecutionMode
     packet_queue: queue.Queue | None = None
+    connector_approval_tools: set[str] = field(default_factory=set)
+    connector_approval_gateway: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -192,14 +195,15 @@ def build_agent_run_context(
         db_session=db_session,
         user_id=user.id,
     )
-    connector_tools = create_connector_tools(
-        db_session=db_session,
-        user=user,
-        session_id=session_id,
-        packet_queue=resolved_packet_queue,
-        redis_client=resolved_redis,
-        step_number_fn=resolved_step_number_fn,
-        auto_approve=mode in (AgentExecutionMode.CRON, AgentExecutionMode.INBOX),
+    connector_tools, connector_approval_names, connector_gateway_map = (
+        create_connector_tools(
+            db_session=db_session,
+            user=user,
+            session_id=session_id,
+            packet_queue=resolved_packet_queue,
+            step_number_fn=resolved_step_number_fn,
+            auto_approve=mode in (AgentExecutionMode.CRON, AgentExecutionMode.INBOX),
+        )
     )
     default_mcp_tools = create_default_mcp_tools(
         db_session=db_session,
@@ -338,6 +342,8 @@ def build_agent_run_context(
         compaction_summary=compaction_summary,
         mode=mode,
         packet_queue=resolved_packet_queue,
+        connector_approval_tools=connector_approval_names,
+        connector_approval_gateway=connector_gateway_map,
     )
 
 

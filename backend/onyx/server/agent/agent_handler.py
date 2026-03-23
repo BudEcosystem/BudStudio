@@ -352,14 +352,21 @@ class AgentHandler:
             next_tool_call_id: str = next_tool.get("id", "")
             next_step: int = next_tool.get("step", step + 1)
 
-            # Check approval for the next tool
+            # Check approval for the next tool.
+            # Connector tools that need approval are identified by
+            # is_connector_tool() — they always need approval unless
+            # the user has "always allow"ed them (which upgrades
+            # their permission to ALWAYS_ALLOW, so they never appear
+            # in the pending queue as connector-pause tools).
+            from onyx.agents.bud_agent.tool_definitions import is_connector_tool
             always_allowed = set()
             with self._get_db_session() as db_session:
                 user_id = self._parse_user_id()
                 always_allowed = self._load_always_allowed_tools(db_session, user_id)
 
+            is_connector = is_connector_tool(next_tool_name)
             needs_approval = (
-                requires_approval(next_tool_name)
+                (requires_approval(next_tool_name) or is_connector)
                 and next_tool_name not in always_allowed
             )
 
@@ -376,8 +383,19 @@ class AgentHandler:
                     "tool_name": next_tool_name,
                     "tool_input": next_tool_input,
                     "tool_call_id": next_tool_call_id,
-                    "gateway_id": "__local__",
+                    "gateway_id": next_tool.get("gateway_id", "__local__"),
                 })
+            elif is_connector:
+                # Connector tool already always-allowed — execute server-side
+                # immediately (not via client tool:request).
+                await self._execute_and_continue_connector_tool(
+                    session_id=session_id,
+                    session_id_str=session_id_str,
+                    tool_name=next_tool_name,
+                    tool_input=next_tool_input,
+                    tool_call_id=next_tool_call_id,
+                    step=next_step,
+                )
             else:
                 await self._emit("tool:request", {
                     "session_id": session_id_str,
@@ -488,7 +506,23 @@ class AgentHandler:
             )
             return
 
-        # Approved -- send tool:request and set AWAITING_TOOL
+        # Approved — check if this is a connector tool (server-side execution)
+        # or a local tool (client-side execution via tool:request).
+        from onyx.agents.bud_agent.tool_definitions import is_connector_tool
+
+        if is_connector_tool(tool_name):
+            # Connector tool: execute server-side via MCP gateway.
+            await self._execute_and_continue_connector_tool(
+                session_id=session_id,
+                session_id_str=session_id_str,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                tool_call_id=tool_call_id,
+                step=step,
+            )
+            return
+
+        # Local tool: send tool:request and set AWAITING_TOOL
         with self._get_db_session() as db_session:
             set_session_execution_status(
                 db_session, session_id, AgentSessionExecutionStatus.AWAITING_TOOL
@@ -502,6 +536,101 @@ class AgentHandler:
             "tool_call_id": tool_call_id,
         })
         # STOP -- client will send tool:result later
+
+    async def _execute_and_continue_connector_tool(
+        self,
+        session_id: UUID,
+        session_id_str: str,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        tool_call_id: str,
+        step: int,
+    ) -> None:
+        """Execute an already-approved connector tool server-side, then continue.
+
+        Used by ``handle_approval()`` and ``handle_tool_result()`` when a
+        connector tool doesn't need further approval (already always-allowed
+        or just approved).
+        """
+        from onyx.agents.bud_agent.connector_service import (
+            execute_connector_tool,
+        )
+
+        with self._get_db_session() as db_session:
+            set_session_execution_status(
+                db_session, session_id,
+                AgentSessionExecutionStatus.RUNNING,
+            )
+            user = None
+            if self._user_email:
+                from onyx.db.users import get_user_by_email
+                user = get_user_by_email(self._user_email, db_session)
+
+        if user is None:
+            error = "Could not resolve user for connector tool execution"
+            logger.warning(
+                "_execute_and_continue_connector_tool: %s (email=%s)",
+                error, self._user_email,
+            )
+            await self._emit("tool:delta", {
+                "session_id": session_id_str,
+                "ind": step,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "response_type": "error",
+                "data": error,
+            })
+            await self._run_llm_turn(
+                session_id=session_id,
+                workspace_path=self._workspace_path,
+                model=self._model,
+                timezone=self._timezone,
+            )
+            return
+
+        result, error = await execute_connector_tool(
+            user=user,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+            tool_call_id=tool_call_id,
+        )
+
+        # Persist result to DB and clear pending tools
+        with self._get_db_session() as db_session:
+            if error:
+                update_tool_message_result(
+                    db_session=db_session,
+                    session_id=session_id,
+                    tool_call_id=tool_call_id,
+                    tool_error=error,
+                )
+            else:
+                update_tool_message_result(
+                    db_session=db_session,
+                    session_id=session_id,
+                    tool_call_id=tool_call_id,
+                    tool_output={"output": result},
+                )
+            persist_pending_local_tools(db_session, session_id, [])
+
+        # Emit result to UI
+        await self._emit("tool:delta", {
+            "session_id": session_id_str,
+            "ind": step,
+            "tool_name": tool_name,
+            "tool_call_id": tool_call_id,
+            "response_type": "error" if error else "success",
+            "data": error or result,
+        })
+
+        # Continue LLM turn
+        await self._run_llm_turn(
+            session_id=session_id,
+            workspace_path=self._workspace_path,
+            model=self._model,
+            timezone=self._timezone,
+        )
 
     async def handle_stop(self, data: dict[str, Any]) -> dict[str, Any]:
         """Stop a running execution.
@@ -1013,12 +1142,20 @@ class AgentHandler:
         # ask_user_questions is treated as a "pause" tool (like local tools):
         # emit the request and stop, wait for the user's answer via
         # tool:result.  It must NOT block the event loop with Redis BLPOP.
+        # Connector tools that need approval are also pause tools — their
+        # on_invoke_tool returned a stub during streaming; actual execution
+        # happens in handle_approval() after the user approves.
         PAUSE_TOOLS = {"ask_user_questions"}
+        connector_pause = ctx.connector_approval_tools
 
         local_calls: list[dict[str, Any]] = []
         remote_calls: list[dict[str, Any]] = []
         for tc in pending_tool_calls:
-            if is_local_tool(tc["name"]) or tc["name"] in PAUSE_TOOLS:
+            if (
+                is_local_tool(tc["name"])
+                or tc["name"] in PAUSE_TOOLS
+                or tc["name"] in connector_pause
+            ):
                 local_calls.append(tc)
             else:
                 remote_calls.append(tc)
@@ -1112,9 +1249,14 @@ class AgentHandler:
 
                 # Persist remaining local tools as pending
                 if rest_local:
-                    # Include step info for each pending tool
+                    # Include step info and gateway_id for each pending tool
                     for i, tc in enumerate(rest_local):
                         tc["step"] = step_number + i + 1
+                        # Annotate connector tools with their gateway_id
+                        # so handle_tool_result can pass it in approval events.
+                        gw = ctx.connector_approval_gateway.get(tc["name"])
+                        if gw:
+                            tc["gateway_id"] = gw
                         # Also persist tool messages for pending tools
                         add_tool_message(
                             db_session=db_session,
@@ -1135,9 +1277,10 @@ class AgentHandler:
                 "tool_call_id": tc_id,
             })
 
-            # Check if approval is needed
+            # Check if approval is needed (local tools via APPROVAL_REQUIRED_TOOLS,
+            # or connector tools that were classified as pause tools).
             needs_approval = (
-                requires_approval(tc_name)
+                (requires_approval(tc_name) or tc_name in connector_pause)
                 and tc_name not in always_allowed_tools
             )
 
@@ -1154,7 +1297,9 @@ class AgentHandler:
                     "tool_name": tc_name,
                     "tool_input": tc_input,
                     "tool_call_id": tc_id,
-                    "gateway_id": "__local__",
+                    "gateway_id": ctx.connector_approval_gateway.get(
+                        tc_name, "__local__"
+                    ),
                 })
             else:
                 with self._get_db_session() as db_session:
