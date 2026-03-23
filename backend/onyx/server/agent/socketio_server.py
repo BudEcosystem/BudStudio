@@ -2,11 +2,17 @@
 
 Creates an AsyncServer instance with connect/disconnect handlers and
 all agent event handlers (``agent:execute``, ``tool:result``,
-``tool:approval``, ``agent:stop``, ``tool:delta``, ``file:sync``).
+``tool:approval``, ``agent:stop``, ``tool:delta``, ``file:sync``,
+``agent:rejoin``).
 
 Authentication reuses the existing cookie-based and JWT-based auth
 flows from ``onyx.auth``.  Each event instantiates a fresh
 ``AgentHandler`` -- no state is held between events.
+
+Emit routing uses Socket.IO **rooms** keyed by ``session:{session_id}``
+so that when a client disconnects and reconnects (e.g. OAuth token
+refresh), the in-flight LLM coroutine's emits reach the new sid
+automatically once the client re-joins the room via ``agent:rejoin``.
 """
 
 from __future__ import annotations
@@ -308,6 +314,12 @@ async def handle_execute(sid: str, data: dict[str, Any]) -> dict[str, Any]:
             session_data["workspace_path"] = data["workspace_path"]
         await sio.save_session(sid, session_data)
 
+        # Join the session room so that emits reach this sid (and survive
+        # reconnects — the client re-joins via agent:rejoin).
+        session_id = data.get("session_id", "")
+        if session_id:
+            await sio.enter_room(sid, f"session:{session_id}")
+
         handler = _create_handler(session_data, sid)
         result: dict[str, Any] = await handler.handle_execute(data)
         return result
@@ -321,6 +333,12 @@ async def handle_tool_result(sid: str, data: dict[str, Any]) -> None:
     """Submit the result of a local tool execution."""
     try:
         session_data: dict[str, Any] = await sio.get_session(sid)
+
+        # Ensure this (possibly reconnected) sid is in the session room.
+        session_id = data.get("session_id", "")
+        if session_id:
+            await sio.enter_room(sid, f"session:{session_id}")
+
         handler = _create_handler(session_data, sid)
         await handler.handle_tool_result(data)
     except Exception:
@@ -331,7 +349,7 @@ async def handle_tool_result(sid: str, data: dict[str, Any]) -> None:
             await sio.emit(
                 "agent:error",
                 {"session_id": session_id, "error": "Internal server error processing tool result"},
-                to=sid,
+                room=f"session:{session_id}",
             )
 
 
@@ -340,6 +358,12 @@ async def handle_approval(sid: str, data: dict[str, Any]) -> None:
     """Submit a user's approval or denial for a tool."""
     try:
         session_data: dict[str, Any] = await sio.get_session(sid)
+
+        # Ensure this (possibly reconnected) sid is in the session room.
+        session_id = data.get("session_id", "")
+        if session_id:
+            await sio.enter_room(sid, f"session:{session_id}")
+
         handler = _create_handler(session_data, sid)
         await handler.handle_approval(data)
     except Exception:
@@ -349,7 +373,7 @@ async def handle_approval(sid: str, data: dict[str, Any]) -> None:
             await sio.emit(
                 "agent:error",
                 {"session_id": session_id, "error": "Internal server error processing approval"},
-                to=sid,
+                room=f"session:{session_id}",
             )
 
 
@@ -392,3 +416,28 @@ async def handle_file_sync(sid: str, data: dict[str, Any]) -> None:
         await handler.handle_file_sync(data)
     except Exception:
         logger.exception("file:sync error (sid=%s)", sid)
+
+
+@sio.on("agent:rejoin")
+async def handle_rejoin(sid: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Re-join a session room after reconnecting.
+
+    When the Socket.IO connection drops (e.g. OAuth token refresh) and
+    reconnects with a new sid, the client emits ``agent:rejoin`` with the
+    ``session_id`` it was working on.  This adds the new sid to the
+    session's room so that the in-flight LLM coroutine's emits (which
+    target the room) reach the reconnected client.
+    """
+    session_id: str = data.get("session_id", "")
+    if not session_id:
+        return {"error": "session_id required"}
+
+    await sio.enter_room(sid, f"session:{session_id}")
+    session_data: dict[str, Any] = await sio.get_session(sid)
+    logger.info(
+        "Socket.IO client re-joined session room (sid=%s, user=%s, session=%s)",
+        sid,
+        session_data.get("user_email", "unknown"),
+        session_id,
+    )
+    return {"ok": True, "session_id": session_id}

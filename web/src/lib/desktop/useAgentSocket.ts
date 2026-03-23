@@ -41,6 +41,8 @@ export interface AgentSocketCallbacks {
   ) => void;
   onArtifact?: (openuiLang: string, title: string) => void;
   onUserQuestions?: (questions: UserQuestionItem[], toolCallId: string) => void;
+  /** Called after a Socket.IO reconnect when an execution was in flight. */
+  onReconnected?: (sessionId: string) => void;
 }
 
 export interface AgentSocketParams {
@@ -168,6 +170,8 @@ export function useAgentSocket(
   const socketRef = useRef<Socket | null>(null);
   const callbacksRef = useRef<AgentSocketCallbacks>({});
   const accumulatedContentRef = useRef<string>("");
+  /** Session ID of an in-flight execution (set on execute, cleared on done). */
+  const executingSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -220,9 +224,40 @@ export function useAgentSocket(
 
       socket.on("disconnect", (reason: string) => {
         console.warn(
-          "[useAgentSocket] Disconnected from gateway server:",
+          "[useAgentSocket] Disconnected from server:",
           reason
         );
+      });
+
+      // Handle automatic reconnection when an execution was in flight.
+      // Socket.IO fires "connect" (not a separate "reconnect") on every
+      // successful reconnect.  We detect reconnects by checking whether
+      // socketRef was already set (initial connect sets it, so subsequent
+      // "connect" events are reconnects).
+      socket.io.on("reconnect", () => {
+        const sessionId = executingSessionRef.current;
+        if (!sessionId) return;
+
+        console.info(
+          "[useAgentSocket] Reconnected while executing session",
+          sessionId,
+          "— re-joining room"
+        );
+
+        // Re-join the session room on the backend so that the in-flight
+        // LLM coroutine's room-based emits reach this new sid.
+        socket.emit(
+          "agent:rejoin",
+          { session_id: sessionId },
+          (ack: { ok?: boolean; error?: string }) => {
+            if (ack?.error) {
+              console.warn("[useAgentSocket] agent:rejoin error:", ack.error);
+            }
+          }
+        );
+
+        // Notify the UI so it can poll execution status and recover.
+        callbacksRef.current.onReconnected?.(sessionId);
       });
     });
   }, []);
@@ -232,8 +267,25 @@ export function useAgentSocket(
       params: AgentSocketParams,
       callbacks: AgentSocketCallbacks
     ): Promise<void> => {
-      callbacksRef.current = callbacks;
+      // Wrap terminal callbacks to clear the executing session ref.
+      const wrappedCallbacks: AgentSocketCallbacks = {
+        ...callbacks,
+        onDone: () => {
+          executingSessionRef.current = null;
+          callbacks.onDone?.();
+        },
+        onError: (error: string) => {
+          executingSessionRef.current = null;
+          callbacks.onError?.(error);
+        },
+        onStopped: () => {
+          executingSessionRef.current = null;
+          callbacks.onStopped?.();
+        },
+      };
+      callbacksRef.current = wrappedCallbacks;
       accumulatedContentRef.current = "";
+      executingSessionRef.current = params.sessionId;
 
       const socket = await ensureConnected();
 
@@ -247,6 +299,7 @@ export function useAgentSocket(
         },
         (ack: { session_id: string; error?: string }) => {
           if (ack?.error) {
+            executingSessionRef.current = null;
             callbacksRef.current.onError?.(ack.error);
           }
         }

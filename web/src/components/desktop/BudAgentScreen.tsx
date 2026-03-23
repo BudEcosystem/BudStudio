@@ -300,6 +300,9 @@ export function BudAgentScreen() {
     resetAll,
   } = useChatInteractionState();
 
+  // Safety timer for reconnect recovery (cleared when onDone fires normally)
+  const reconnectSafetyTimerRef = useRef<number | null>(null);
+
   // Artifact panel state
   const [activeArtifact, setActiveArtifact] = useState<ActiveArtifact | null>(null);
   const [artifactPanelVisible, setArtifactPanelVisible] = useState(false);
@@ -334,6 +337,7 @@ export function BudAgentScreen() {
     createOperationHash,
     setAlwaysAllowOperation,
     isOperationAllowed,
+    reloadSessionMessages,
   } = useAgentSession();
 
   // Socket.IO streaming hook
@@ -707,7 +711,73 @@ export function BudAgentScreen() {
           );
         },
 
+        onReconnected: async (sessionId: string) => {
+          // Socket.IO reconnected while an execution was in flight.
+          // The backend now emits to session rooms, so events should
+          // resume.  Poll execution status to handle the case where
+          // the execution finished during the disconnect window.
+          console.info(
+            "[BudAgentScreen] Socket reconnected during execution, polling status for",
+            sessionId
+          );
+
+          try {
+            const resp = await fetch(
+              `/api/agent/sessions/${sessionId}/execution-status`
+            );
+            if (!resp.ok) {
+              console.warn("[BudAgentScreen] Failed to poll execution status:", resp.status);
+              return;
+            }
+            const data = await resp.json();
+            const status: string = data.execution_status;
+
+            if (status === "IDLE") {
+              // Execution completed while we were disconnected.
+              // Reload messages from the DB and reset UI state.
+              console.info("[BudAgentScreen] Execution finished during disconnect — recovering");
+              reloadSessionMessages(sessionId);
+              setIsProcessing(false);
+              setChatState("input");
+              currentAgentMessageIdRef.current = null;
+            } else if (status === "RUNNING") {
+              // Still running — events will resume via room routing.
+              // Start a safety timer: if no events arrive within 30s,
+              // re-poll to catch silent completions.
+              reconnectSafetyTimerRef.current = window.setTimeout(async () => {
+                try {
+                  const r2 = await fetch(
+                    `/api/agent/sessions/${sessionId}/execution-status`
+                  );
+                  if (r2.ok) {
+                    const d2 = await r2.json();
+                    if (d2.execution_status === "IDLE") {
+                      console.info("[BudAgentScreen] Safety timeout: execution finished — recovering");
+                      reloadSessionMessages(sessionId);
+                      setIsProcessing(false);
+                      setChatState("input");
+                      currentAgentMessageIdRef.current = null;
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }, 30_000);
+            }
+            // AWAITING_TOOL / AWAITING_APPROVAL — the backend will
+            // re-emit tool:request / tool:approval_required to the room
+            // once we've re-joined, so no action needed here.
+          } catch (err) {
+            console.warn("[BudAgentScreen] Error during reconnect recovery:", err);
+          }
+        },
+
         onDone: () => {
+          // Clear reconnect safety timer if it's pending
+          if (reconnectSafetyTimerRef.current !== null) {
+            clearTimeout(reconnectSafetyTimerRef.current);
+            reconnectSafetyTimerRef.current = null;
+          }
           // Finalize message status if stream ended without explicit stop/error/stopped
           if (!messageFinalizedRef.current) {
             updateAgentMsg({
@@ -735,6 +805,7 @@ export function BudAgentScreen() {
     setAlwaysAllowMemoryUpdates,
     createOperationHash,
     isOperationAllowed,
+    reloadSessionMessages,
   ]);
 
   const stopProcessing = useCallback(() => {

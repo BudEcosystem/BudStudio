@@ -104,6 +104,7 @@ class AgentSessionSnapshot(BaseModel):
     title: str | None
     description: str | None
     status: str
+    execution_status: str | None = None
     workspace_path: str | None
     total_tokens_used: int
     total_tool_calls: int
@@ -112,6 +113,11 @@ class AgentSessionSnapshot(BaseModel):
     completed_at: datetime | None
     parent_session_id: str | None = None
     compaction_summary: str | None = None
+
+
+class ExecutionStatusResponse(BaseModel):
+    execution_status: str
+    pending_local_tools: list[dict[str, Any]]
 
 
 class SessionListResponse(BaseModel):
@@ -273,6 +279,11 @@ def _session_to_snapshot(s: Any) -> AgentSessionSnapshot:
         title=s.title,
         description=s.description,
         status=s.status.value,
+        execution_status=(
+            s.execution_status.value
+            if hasattr(s, "execution_status") and s.execution_status
+            else None
+        ),
         workspace_path=s.workspace_path,
         total_tokens_used=s.total_tokens_used,
         total_tool_calls=s.total_tool_calls,
@@ -341,6 +352,33 @@ def get_agent_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     return _session_to_snapshot(session)
+
+
+@router.get("/sessions/{session_id}/execution-status")
+def get_execution_status(
+    session_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> ExecutionStatusResponse:
+    """Lightweight endpoint returning only the execution status of a session.
+
+    Used by the frontend after a Socket.IO reconnect to determine whether
+    to wait for resumed events, re-fetch history, or re-display a tool
+    request.
+    """
+    user_id = user.id if user is not None else None
+    session = get_session_for_user(
+        db_session=db_session,
+        session_id=session_id,
+        user_id=user_id,
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return ExecutionStatusResponse(
+        execution_status=session.execution_status.value if session.execution_status else "IDLE",
+        pending_local_tools=session.pending_local_tools or [],
+    )
 
 
 @router.get("/sessions/{session_id}/history")

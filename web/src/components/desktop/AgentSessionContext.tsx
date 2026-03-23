@@ -82,6 +82,7 @@ interface AgentSessionContextType {
   setAlwaysAllowOperation: (operationHash: string) => void;
   isOperationAllowed: (operationHash: string) => boolean;
   createOperationHash: (toolName: string, toolInput: Record<string, unknown>) => string;
+  reloadSessionMessages: (sessionId: string) => void;
 }
 
 const AgentSessionContext = createContext<AgentSessionContextType | undefined>(undefined);
@@ -329,6 +330,15 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching session messages:", err);
     }
   }, []);
+
+  /** Force-reload messages for a session, bypassing the loaded cache. */
+  const reloadSessionMessages = useCallback(
+    (sessionId: string) => {
+      loadedSessionsRef.current.delete(sessionId);
+      loadSessionMessages(sessionId);
+    },
+    [loadSessionMessages]
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // Event stream handler registration (moved after switchToSession definition)
@@ -598,6 +608,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         setAlwaysAllowOperation,
         isOperationAllowed,
         createOperationHash,
+        reloadSessionMessages,
       }}
     >
       {children}

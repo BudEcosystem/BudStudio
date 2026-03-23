@@ -127,8 +127,20 @@ class AgentHandler:
         return get_redis_client(tenant_id=self._tenant_id)
 
     async def _emit(self, event: str, data: dict[str, Any]) -> None:
-        """Emit a Socket.IO event to this specific client."""
-        await self._sio.emit(event, data, to=self._sid)
+        """Emit a Socket.IO event to the session room (preferred) or sid.
+
+        Room-based routing ensures that when a client disconnects and
+        reconnects with a new sid (e.g. OAuth token refresh), events
+        from an in-flight LLM coroutine still reach the client as long
+        as it re-joins the room via ``agent:rejoin``.
+        """
+        session_id = data.get("session_id", "")
+        if session_id:
+            await self._sio.emit(
+                event, data, room=f"session:{session_id}"
+            )
+        else:
+            await self._sio.emit(event, data, to=self._sid)
 
     def _parse_user_id(self) -> UUID | None:
         """Parse user_id string to UUID.  Returns None when auth is disabled."""
