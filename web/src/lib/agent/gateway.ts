@@ -45,11 +45,30 @@ export class LocalGateway {
   ) {}
 
   async connect(): Promise<void> {
-    this.registry = await createLocalToolRegistry(this.workspacePath);
+    console.log("[LocalGateway] Creating tool registry...");
+    try {
+      this.registry = await createLocalToolRegistry(this.workspacePath);
+      console.log("[LocalGateway] Tool registry created");
+    } catch (err) {
+      console.error("[LocalGateway] Tool registry failed:", err instanceof Error ? err.message : err);
+    }
 
-    this.socket = io(this.backendUrl, {
-      path: "/ws/agent",
+    console.log(`[LocalGateway] Connecting socket to ${this.backendUrl}...`);
+
+    // Determine the Socket.IO path based on the backend URL.
+    // If the backend URL includes /api (K8s routing), the Socket.IO
+    // endpoint is at /api/ws/agent/. Otherwise use /ws/agent/ directly.
+    const url = new URL(this.backendUrl);
+    const socketPath = url.pathname.replace(/\/$/, "") + "/ws/agent/";
+
+    this.socket = io(url.origin, {
+      path: socketPath,
       auth: { token: this.authToken },
+      // Also send the token as a cookie header so the backend's cookie-based
+      // auth path works (the token is the fastapiusersauth cookie value).
+      extraHeaders: this.authToken
+        ? { Cookie: `fastapiusersauth=${this.authToken}` }
+        : {},
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -72,15 +91,31 @@ export class LocalGateway {
       this.socket.on(event, (data: unknown) => this.onEvent(event, data));
     }
 
-    this.socket.on("connect", () => {
-      this.onEvent("gateway:connected", {});
-      this.flushPendingResults();
+    // Wait for the connection to actually establish before resolving
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("LocalGateway connection timeout (30s)"));
+      }, 30000);
+
+      this.socket!.on("connect", () => {
+        clearTimeout(timeout);
+        console.log(`[LocalGateway] CONNECTED to backend, sid=${this.socket?.id}`);
+        this.onEvent("gateway:connected", {});
+        this.flushPendingResults();
+        resolve();
+      });
+
+      this.socket!.on("connect_error", (err: Error) => {
+        clearTimeout(timeout);
+        console.log(`[LocalGateway] CONNECT ERROR: ${err.message}`);
+        this.onEvent("gateway:error", { error: err.message });
+        reject(err);
+      });
     });
+
     this.socket.on("disconnect", (reason: string) => {
+      console.log(`[LocalGateway] DISCONNECTED: ${reason}`);
       this.onEvent("gateway:disconnected", { reason });
-    });
-    this.socket.on("connect_error", (err: Error) => {
-      this.onEvent("gateway:error", { error: err.message });
     });
   }
 

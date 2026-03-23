@@ -11,11 +11,13 @@ export async function register() {
       : undefined;
 
     if (gatewayPort) {
+      // Pass the full INTERNAL_URL (including /api if present).
+      // The gateway derives the Socket.IO path from the URL pathname.
       const backendUrl = (
         process.env.INTERNAL_URL ||
         process.env.NEXT_PUBLIC_BUD_BACKEND_URL ||
         "http://127.0.0.1:8080"
-      ).replace(/\/api\/?$/, "");
+      );
       const authToken = process.env.GATEWAY_AUTH_TOKEN || "";
       const workspacePath = process.env.GATEWAY_WORKSPACE_PATH || process.cwd();
 

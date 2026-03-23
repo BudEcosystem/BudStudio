@@ -72,10 +72,10 @@ const GATEWAY_PORT: number = process.env.NEXT_PUBLIC_GATEWAY_PORT
  * Determine whether to connect via the local gateway relay (desktop/Tauri)
  * or directly to the backend's Socket.IO endpoint (cloud deployment).
  */
-function getSocketConfig(backendUrl: string): {
+async function getSocketConfig(backendUrl: string): Promise<{
   url: string;
   opts: Parameters<typeof io>[1];
-} {
+}> {
   // Only check real Tauri runtime indicators — NOT localStorage, which can
   // persist across environments and cause false positives in cloud mode.
   const isDesktop =
@@ -87,10 +87,25 @@ function getSocketConfig(backendUrl: string): {
       navigator.userAgent.includes("Tauri"));
 
   if (isDesktop) {
-    // Desktop: connect to local gateway relay server
+    // Desktop: connect to local gateway relay server.
+    // The HttpOnly cookie can't be sent cross-port by the browser, so
+    // we fetch the token from a same-origin API endpoint first and pass
+    // it explicitly in the auth payload.
+    let authToken = "";
+    try {
+      const resp = await fetch("/api/auth/session-token");
+      if (resp.ok) {
+        const data = await resp.json();
+        authToken = data.token || "";
+      }
+    } catch {
+      // ignore — gateway will reject without auth
+    }
+
     return {
       url: `http://127.0.0.1:${GATEWAY_PORT}`,
       opts: {
+        auth: { token: authToken },
         transports: ["websocket", "polling"],
         reconnection: true,
         reconnectionDelay: 1000,
@@ -155,16 +170,16 @@ export function useAgentSocket(
     };
   }, []);
 
-  const ensureConnected = useCallback((): Promise<Socket> => {
+  const ensureConnected = useCallback(async (): Promise<Socket> => {
+    if (socketRef.current?.connected) {
+      return socketRef.current;
+    }
+
+    socketRef.current?.disconnect();
+
+    const config = await getSocketConfig(backendUrl);
+
     return new Promise<Socket>((resolve, reject) => {
-      if (socketRef.current?.connected) {
-        resolve(socketRef.current);
-        return;
-      }
-
-      socketRef.current?.disconnect();
-
-      const config = getSocketConfig(backendUrl);
       const socket = io(config.url, config.opts);
 
       for (const event of RELAY_EVENTS) {
