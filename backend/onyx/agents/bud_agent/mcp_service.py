@@ -227,8 +227,13 @@ def _make_invoke_handler(
                     "Failed to persist MCP tool message", exc_info=True
                 )
 
+        # Run in a thread to avoid blocking the async event loop
+        # (sync HTTP calls can take minutes and would block Socket.IO
+        # ping/pong, disconnecting all clients).
         try:
-            result = call_mcp_tool(
+            import asyncio
+            result = await asyncio.to_thread(
+                call_mcp_tool,
                 server_url=server_url,
                 tool_name=tool_name,
                 arguments=tool_input,

@@ -7,6 +7,7 @@ Provides FunctionTool factories that:
 4. Execute tools via the MCP gateway
 """
 
+import asyncio
 import json
 import uuid
 from queue import Queue
@@ -15,7 +16,6 @@ from typing import Callable
 from typing import Coroutine
 from uuid import UUID
 
-import redis
 from httpx import HTTPStatusError
 from httpx import RequestError
 
@@ -27,7 +27,6 @@ from onyx.agents.bud_agent.budapp_client import list_connectors
 from onyx.agents.bud_agent.mcp_service import _needs_non_strict
 from onyx.db.agent import add_tool_message
 from onyx.db.agent import update_tool_message_result
-from onyx.server.query_and_chat.streaming_models import AgentApprovalRequired
 from onyx.server.query_and_chat.streaming_models import CustomToolDelta
 from onyx.server.query_and_chat.streaming_models import CustomToolStart
 from onyx.server.query_and_chat.streaming_models import Packet
@@ -45,8 +44,6 @@ from onyx.tools.tool_implementations.mcp.mcp_client import discover_mcp_tools
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
-
-APPROVAL_TIMEOUT_SECONDS = 300  # 5 minutes
 
 # Type alias matching the Agents SDK on_invoke_tool signature
 InvokeHandler = Callable[
@@ -71,10 +68,9 @@ def create_connector_tools(
     user: User,
     session_id: UUID,
     packet_queue: Queue[Any],
-    redis_client: redis.Redis,  # type: ignore[type-arg]
     step_number_fn: Callable[[], int] | None = None,
     auto_approve: bool = False,
-) -> list[FunctionTool]:
+) -> tuple[list[FunctionTool], set[str], dict[str, str]]:
     """Create FunctionTool objects for all enabled BudApp connector tools.
 
     Steps:
@@ -85,21 +81,23 @@ def create_connector_tools(
     4. Discover tool schemas from the MCP gateway
     5. Create FunctionTool for each tool with appropriate permissions
 
-    Returns an empty list if BudApp is unreachable or not configured.
+    Returns:
+        (tools, approval_needed_names, tool_to_gateway_map)
+        Empty lists/sets if BudApp is unreachable or not configured.
     """
     if not BUD_MCP_GATEWAY_URL and not BUD_FOUNDRY_APP_BASE:
-        return []
+        return [], set(), {}
 
     # 1. Get OAuth token (needed for both BudApp REST and MCP calls)
     access_token = get_fresh_oauth_token(user)
     if not access_token:
         logger.warning("No OAuth token available for connector tools")
-        return []
+        return [], set(), {}
 
     # 2. Get enabled gateways from local DB
     enabled_ids = get_enabled_connector_ids(db_session, user.id)
     if not enabled_ids:
-        return []
+        return [], set(), {}
 
     # 3. Cross-check against BudApp's active connector list.
     try:
@@ -117,7 +115,7 @@ def create_connector_tools(
                 len(enabled_ids),
                 len(remote_ids),
             )
-            return []
+            return [], set(), {}
         if len(valid_ids) < len(enabled_ids):
             logger.info(
                 "Filtered %d -> %d connectors after BudApp cross-check",
@@ -169,10 +167,11 @@ def create_connector_tools(
         )
     except Exception:
         logger.warning("Failed to discover BudApp MCP tools", exc_info=True)
-        return []
+        return [], set(), {}
 
     # 7. Build FunctionTool objects
     tools: list[FunctionTool] = []
+    approval_needed: set[str] = set()
 
     for mcp_tool in mcp_tools:
         tool_name = mcp_tool.name
@@ -201,6 +200,11 @@ def create_connector_tools(
         if perm_level == AgentToolPermissionLevel.BLOCKED:
             continue
 
+        # Track tools that need approval — these will be handled
+        # post-streaming as pause tools (like local tools).
+        if perm_level == AgentToolPermissionLevel.NEED_APPROVAL:
+            approval_needed.add(tool_name)
+
         # Build JSON schema from MCP tool definition
         params_schema = (
             mcp_tool.inputSchema
@@ -220,7 +224,6 @@ def create_connector_tools(
                 permission_level=perm_level,
                 session_id=str(session_id),
                 packet_queue=packet_queue,
-                redis_client=redis_client,
                 step_number_fn=step_number_fn,
                 gateway_id=gateway_id,
                 db_session=db_session,
@@ -234,7 +237,7 @@ def create_connector_tools(
         len(mcp_tools),
         user.id,
     )
-    return tools
+    return tools, approval_needed, tool_to_gateway
 
 
 def _make_invoke_handler(
@@ -244,13 +247,28 @@ def _make_invoke_handler(
     permission_level: AgentToolPermissionLevel,
     session_id: str,
     packet_queue: Queue[Any],
-    redis_client: redis.Redis,  # type: ignore[type-arg]
     step_number_fn: Callable[[], int] | None = None,
     gateway_id: str | None = None,
     db_session: Any | None = None,
 ) -> InvokeHandler:
-    """Create an async handler for a connector tool."""
+    """Create an async handler for a connector tool.
 
+    For NEED_APPROVAL tools, returns a stub handler (like local tools)
+    that yields immediately. Actual execution happens post-streaming
+    via the Socket.IO ``handle_approval()`` event handler.
+    """
+
+    # For tools needing approval: return a stub immediately.
+    # The agent_handler classifies these as pause tools post-streaming
+    # and emits tool:approval_required via Socket.IO.
+    if permission_level == AgentToolPermissionLevel.NEED_APPROVAL:
+        async def stub_handler(
+            _ctx: RunContextWrapper[Any], _args: str
+        ) -> str:
+            return f"AWAITING_CONNECTOR_APPROVAL:{tool_name}"
+        return stub_handler
+
+    # For always-allow tools: execute via MCP during streaming.
     async def handler(
         _ctx: RunContextWrapper[Any], json_string: str
     ) -> str:
@@ -296,47 +314,13 @@ def _make_invoke_handler(
                     exc_info=True,
                 )
 
-        # Handle approval if needed
-        if permission_level == AgentToolPermissionLevel.NEED_APPROVAL:
-            approved = _wait_for_approval(
-                session_id=session_id,
-                tool_name=tool_name,
-                tool_input=tool_input,
-                tool_call_id=tool_call_id,
-                packet_queue=packet_queue,
-                redis_client=redis_client,
-                tool_step=tool_step,
-                gateway_id=gateway_id,
-            )
-            if not approved:
-                error_msg = f"Tool '{tool_name}' was denied by the user."
-                _emit(
-                    CustomToolDelta(
-                        tool_name=tool_name,
-                        response_type="error",
-                        data=error_msg,
-                    )
-                )
-                _emit(SectionEnd())
-                # Update DB with denial
-                if db_session:
-                    try:
-                        update_tool_message_result(
-                            db_session=db_session,
-                            session_id=UUID(session_id),
-                            tool_call_id=tool_call_id,
-                            tool_error=error_msg,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Failed to update denied connector tool",
-                            exc_info=True,
-                        )
-                return error_msg
-
-        # Execute via MCP
+        # Execute via MCP.
+        # Run in a thread to avoid blocking the async event loop
+        # (sync HTTP calls can take minutes and would block Socket.IO
+        # ping/pong, disconnecting all clients).
         try:
-            result = call_mcp_tool(
+            result = await asyncio.to_thread(
+                call_mcp_tool,
                 server_url=mcp_url,
                 tool_name=tool_name,
                 arguments=tool_input,
@@ -399,40 +383,38 @@ def _make_invoke_handler(
     return handler
 
 
-def _wait_for_approval(
-    session_id: str,
+async def execute_connector_tool(
+    user: User,
+    session_id: UUID,
     tool_name: str,
     tool_input: dict[str, Any],
     tool_call_id: str,
-    packet_queue: Queue[Any],
-    redis_client: redis.Redis,  # type: ignore[type-arg]
-    tool_step: int = 0,
-    gateway_id: str | None = None,
-) -> bool:
-    """Emit approval request and block until user responds via Redis."""
-    approval_obj = AgentApprovalRequired(
-        tool_name=tool_name,
-        tool_input=tool_input,
-        tool_call_id=tool_call_id,
-        gateway_id=gateway_id,
-    )
-    packet_queue.put(Packet(ind=tool_step, obj=approval_obj))
+) -> tuple[str | None, str | None]:
+    """Execute a connector tool via MCP gateway.
 
-    key = f"bud_agent_approval:{session_id}:{tool_call_id}"
+    Called by ``handle_approval()`` after the user approves a connector
+    tool that required approval.
+
+    Returns:
+        (result, error) — exactly one is non-None.
+    """
+    access_token = get_fresh_oauth_token(user)
+    if not access_token:
+        return None, "No OAuth token available for connector tool execution"
+
+    mcp_url = _get_mcp_url()
+    headers = {"Authorization": f"Bearer {access_token}"}
+
     try:
-        result = redis_client.blpop(key, timeout=APPROVAL_TIMEOUT_SECONDS)
-        if result is None:
-            logger.warning(
-                "Approval timeout for connector tool %s (%s)",
-                tool_name,
-                tool_call_id,
-            )
-            return False
-        _, data = result
-        decision: dict[str, Any] = json.loads(data)
-        return bool(decision.get("approved", False))
-    except Exception:
-        logger.exception("Error waiting for approval for %s", tool_name)
-        return False
-    finally:
-        redis_client.delete(key)
+        result = await asyncio.to_thread(
+            call_mcp_tool,
+            server_url=mcp_url,
+            tool_name=tool_name,
+            arguments=tool_input,
+            connection_headers=headers,
+        )
+        return result, None
+    except Exception as e:
+        error_msg = f"Error calling connector tool '{tool_name}': {e}"
+        logger.exception(error_msg)
+        return None, error_msg

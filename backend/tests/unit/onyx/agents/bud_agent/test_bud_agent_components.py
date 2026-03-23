@@ -1817,7 +1817,6 @@ class TestConnectorServiceSectionEnd:
         )
 
         pq: queue.Queue[Any] = queue.Queue()
-        mock_redis = MagicMock()
 
         handler = _make_invoke_handler(
             tool_name="test_tool",
@@ -1826,7 +1825,6 @@ class TestConnectorServiceSectionEnd:
             permission_level=AgentToolPermissionLevel.ALWAYS_ALLOW,
             session_id="sess-1",
             packet_queue=pq,
-            redis_client=mock_redis,
             step_number_fn=lambda: 5,
         )
 
@@ -1860,7 +1858,6 @@ class TestConnectorServiceSectionEnd:
         )
 
         pq: queue.Queue[Any] = queue.Queue()
-        mock_redis = MagicMock()
 
         handler = _make_invoke_handler(
             tool_name="fail_tool",
@@ -1869,7 +1866,6 @@ class TestConnectorServiceSectionEnd:
             permission_level=AgentToolPermissionLevel.ALWAYS_ALLOW,
             session_id="sess-1",
             packet_queue=pq,
-            redis_client=mock_redis,
             step_number_fn=lambda: 2,
         )
 
