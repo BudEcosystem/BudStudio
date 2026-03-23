@@ -631,13 +631,38 @@ class AgentHandler:
                 # the on_invoke_tool callbacks (we handle tool calls after the
                 # stream completes).  Local tool schemas are already registered
                 # in agent_context via their FunctionTool definitions.
+                # Create stub FunctionTools for local tools so the LLM
+                # sees their schemas. Actual execution happens client-side
+                # via tool:request/tool:result over Socket.IO.
+                from onyx.agents.bud_agent.tool_definitions import (
+                    LOCAL_TOOL_SCHEMAS,
+                )
+                from agents import FunctionTool
+
+                local_tool_stubs: list[FunctionTool] = []
+                for schema in LOCAL_TOOL_SCHEMAS.values():
+                    async def _stub_handler(
+                        _ctx: Any, _args: str,
+                        _name: str = schema["name"],
+                    ) -> str:
+                        return f"AWAITING_LOCAL_EXECUTION:{_name}"
+
+                    local_tool_stubs.append(
+                        FunctionTool(
+                            name=schema["name"],
+                            description=schema.get("description", ""),
+                            params_json_schema=schema.get("parameters", {}),
+                            on_invoke_tool=_stub_handler,
+                        )
+                    )
+
                 ctx = build_agent_run_context(
                     session_id=session_id,
                     user=user,
                     db_session=db_session,
                     user_message="",  # message already persisted
                     mode=AgentExecutionMode.INTERACTIVE,
-                    local_tools=[],  # No local tool bridges for Socket.IO
+                    local_tools=local_tool_stubs,
                     redis_client=self._get_redis(),
                     tenant_id=self._tenant_id,
                     workspace_path=resolved_workspace_path,
@@ -685,7 +710,7 @@ class AgentHandler:
                             db_session=db_session,
                             user_message="",
                             mode=AgentExecutionMode.INTERACTIVE,
-                            local_tools=[],
+                            local_tools=local_tool_stubs,
                             redis_client=self._get_redis(),
                             tenant_id=self._tenant_id,
                             workspace_path=resolved_workspace_path,
