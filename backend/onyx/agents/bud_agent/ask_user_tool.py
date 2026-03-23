@@ -42,8 +42,16 @@ def create_ask_user_tool(
     step_number_fn: Callable[[], int] | None = None,
     db_session: Any | None = None,
     redis_client: redis.Redis | None = None,  # type: ignore[type-arg]
+    blocking: bool = True,
 ) -> list[FunctionTool]:
     """Create the ask_user_questions FunctionTool.
+
+    Args:
+        blocking: When True (SSE path), the handler blocks on Redis BLPOP
+            waiting for the user's answer.  When False (Socket.IO path),
+            the handler returns immediately — the agent handler emits a
+            ``tool:request`` event and waits for ``tool:result`` via
+            Socket.IO instead.
 
     Returns a single-element list for consistency with other tool factories.
     """
@@ -59,6 +67,7 @@ def create_ask_user_tool(
             step_number_fn=step_number_fn,
             db_session=db_session,
             redis_client=redis_client,
+            blocking=blocking,
         ),
     )
     return [tool]
@@ -70,6 +79,7 @@ def _make_invoke_handler(
     step_number_fn: Callable[[], int] | None = None,
     db_session: Any | None = None,
     redis_client: redis.Redis | None = None,  # type: ignore[type-arg]
+    blocking: bool = True,
 ) -> Any:
     """Create an async handler for the ask_user_questions tool."""
 
@@ -112,8 +122,10 @@ def _make_invoke_handler(
         # Emit tool start
         _emit(CustomToolStart(tool_name=TOOL_NAME))
 
-        # Persist tool call to DB
-        if db_session:
+        # Persist tool call to DB (only in blocking/SSE mode).
+        # In non-blocking/Socket.IO mode, the agent handler persists
+        # the TOOL row itself to avoid duplicates.
+        if blocking and db_session:
             try:
                 add_tool_message(
                     db_session=db_session,
@@ -137,7 +149,13 @@ def _make_invoke_handler(
             )
         )
 
-        # Block on Redis until the user answers
+        # In non-blocking mode (Socket.IO), return immediately.
+        # The agent handler will emit a tool:request event and wait
+        # for the user's answer via tool:result over Socket.IO.
+        if not blocking:
+            return "AWAITING_USER_RESPONSE"
+
+        # Block on Redis until the user answers (SSE path)
         if redis_client is None:
             error_msg = "ask_user_questions: no Redis client available"
             logger.error(error_msg)

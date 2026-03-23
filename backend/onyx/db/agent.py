@@ -532,13 +532,20 @@ def tool_result_exists(
 
     Used as an idempotency guard so duplicate ``tool:result`` messages
     from the client are silently ignored.
+
+    Note: JSONB columns can hold JSON ``null`` which is different from
+    SQL ``NULL``.  We must exclude both to avoid false positives for
+    rows created with empty tool_output.
     """
+    from sqlalchemy import cast, String
+
     stmt = exists(
         select(AgentMessage.id).where(
             AgentMessage.session_id == session_id,
             AgentMessage.tool_call_id == tool_call_id,
             AgentMessage.role == AgentMessageRole.TOOL,
             AgentMessage.tool_output.isnot(None),
+            cast(AgentMessage.tool_output, String) != "null",
         )
     ).select()
     return db_session.execute(stmt).scalar() or False

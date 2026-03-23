@@ -283,6 +283,9 @@ def _create_handler(session_data: dict[str, Any], sid: str) -> "AgentHandler":
         user_email=session_data.get("user_email"),
         sid=sid,
         sio=sio,
+        model=session_data.get("model"),
+        workspace_path=session_data.get("workspace_path"),
+        timezone=session_data.get("timezone"),
     )
 
 
@@ -295,6 +298,16 @@ async def handle_execute(sid: str, data: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         session_data: dict[str, Any] = await sio.get_session(sid)
+        # Persist model/timezone so handle_tool_result can use them
+        # for the follow-up LLM turn (otherwise it falls back to default).
+        if data.get("model"):
+            session_data["model"] = data["model"]
+        if data.get("timezone"):
+            session_data["timezone"] = data["timezone"]
+        if data.get("workspace_path"):
+            session_data["workspace_path"] = data["workspace_path"]
+        await sio.save_session(sid, session_data)
+
         handler = _create_handler(session_data, sid)
         result: dict[str, Any] = await handler.handle_execute(data)
         return result

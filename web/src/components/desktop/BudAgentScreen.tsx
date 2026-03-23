@@ -340,7 +340,7 @@ export function BudAgentScreen() {
   // TODO: Replace empty authToken with actual JWT/session token once auth
   // is wired through the Socket.IO gateway. The gateway currently also
   // supports cookie-based auth from the browser, so this may work as-is.
-  const { execute, abort, stop, approve } = useAgentSocket(BACKEND_URL, "");
+  const { execute, abort, stop, approve, sendToolResult } = useAgentSocket(BACKEND_URL, "");
 
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
@@ -1258,6 +1258,7 @@ export function BudAgentScreen() {
                 toolCallId={bottomQuestions.toolCallId}
                 sessionId={currentSessionId}
                 onSubmitted={() => setBottomQuestions(null)}
+                onSendToolResult={sendToolResult}
               />
             </div>
           )}

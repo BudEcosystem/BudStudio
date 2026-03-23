@@ -98,12 +98,20 @@ class AgentHandler:
         sid: str,
         sio: socketio.AsyncServer,
         tenant_id: str = "public",
+        model: str | None = None,
+        workspace_path: str | None = None,
+        timezone: str | None = None,
     ) -> None:
         self._user_id_str = user_id
         self._user_email = user_email
         self._sid = sid
         self._sio = sio
         self._tenant_id = tenant_id
+        # Persisted from agent:execute so follow-up events
+        # (tool:result, tool:approval) use the same model.
+        self._model = model
+        self._workspace_path = workspace_path
+        self._timezone = timezone
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -253,10 +261,20 @@ class AgentHandler:
         with self._get_db_session() as db_session:
             # Idempotency check
             if tool_result_exists(db_session, session_id, tool_call_id):
+                # Debug: log what exists
+                from sqlalchemy import select as sa_select
+                from onyx.db.models import AgentMessage as AM
+                existing = db_session.execute(
+                    sa_select(AM.tool_call_id, AM.tool_output, AM.tool_name).where(
+                        AM.session_id == session_id,
+                        AM.tool_call_id == tool_call_id,
+                    )
+                ).all()
                 logger.info(
-                    "tool:result duplicate ignored session=%s tool_call_id=%s",
+                    "tool:result duplicate ignored session=%s tool_call_id=%s existing=%s",
                     session_id,
                     tool_call_id,
+                    [(r.tool_call_id, r.tool_output is not None, r.tool_name) for r in existing],
                 )
                 return
 
@@ -365,7 +383,12 @@ class AgentHandler:
                 db_session, session_id, AgentSessionExecutionStatus.RUNNING
             )
 
-        await self._run_llm_turn(session_id=session_id)
+        await self._run_llm_turn(
+            session_id=session_id,
+            workspace_path=self._workspace_path,
+            model=self._model,
+            timezone=self._timezone,
+        )
 
     async def handle_approval(self, data: dict[str, Any]) -> None:
         """User approved or denied a tool -- execute or skip."""
@@ -445,7 +468,12 @@ class AgentHandler:
                 "data": "User denied tool execution",
             })
 
-            await self._run_llm_turn(session_id=session_id)
+            await self._run_llm_turn(
+                session_id=session_id,
+                workspace_path=self._workspace_path,
+                model=self._model,
+                timezone=self._timezone,
+            )
             return
 
         # Approved -- send tool:request and set AWAITING_TOOL
@@ -615,6 +643,7 @@ class AgentHandler:
                     workspace_path=resolved_workspace_path,
                     model=model,
                     timezone=timezone,
+                    blocking_tools=False,  # Socket.IO: no Redis blocking
                 )
 
                 # Release DB connection (tools captured in closures will
@@ -662,6 +691,7 @@ class AgentHandler:
                             workspace_path=resolved_workspace_path,
                             model=model,
                             timezone=timezone,
+                            blocking_tools=False,
                         )
                         db_session.rollback()
                         messages = build_message_history(
@@ -942,11 +972,16 @@ class AgentHandler:
             await self._emit("agent:done", {"session_id": session_id_str})
             return
 
-        # Separate local vs remote tool calls
+        # Separate local vs remote tool calls.
+        # ask_user_questions is treated as a "pause" tool (like local tools):
+        # emit the request and stop, wait for the user's answer via
+        # tool:result.  It must NOT block the event loop with Redis BLPOP.
+        PAUSE_TOOLS = {"ask_user_questions"}
+
         local_calls: list[dict[str, Any]] = []
         remote_calls: list[dict[str, Any]] = []
         for tc in pending_tool_calls:
-            if is_local_tool(tc["name"]):
+            if is_local_tool(tc["name"]) or tc["name"] in PAUSE_TOOLS:
                 local_calls.append(tc)
             else:
                 remote_calls.append(tc)
@@ -1100,6 +1135,66 @@ class AgentHandler:
                 })
             # STOP -- client will send tool:result or tool:approval
             return
+
+        # Persist TOOL rows for remote tools that did NOT self-persist.
+        # Extract actual tool outputs from the SDK's streamed result
+        # (ToolCallOutputItem.raw_item has call_id + output string).
+        # Tools like web_search/open_url/render_artifact self-persist
+        # via on_invoke_tool; the rest (workspace_read, memory_search,
+        # send_message, etc.) need this.
+        try:
+            from agents.items import ToolCallOutputItem
+
+            # Build a map: call_id -> output string from SDK results
+            sdk_outputs: dict[str, str] = {}
+            for item in streamed.new_items:
+                if isinstance(item, ToolCallOutputItem):
+                    raw = item.raw_item
+                    if hasattr(raw, "call_id") and hasattr(raw, "output"):
+                        sdk_outputs[raw.call_id] = raw.output
+
+            with self._get_db_session() as db_session:
+                # Check which tools already have DB rows
+                from onyx.db.agent import get_session_messages
+                existing_tool_names: set[str] = set()
+                for m in get_session_messages(db_session, session_id):
+                    if m.role == AgentMessageRole.TOOL and m.tool_name:
+                        existing_tool_names.add(m.tool_name)
+
+                for tc in remote_calls:
+                    tc_name = tc["name"]
+                    tc_sdk_id = tc["id"]
+                    # Skip if the tool already self-persisted a row
+                    if tc_name in existing_tool_names:
+                        existing_tool_names.discard(tc_name)  # consume
+                        continue
+                    # Get the output from SDK results
+                    output_str = sdk_outputs.get(tc_sdk_id, "")
+                    try:
+                        output_val = json.loads(output_str) if output_str else None
+                    except (json.JSONDecodeError, TypeError):
+                        output_val = {"output": output_str} if output_str else None
+
+                    add_tool_message(
+                        db_session=db_session,
+                        session_id=session_id,
+                        tool_name=tc_name,
+                        tool_input=tc["input"],
+                        tool_call_id=tc_sdk_id,
+                        step_number=step_number,
+                    )
+                    if output_val is not None:
+                        update_tool_message_result(
+                            db_session=db_session,
+                            session_id=session_id,
+                            tool_call_id=tc_sdk_id,
+                            tool_output=output_val,
+                        )
+        except Exception:
+            logger.warning(
+                "Failed to persist non-self-persisting tool rows",
+                exc_info=True,
+            )
 
         # All tools were remote -- the Agent SDK already executed them during
         # the stream (via on_invoke_tool callbacks).  Since the agent is

@@ -62,6 +62,12 @@ export interface UseAgentSocketReturn {
     toolCallId: string,
     approved: boolean
   ) => void;
+  sendToolResult: (
+    sessionId: string,
+    toolCallId: string,
+    output: string | null,
+    error: string | null
+  ) => void;
 }
 
 const GATEWAY_PORT: number = process.env.NEXT_PUBLIC_GATEWAY_PORT
@@ -277,7 +283,19 @@ export function useAgentSocket(
     []
   );
 
-  return { execute, abort, stop, approve };
+  const sendToolResult = useCallback(
+    (sessionId: string, toolCallId: string, output: string | null, error: string | null) => {
+      socketRef.current?.emit("tool:result", {
+        session_id: sessionId,
+        tool_call_id: toolCallId,
+        output,
+        error,
+      });
+    },
+    []
+  );
+
+  return { execute, abort, stop, approve, sendToolResult };
 }
 
 // ── Event dispatcher ──
@@ -347,7 +365,7 @@ function dispatchEvent(
       const toolInput = (data.tool_input as Record<string, unknown>) || {};
       const toolCallId = data.tool_call_id as string;
 
-      if (toolName === "ask_user") {
+      if (toolName === "ask_user" || toolName === "ask_user_questions") {
         cbs.onUserQuestions?.(toolInput.questions as UserQuestionItem[], toolCallId);
       } else {
         emitPacket({ type: "custom_tool_start", tool_name: toolName });

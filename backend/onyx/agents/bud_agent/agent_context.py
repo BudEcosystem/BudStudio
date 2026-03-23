@@ -136,6 +136,7 @@ def build_agent_run_context(
     packet_queue: queue.Queue[Packet | Exception | object] | None = None,
     step_number_fn: Callable[[], int] | None = None,
     step_increment_fn: Callable[[], None] | None = None,
+    blocking_tools: bool = True,
 ) -> AgentRunContext:
     """Build the full agent execution context shared by all orchestrators.
 
@@ -246,6 +247,7 @@ def build_agent_run_context(
         step_number_fn=resolved_step_number_fn,
         db_session=db_session,
         redis_client=resolved_redis,
+        blocking=blocking_tools,
     )
 
     # Step 7: inbox tools
