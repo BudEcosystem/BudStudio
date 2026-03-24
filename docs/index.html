@@ -244,42 +244,42 @@
   <div class="nav-sub">Architecture &amp; Flow Documentation</div>
 
   <div class="nav-section">Overview</div>
-  <a href="#" class="active" onclick="showSection('overview')">System Overview</a>
-  <a href="#" onclick="showSection('high-level')">High-Level Diagram</a>
+  <a href="#overview" data-section="overview" class="active">System Overview</a>
+  <a href="#high-level" data-section="high-level">High-Level Diagram</a>
 
   <div class="nav-section">Core Flows</div>
-  <a href="#" onclick="showSection('interactive-flow')">Interactive Session</a>
-  <a href="#" onclick="showSection('cron-flow')">Cron Execution</a>
-  <a href="#" onclick="showSection('inbox-flow')">Inbox Processing</a>
+  <a href="#interactive-flow" data-section="interactive-flow">Interactive Session</a>
+  <a href="#cron-flow" data-section="cron-flow">Cron Execution</a>
+  <a href="#inbox-flow" data-section="inbox-flow">Inbox Processing</a>
 
   <div class="nav-section">Execution Engine</div>
-  <a href="#" onclick="showSection('state-machine')">Session State Machine</a>
-  <a href="#" onclick="showSection('orchestrators')">Orchestrators</a>
-  <a href="#" onclick="showSection('agent-context')">Agent Context</a>
+  <a href="#state-machine" data-section="state-machine">Session State Machine</a>
+  <a href="#orchestrators" data-section="orchestrators">Orchestrators</a>
+  <a href="#agent-context" data-section="agent-context">Agent Context</a>
 
   <div class="nav-section">Tool System</div>
-  <a href="#" onclick="showSection('tool-overview')">Tool Architecture</a>
-  <a href="#" onclick="showSection('tool-catalog')">Tool Catalog</a>
-  <a href="#" onclick="showSection('tool-approval')">Approval Pipeline</a>
-  <a href="#" onclick="showSection('mcp')">MCP Integration</a>
+  <a href="#tool-overview" data-section="tool-overview">Tool Architecture</a>
+  <a href="#tool-catalog" data-section="tool-catalog">Tool Catalog</a>
+  <a href="#tool-approval" data-section="tool-approval">Approval Pipeline</a>
+  <a href="#mcp" data-section="mcp">MCP Integration</a>
 
   <div class="nav-section">Communication</div>
-  <a href="#" onclick="showSection('socketio')">Socket.IO Protocol</a>
-  <a href="#" onclick="showSection('api-endpoints')">REST API</a>
+  <a href="#socketio" data-section="socketio">Socket.IO Protocol</a>
+  <a href="#api-endpoints" data-section="api-endpoints">REST API</a>
 
   <div class="nav-section">Data Layer</div>
-  <a href="#" onclick="showSection('db-models')">Database Models</a>
-  <a href="#" onclick="showSection('memory')">Memory System</a>
-  <a href="#" onclick="showSection('workspace')">Workspace Files</a>
+  <a href="#db-models" data-section="db-models">Database Models</a>
+  <a href="#memory" data-section="memory">Memory System</a>
+  <a href="#workspace" data-section="workspace">Workspace Files</a>
 
   <div class="nav-section">Frontend</div>
-  <a href="#" onclick="showSection('frontend')">Frontend Architecture</a>
-  <a href="#" onclick="showSection('gateway')">LocalGateway</a>
-  <a href="#" onclick="showSection('local-tools')">Desktop Tools</a>
+  <a href="#frontend" data-section="frontend">Frontend Architecture</a>
+  <a href="#gateway" data-section="gateway">LocalGateway</a>
+  <a href="#local-tools" data-section="local-tools">Desktop Tools</a>
 
   <div class="nav-section">Reference</div>
-  <a href="#" onclick="showSection('directory')">Directory Layout</a>
-  <a href="#" onclick="showSection('enums')">Enums &amp; Constants</a>
+  <a href="#directory" data-section="directory">Directory Layout</a>
+  <a href="#enums" data-section="enums">Enums &amp; Constants</a>
 </nav>
 
 <!-- ══════════════════════════════════ MAIN ══════════════════════════════════ -->
@@ -1779,16 +1779,40 @@
 </div><!-- /main -->
 
 <script>
-  function showSection(id) {
+  function showSection(id, pushHash) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     const sec = document.getElementById('sec-' + id);
     if (sec) sec.classList.add('active');
-    document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
-    event.target.classList.add('active');
+    // Update nav active state by matching data-section attribute
+    document.querySelectorAll('.nav a[data-section]').forEach(a => {
+      a.classList.toggle('active', a.getAttribute('data-section') === id);
+    });
     window.scrollTo(0, 0);
     document.querySelector('.nav').classList.remove('open');
     if (id === 'high-level') setTimeout(drawHLConnections, 150);
+    // Update URL hash (unless we're responding to a hashchange)
+    if (pushHash !== false) {
+      history.pushState(null, '', '#' + id);
+    }
   }
+
+  // Handle direct URL hash and browser back/forward
+  function handleHash() {
+    const hash = location.hash.replace('#', '') || 'overview';
+    const sec = document.getElementById('sec-' + hash);
+    if (sec) showSection(hash, false);
+  }
+  window.addEventListener('hashchange', handleHash);
+  window.addEventListener('DOMContentLoaded', function() {
+    handleHash();
+    // Attach click handlers to nav links
+    document.querySelectorAll('.nav a[data-section]').forEach(function(a) {
+      a.addEventListener('click', function(e) {
+        e.preventDefault();
+        showSection(this.getAttribute('data-section'));
+      });
+    });
+  });
 
   function toggleExpand(header) {
     const content = header.nextElementSibling;
