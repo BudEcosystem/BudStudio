@@ -22,6 +22,8 @@ from agents import RawResponsesStreamEvent
 from agents import RunConfig
 from agents import ToolCallItem
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from sqlalchemy.orm import Session
+
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.artifact_tool import create_artifact_tool
 from onyx.agents.bud_agent.ask_user_tool import create_ask_user_tool
@@ -48,7 +50,6 @@ from onyx.llm.factory import get_default_llms
 from onyx.redis.redis_pool import get_redis_client
 from onyx.server.query_and_chat.streaming_models import Packet
 from onyx.utils.logger import setup_logger
-from sqlalchemy.orm import Session
 
 logger = setup_logger()
 
