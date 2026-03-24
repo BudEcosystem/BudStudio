@@ -4,11 +4,7 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  merge_group:
-  pull_request:
-    branches:
-      - main
-      - "release/**"
+  workflow_dispatch:  # Manual only — needs Blacksmith runners we don't have
 
 env:
   # Private Registry Configuration
