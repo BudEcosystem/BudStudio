@@ -1,0 +1,1957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bud Agent - Architecture</title>
+  <style>
+    :root {
+      --bg: #0a0c10;
+      --bg-card: #13161d;
+      --bg-card-hover: #1a1e28;
+      --border: #242938;
+      --text: #e2e4ea;
+      --text-muted: #7c819a;
+      --accent: #6c63ff;
+      --accent-light: #8b83ff;
+      --accent-dim: rgba(108,99,255,0.12);
+      --green: #34d399;
+      --blue: #60a5fa;
+      --orange: #fb923c;
+      --pink: #f472b6;
+      --cyan: #22d3ee;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --purple: #a78bfa;
+      --lime: #a3e635;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      position: fixed; top: 0; left: 0; width: 250px; height: 100vh;
+      background: var(--bg-card); border-right: 1px solid var(--border);
+      padding: 24px 14px; z-index: 100; overflow-y: auto; transition: transform 0.3s;
+    }
+    .nav-logo { font-size: 20px; font-weight: 700; color: var(--accent-light); }
+    .nav-sub { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin: 4px 0 20px; }
+    .nav-section { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); margin: 18px 0 6px 10px; opacity: 0.5; }
+    .nav a {
+      display: block; padding: 7px 11px; margin-bottom: 1px; color: var(--text-muted);
+      text-decoration: none; font-size: 13px; border-radius: 6px; transition: all 0.15s;
+    }
+    .nav a:hover, .nav a.active { color: var(--text); background: var(--accent-dim); }
+    .nav a.active { color: var(--accent-light); font-weight: 600; }
+
+    /* ── Main ── */
+    .main { margin-left: 250px; padding: 36px 44px 80px; max-width: 1180px; }
+
+    /* ── Sections ── */
+    .section { display: none; animation: fadeIn 0.25s ease; }
+    .section.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    h1 { font-size: 30px; font-weight: 700; margin-bottom: 6px; }
+    h2 { font-size: 20px; font-weight: 600; margin: 28px 0 14px; }
+    h3 { font-size: 15px; font-weight: 600; margin: 18px 0 8px; color: var(--text-muted); }
+    .subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 28px; line-height: 1.65; }
+    p, li { font-size: 13.5px; line-height: 1.7; color: var(--text-muted); }
+    ul { padding-left: 18px; margin: 6px 0; }
+    li { margin-bottom: 3px; }
+    code {
+      background: rgba(108,99,255,0.08); color: var(--accent-light);
+      padding: 2px 6px; border-radius: 4px; font-size: 12px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    .path { color: var(--cyan); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+
+    /* ── Cards ── */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; margin: 14px 0; }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px;
+      padding: 18px; cursor: default; transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .card.clickable { cursor: pointer; }
+    .card.clickable:hover, .card:hover {
+      background: var(--bg-card-hover); border-color: var(--accent);
+      transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    }
+    .card-icon {
+      width: 36px; height: 36px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; margin-bottom: 10px;
+    }
+    .card-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+    .card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+    .card-path { font-size: 10.5px; color: var(--cyan); margin-top: 6px; font-family: monospace; opacity: 0.7; }
+
+    /* ── Tags ── */
+    .tag {
+      display: inline-block; padding: 2px 9px; border-radius: 10px;
+      font-size: 10.5px; font-weight: 500; margin: 2px 3px 2px 0;
+    }
+    .tag-green { background: rgba(52,211,153,0.12); color: var(--green); }
+    .tag-blue { background: rgba(96,165,250,0.12); color: var(--blue); }
+    .tag-orange { background: rgba(251,146,60,0.12); color: var(--orange); }
+    .tag-pink { background: rgba(244,114,182,0.12); color: var(--pink); }
+    .tag-cyan { background: rgba(34,211,238,0.12); color: var(--cyan); }
+    .tag-purple { background: rgba(167,139,250,0.12); color: var(--purple); }
+    .tag-yellow { background: rgba(251,191,36,0.12); color: var(--yellow); }
+    .tag-red { background: rgba(248,113,113,0.12); color: var(--red); }
+    .tag-lime { background: rgba(163,230,53,0.12); color: var(--lime); }
+    .tag-accent { background: var(--accent-dim); color: var(--accent-light); }
+
+    /* ── Expandable ── */
+    .expand-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+    .expand-header {
+      padding: 14px 18px; display: flex; align-items: center; gap: 10px;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .expand-header:hover { background: var(--bg-card-hover); }
+    .expand-arrow { display: inline-block; transition: transform 0.2s; font-size: 11px; color: var(--text-muted); }
+    .expand-arrow.open { transform: rotate(90deg); }
+    .expand-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .expand-title { font-weight: 600; font-size: 13.5px; flex: 1; }
+    .expand-meta { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+    .expand-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease; padding: 0 18px; }
+    .expand-content.open { max-height: 3000px; padding: 14px 18px; }
+
+    /* ── Flow Diagram ── */
+    .flow-diagram {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px;
+      padding: 28px; margin: 14px 0; overflow-x: auto;
+    }
+    svg text { font-family: 'Inter', sans-serif; }
+
+    /* ── State Machine ── */
+    .state-machine {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px;
+      padding: 24px; margin: 14px 0; overflow-x: auto;
+    }
+    .state-node {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      border: 1.5px solid; margin: 4px;
+    }
+    .state-arrow { color: var(--text-muted); font-size: 13px; margin: 0 4px; }
+    .state-label { font-size: 10px; color: var(--text-muted); font-style: italic; }
+
+    /* ── Tables ── */
+    .data-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    .data-table th, .data-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+    .data-table th { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.6px; }
+    .data-table td { color: var(--text); }
+    .data-table tr:hover td { background: rgba(108,99,255,0.03); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 3px; margin-bottom: 18px; background: var(--bg-card); border-radius: 9px;
+      padding: 3px; border: 1px solid var(--border); width: fit-content;
+    }
+    .tab {
+      padding: 7px 16px; border-radius: 6px; font-size: 12.5px; cursor: pointer;
+      color: var(--text-muted); transition: all 0.15s; border: none; background: none; font-family: inherit;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--accent); color: #fff; font-weight: 500; }
+
+    /* ── Sequence diagram ── */
+    .seq-row { display: flex; align-items: stretch; margin-bottom: 0; }
+    .seq-actor { width: 120px; text-align: center; font-size: 12px; font-weight: 600; padding: 8px 4px; flex-shrink: 0; }
+    .seq-line { flex: 1; position: relative; border-left: 2px dashed var(--border); min-height: 50px; display: flex; align-items: center; }
+    .seq-msg {
+      background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 12px; font-size: 11.5px; margin-left: 16px; max-width: 400px;
+    }
+    .seq-msg-label { font-size: 10px; color: var(--accent-light); font-weight: 600; margin-bottom: 2px; }
+
+    /* ── Interactive Diagram Nodes ── */
+    .diagram-container {
+      position: relative; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 11px; margin: 14px 0; overflow: hidden;
+    }
+    .diagram-node {
+      position: absolute; background: var(--bg-card-hover); border: 2px solid var(--border);
+      border-radius: 10px; padding: 12px 16px; cursor: pointer; transition: all 0.25s; z-index: 2; text-align: center;
+    }
+    .diagram-node:hover { border-color: var(--accent); box-shadow: 0 0 18px rgba(108,99,255,0.2); transform: scale(1.04); z-index: 3; }
+    .diagram-node.highlight { border-color: var(--accent); box-shadow: 0 0 22px rgba(108,99,255,0.3); }
+    .diagram-node-title { font-size: 12.5px; font-weight: 600; color: var(--text); }
+    .diagram-node-sub { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+
+    /* ── Tooltip ── */
+    .tooltip {
+      position: fixed; background: #252938; color: var(--text); border: 1px solid var(--accent);
+      border-radius: 8px; padding: 12px 16px; font-size: 12px; max-width: 340px; z-index: 1000;
+      pointer-events: none; opacity: 0; transition: opacity 0.15s; line-height: 1.5; box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+    }
+    .tooltip.visible { opacity: 1; }
+    .tooltip-title { font-weight: 600; margin-bottom: 4px; color: var(--accent-light); font-size: 13px; }
+
+    /* ── Tree view ── */
+    .tree {
+      font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.9;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px;
+      padding: 22px; overflow-x: auto; color: var(--text-muted);
+    }
+    .tree .dir { color: var(--blue); }
+    .tree .file { color: var(--text); }
+    .tree .comment { opacity: 0.4; }
+    .tree .highlight { color: var(--accent-light); font-weight: 600; }
+
+    /* ── Search ── */
+    .search-box {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+      padding: 7px 12px; color: var(--text); font-size: 12.5px; width: 100%;
+      margin-bottom: 14px; outline: none; transition: border-color 0.15s;
+    }
+    .search-box:focus { border-color: var(--accent); }
+
+    /* ── Mobile ── */
+    .menu-toggle {
+      display: none; position: fixed; top: 10px; left: 10px; z-index: 200;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 7px;
+      padding: 7px 11px; color: var(--text); font-size: 16px; cursor: pointer;
+    }
+    @media (max-width: 768px) {
+      .nav { transform: translateX(-100%); }
+      .nav.open { transform: translateX(0); }
+      .main { margin-left: 0; padding: 24px 18px 80px; }
+      .menu-toggle { display: block; }
+      .card-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="document.querySelector('.nav').classList.toggle('open')">&#9776;</button>
+<div class="tooltip" id="tooltip"></div>
+
+<!-- ══════════════════════════════════ NAV ══════════════════════════════════ -->
+<nav class="nav" id="nav">
+  <div class="nav-logo">Bud Agent</div>
+  <div class="nav-sub">Architecture &amp; Flow Documentation</div>
+
+  <div class="nav-section">Overview</div>
+  <a href="#" class="active" onclick="showSection('overview')">System Overview</a>
+  <a href="#" onclick="showSection('high-level')">High-Level Diagram</a>
+
+  <div class="nav-section">Core Flows</div>
+  <a href="#" onclick="showSection('interactive-flow')">Interactive Session</a>
+  <a href="#" onclick="showSection('cron-flow')">Cron Execution</a>
+  <a href="#" onclick="showSection('inbox-flow')">Inbox Processing</a>
+
+  <div class="nav-section">Execution Engine</div>
+  <a href="#" onclick="showSection('state-machine')">Session State Machine</a>
+  <a href="#" onclick="showSection('orchestrators')">Orchestrators</a>
+  <a href="#" onclick="showSection('agent-context')">Agent Context</a>
+
+  <div class="nav-section">Tool System</div>
+  <a href="#" onclick="showSection('tool-overview')">Tool Architecture</a>
+  <a href="#" onclick="showSection('tool-catalog')">Tool Catalog</a>
+  <a href="#" onclick="showSection('tool-approval')">Approval Pipeline</a>
+  <a href="#" onclick="showSection('mcp')">MCP Integration</a>
+
+  <div class="nav-section">Communication</div>
+  <a href="#" onclick="showSection('socketio')">Socket.IO Protocol</a>
+  <a href="#" onclick="showSection('api-endpoints')">REST API</a>
+
+  <div class="nav-section">Data Layer</div>
+  <a href="#" onclick="showSection('db-models')">Database Models</a>
+  <a href="#" onclick="showSection('memory')">Memory System</a>
+  <a href="#" onclick="showSection('workspace')">Workspace Files</a>
+
+  <div class="nav-section">Frontend</div>
+  <a href="#" onclick="showSection('frontend')">Frontend Architecture</a>
+  <a href="#" onclick="showSection('gateway')">LocalGateway</a>
+  <a href="#" onclick="showSection('local-tools')">Desktop Tools</a>
+
+  <div class="nav-section">Reference</div>
+  <a href="#" onclick="showSection('directory')">Directory Layout</a>
+  <a href="#" onclick="showSection('enums')">Enums &amp; Constants</a>
+</nav>
+
+<!-- ══════════════════════════════════ MAIN ══════════════════════════════════ -->
+<div class="main">
+
+<!-- ═══════ OVERVIEW ═══════ -->
+<div class="section active" id="sec-overview">
+  <h1>Bud Agent System</h1>
+  <p class="subtitle">
+    A full-stack AI agent framework supporting real-time interactive sessions, scheduled automation (cron),
+    and inter-agent communication (inbox). Agents execute tools locally (desktop) and remotely (backend),
+    with persistent memory, workspace files, and MCP connector integration.
+  </p>
+
+  <div class="card-grid">
+    <div class="card clickable" onclick="showSection('interactive-flow')">
+      <div class="card-icon" style="background:rgba(108,99,255,0.12);color:var(--accent-light)">&#9889;</div>
+      <div class="card-title">Interactive Sessions</div>
+      <div class="card-desc">Real-time Socket.IO protocol. User sends messages, LLM streams responses, tools execute on client or server with approval gating.</div>
+    </div>
+    <div class="card clickable" onclick="showSection('cron-flow')">
+      <div class="card-icon" style="background:rgba(251,146,60,0.12);color:var(--orange)">&#128337;</div>
+      <div class="card-title">Cron Automation</div>
+      <div class="card-desc">Scheduled agent runs. Non-streaming, suspension-aware. Accumulates results, deduplicates actions within 24h windows.</div>
+    </div>
+    <div class="card clickable" onclick="showSection('inbox-flow')">
+      <div class="card-icon" style="background:rgba(52,211,153,0.12);color:var(--green)">&#128233;</div>
+      <div class="card-title">Inbox Messaging</div>
+      <div class="card-desc">Inter-agent communication. Agents can reply, escalate to user, or mark goals complete. Enables multi-agent workflows.</div>
+    </div>
+    <div class="card clickable" onclick="showSection('tool-overview')">
+      <div class="card-icon" style="background:rgba(244,114,182,0.12);color:var(--pink)">&#128295;</div>
+      <div class="card-title">Tool System</div>
+      <div class="card-desc">17 local tools (bash, file ops, browser), 11 remote tools (memory, search, workspace), plus dynamic MCP connector tools.</div>
+    </div>
+    <div class="card clickable" onclick="showSection('memory')">
+      <div class="card-icon" style="background:rgba(34,211,238,0.12);color:var(--cyan)">&#129504;</div>
+      <div class="card-title">Memory System</div>
+      <div class="card-desc">Hybrid Vespa search (70% vector + 30% BM25) with PostgreSQL fallback. Auto-injects relevant memories into system prompt.</div>
+    </div>
+    <div class="card clickable" onclick="showSection('socketio')">
+      <div class="card-icon" style="background:rgba(167,139,250,0.12);color:var(--purple)">&#128225;</div>
+      <div class="card-title">Socket.IO Protocol</div>
+      <div class="card-desc">Stateless event-driven architecture. Room-based routing for reconnection. JWT/cookie auth. Bidirectional streaming.</div>
+    </div>
+  </div>
+
+  <h2>Key Design Principles</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Stateless Handler</div>
+      <div class="card-desc"><code>AgentHandler</code> is instantiated fresh per Socket.IO event. All state lives in PostgreSQL (sessions, messages) and Redis (stop flags). Survives server restarts.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Unified Agent Loop</div>
+      <div class="card-desc"><code>run_sync_agent_loop()</code> in <code>agent_context.py</code> is shared by all three execution modes (interactive, cron, inbox). One LLM turn logic, three delivery mechanisms.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Single Active Session</div>
+      <div class="card-desc">Only one ACTIVE session per user at a time. Creating a new session auto-deactivates previous ones via <code>_deactivate_user_sessions()</code>.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Session Compaction</div>
+      <div class="card-desc">When history exceeds 300K chars, LLM summarizes old messages. Creates new session with <code>compaction_summary</code>. Prevents runaway context.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ HIGH-LEVEL DIAGRAM ═══════ -->
+<div class="section" id="sec-high-level">
+  <h1>High-Level Architecture</h1>
+  <p class="subtitle">Click any component to see details. The right column shows the Bud Foundry external platform: BudApp (connector registry), BudMCP (tool gateway), and BudGateway (LLM routing proxy).</p>
+
+  <div class="diagram-container" style="height: 780px;" id="hl-diagram">
+    <svg width="100%" height="100%" id="hl-svg" style="position:absolute;top:0;left:0;z-index:1;"></svg>
+
+    <!-- ── Boundary labels ── -->
+    <div style="position:absolute;top:8px;left:12px;font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-muted);opacity:0.5;z-index:0;">Onyx Platform</div>
+    <div style="position:absolute;top:8px;right:12px;font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--orange);opacity:0.5;z-index:0;">Bud Foundry (External)</div>
+
+    <!-- ── Vertical boundary line ── -->
+    <div style="position:absolute;top:30px;bottom:10px;left:67%;width:1px;border-left:2px dashed rgba(251,146,60,0.18);z-index:0;"></div>
+
+    <!-- ═══ NODE 0: Client ═══ -->
+    <div class="diagram-node" style="top:30px;left:33%;transform:translateX(-50%);min-width:190px;"
+         data-info="Desktop or web client. Runs local tool execution (bash, file ops, browser). Connects to backend via Socket.IO at /ws/agent/. Houses the AgentExecutor, LocalGateway, and tool registry."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--blue)">&#128187; Client (Desktop / Web)</div>
+      <div class="diagram-node-sub">AgentExecutor + LocalGateway</div>
+    </div>
+
+    <!-- ═══ NODE 1: Socket.IO ═══ -->
+    <div class="diagram-node" style="top:120px;left:18%;transform:translateX(-50%);"
+         data-info="Async Socket.IO server mounted at /ws/agent/. Handles real-time bidirectional events: agent:execute, tool:result, tool:approval, agent:stop, agent:rejoin. JWT/cookie authentication. Room-based routing (session:{id})."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--accent-light)">Socket.IO Server</div>
+      <div class="diagram-node-sub">socketio_server.py</div>
+    </div>
+
+    <!-- ═══ NODE 2: REST API ═══ -->
+    <div class="diagram-node" style="top:120px;left:48%;transform:translateX(-50%);"
+         data-info="FastAPI REST endpoints for session CRUD, message history, workspace files, memory management, tool permissions, and connector management (/agent/connectors/*). Used for non-real-time operations."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--green)">REST API</div>
+      <div class="diagram-node-sub">api.py + connector_api.py</div>
+    </div>
+
+    <!-- ═══ NODE 3: AgentHandler ═══ -->
+    <div class="diagram-node" style="top:220px;left:18%;transform:translateX(-50%);min-width:170px;"
+         data-info="Stateless handler instantiated per Socket.IO event. Orchestrates: validate session, persist messages, build agent context, run LLM turn, route tool requests. Handles connector tool approval flow. 700+ lines."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--orange)">AgentHandler</div>
+      <div class="diagram-node-sub">agent_handler.py (stateless)</div>
+    </div>
+
+    <!-- ═══ NODE 4: Cron & Inbox ═══ -->
+    <div class="diagram-node" style="top:220px;left:48%;transform:translateX(-50%);"
+         data-info="CronAgentOrchestrator for scheduled jobs (non-streaming, suspension-aware). InboxAgentOrchestrator for inter-agent messages (reply/escalate/complete). Both share the unified agent loop. Auto-approves connector tools in headless mode."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--orange)">Cron &amp; Inbox</div>
+      <div class="diagram-node-sub">Orchestrators</div>
+    </div>
+
+    <!-- ═══ NODE 5: Agent Context ═══ -->
+    <div class="diagram-node" style="top:330px;left:25%;transform:translateX(-50%);min-width:210px;"
+         data-info="Shared setup logic for all orchestrators. Builds AgentRunContext with tools, system prompt, LLM config. Calls create_connector_tools() to fetch enabled connector tools from BudApp + BudMCP. Runs the unified LLM turn via run_sync_agent_loop()."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--yellow)">Agent Context &amp; LLM Loop</div>
+      <div class="diagram-node-sub">agent_context.py + context_builder.py</div>
+    </div>
+
+    <!-- ═══ NODE 6: Connector Service ═══ -->
+    <div class="diagram-node" style="top:330px;left:55%;transform:translateX(-50%);min-width:140px;"
+         data-info="Manages connector tool lifecycle. Fetches enabled connectors from DB (AgentConnectorPreference). Cross-checks with BudApp. Gets tool schemas from BudApp REST + BudMCP list_tools(). Creates FunctionTool wrappers with invoke handlers that call BudMCP. Resolves per-tool permissions."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--pink)">Connector Service</div>
+      <div class="diagram-node-sub">connector_service.py</div>
+    </div>
+
+    <!-- ═══ NODE 7: Memory ═══ -->
+    <div class="diagram-node" style="top:440px;left:10%;transform:translateX(-50%);"
+         data-info="Vespa hybrid search (70% vector + 30% BM25). Stores in PostgreSQL + Vespa. Auto-searches relevant memories based on user message for system prompt injection."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--cyan)">Memory</div>
+      <div class="diagram-node-sub">memory_service.py</div>
+    </div>
+
+    <!-- ═══ NODE 8: MCP Service ═══ -->
+    <div class="diagram-node" style="top:440px;left:28%;transform:translateX(-50%);"
+         data-info="Wraps system-managed MCP server tools (BUD_DEFAULT_MCP_SERVERS) as FunctionTools. Schema sanitization for LLM compatibility. Separate from connector MCP tools."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--purple)">MCP Service</div>
+      <div class="diagram-node-sub">mcp_service.py</div>
+    </div>
+
+    <!-- ═══ NODE 9: Other Services ═══ -->
+    <div class="diagram-node" style="top:440px;left:48%;transform:translateX(-50%);"
+         data-info="Skill catalog, web search (Serper/Exa), open_url, workspace file ops, cron job service, inbox message tools, artifact rendering."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--text-muted)">Skills &amp; Other</div>
+      <div class="diagram-node-sub">skill, web, workspace</div>
+    </div>
+
+    <!-- ═══════════ EXTERNAL: BUD FOUNDRY ═══════════ -->
+
+    <!-- ═══ NODE 10: BudApp ═══ -->
+    <div class="diagram-node" style="top:60px;left:83%;transform:translateX(-50%);min-width:175px;border-color:rgba(251,146,60,0.4);"
+         data-info="External SaaS platform (Bud Foundry). Connector registry and OAuth management. REST API provides: list available connectors, initiate/check/revoke OAuth flows, fetch tool definitions per connector. Also serves /playground/initialize-with-token for session init. Base URL: BUD_FOUNDRY_APP_BASE env var. budapp_client.py calls this."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--orange)">&#127981; BudApp</div>
+      <div class="diagram-node-sub">Connector Registry &amp; OAuth</div>
+    </div>
+
+    <!-- ═══ NODE 11: BudMCP Gateway ═══ -->
+    <div class="diagram-node" style="top:220px;left:83%;transform:translateX(-50%);min-width:175px;border-color:rgba(167,139,250,0.4);"
+         data-info="MCP protocol gateway for connector tools. Implements JSON-RPC 2.0 for tool discovery (initialize, list_tools) and execution (call_tool). URL: BUD_MCP_GATEWAY_URL or {BUD_FOUNDRY_APP_BASE}/mcp. Accepts Bearer tokens for user-specific connector access. Each tool maps to a connector (Slack, Jira, GDrive, etc.)."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--purple)">&#128268; BudMCP Gateway</div>
+      <div class="diagram-node-sub">Connector Tools (JSON-RPC 2.0)</div>
+    </div>
+
+    <!-- ═══ NODE 12: BudGateway ═══ -->
+    <div class="diagram-node" style="top:390px;left:83%;transform:translateX(-50%);min-width:175px;border-color:rgba(251,191,36,0.4);"
+         data-info="LLM routing proxy. OpenAI-compatible API that replaces direct LLM provider access. Handles per-user model discovery (/models), OAuth-based auth (user tokens instead of system API keys), and dynamic model selection. Configured via BUD_FOUNDRY_API_BASE. The Agent Context calls LiteLLM with api_base pointed at BudGateway, which then routes to the actual LLM provider (OpenAI, Anthropic, etc.)."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--yellow)">&#9889; BudGateway</div>
+      <div class="diagram-node-sub">LLM Proxy (OpenAI-compatible)</div>
+    </div>
+
+    <!-- ═══ NODE 13: LLM Providers ═══ -->
+    <div class="diagram-node" style="top:540px;left:83%;transform:translateX(-50%);min-width:175px;border-color:rgba(251,191,36,0.25);"
+         data-info="Actual LLM providers behind BudGateway: OpenAI (GPT-4, etc.), Anthropic (Claude), Google Vertex AI, and other providers. BudGateway routes to the correct provider based on user's model selection and available models. Users never call these directly - all traffic goes through BudGateway."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--yellow)">&#127760; LLM Providers</div>
+      <div class="diagram-node-sub">OpenAI, Anthropic, Vertex, etc.</div>
+    </div>
+
+    <!-- ═══ Data Stores ═══ -->
+
+    <!-- ═══ NODE 14: PostgreSQL ═══ -->
+    <div class="diagram-node" style="top:560px;left:10%;transform:translateX(-50%);"
+         data-info="Stores: AgentSession, AgentMessage, AgentMemory, AgentWorkspaceFile, AgentCronJob, AgentCronExecution, AgentToolPermission, AgentConnectorPreference, LLMProvider (BudFoundryProvider config). All agent state persisted here."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--purple)">PostgreSQL</div>
+      <div class="diagram-node-sub">Agent tables</div>
+    </div>
+
+    <!-- ═══ NODE 15: Vespa ═══ -->
+    <div class="diagram-node" style="top:560px;left:28%;transform:translateX(-50%);"
+         data-info="Memory embeddings stored and searched via hybrid scoring (70% vector + 30% BM25). Also used for document search when agents use the Onyx search tool."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--cyan)">Vespa</div>
+      <div class="diagram-node-sub">Memory vectors</div>
+    </div>
+
+    <!-- ═══ NODE 16: Redis ═══ -->
+    <div class="diagram-node" style="top:560px;left:48%;transform:translateX(-50%);"
+         data-info="Stop flags for graceful cancellation. Session execution locks. BudGateway initialization cache (one-time per user session). Celery broker for cron tasks."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--red)">Redis</div>
+      <div class="diagram-node-sub">Flags, locks, cache</div>
+    </div>
+
+    <!-- ═══ NODE 17: LiteLLM ═══ -->
+    <div class="diagram-node" style="top:680px;left:33%;transform:translateX(-50%);min-width:180px;"
+         data-info="LiteLLM client library inside Onyx. When BudGateway is configured, LiteLLM's api_base is set to BUD_FOUNDRY_API_BASE and api_key is set to the user's OAuth token (not a static key). LiteLLM treats BudGateway as an OpenAI-compatible endpoint. Handles streaming, tool call parsing, and token counting."
+         onclick="highlightNode(this)">
+      <div class="diagram-node-title" style="color:var(--yellow)">LiteLLM Client</div>
+      <div class="diagram-node-sub">api_base &rarr; BudGateway</div>
+    </div>
+  </div>
+
+  <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">Click any node for details. Orange boundary separates Onyx from Bud Foundry. BudGateway is the LLM proxy &mdash; all model calls route through it instead of directly to providers.</p>
+</div>
+
+<!-- ═══════ INTERACTIVE SESSION FLOW ═══════ -->
+<div class="section" id="sec-interactive-flow">
+  <h1>Interactive Session Flow</h1>
+  <p class="subtitle">Real-time agent execution via Socket.IO. This is the primary execution path for user-facing agent interactions.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 920 1050" width="100%" style="max-width:920px;">
+      <defs>
+        <marker id="a1" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#6c63ff"/>
+        </marker>
+        <marker id="a2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#34d399"/>
+        </marker>
+        <marker id="a3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#f472b6"/>
+        </marker>
+      </defs>
+
+      <!-- Vertical lanes -->
+      <text x="120" y="22" text-anchor="middle" fill="#60a5fa" font-size="12" font-weight="700">CLIENT</text>
+      <line x1="120" y1="30" x2="120" y2="1040" stroke="#60a5fa" stroke-width="1" stroke-dasharray="4,6" opacity="0.2"/>
+
+      <text x="460" y="22" text-anchor="middle" fill="#fb923c" font-size="12" font-weight="700">AGENT HANDLER</text>
+      <line x1="460" y1="30" x2="460" y2="1040" stroke="#fb923c" stroke-width="1" stroke-dasharray="4,6" opacity="0.2"/>
+
+      <text x="780" y="22" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="700">DATA STORES</text>
+      <line x1="780" y1="30" x2="780" y2="1040" stroke="#a78bfa" stroke-width="1" stroke-dasharray="4,6" opacity="0.2"/>
+
+      <!-- Step 1: User sends message -->
+      <line x1="190" y1="65" x2="370" y2="65" stroke="#6c63ff" stroke-width="1.5" marker-end="url(#a1)" opacity="0.7"/>
+      <rect x="30" y="45" width="155" height="40" rx="8" fill="rgba(96,165,250,0.08)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="108" y="70" text-anchor="middle" fill="#60a5fa" font-size="11.5" font-weight="600">agent:execute</text>
+      <text x="280" y="58" text-anchor="middle" fill="#8b8fa3" font-size="10">Socket.IO event</text>
+
+      <!-- Step 2: Validate + persist -->
+      <rect x="370" y="45" width="180" height="40" rx="8" fill="rgba(251,146,60,0.08)" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="460" y="70" text-anchor="middle" fill="#fb923c" font-size="11.5" font-weight="600">handle_execute()</text>
+
+      <line x1="555" y1="105" x2="700" y2="105" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#a1)" opacity="0.5"/>
+      <rect x="370" y="95" width="180" height="34" rx="7" fill="rgba(251,146,60,0.05)" stroke="#fb923c" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="460" y="116" text-anchor="middle" fill="#8b8fa3" font-size="10.5">Set status = RUNNING</text>
+
+      <rect x="700" y="90" width="160" height="34" rx="7" fill="rgba(167,139,250,0.08)" stroke="#a78bfa" stroke-width="1"/>
+      <text x="780" y="111" text-anchor="middle" fill="#a78bfa" font-size="10.5">Persist user message</text>
+
+      <!-- Step 3: Build context -->
+      <rect x="340" y="150" width="240" height="50" rx="8" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="460" y="172" text-anchor="middle" fill="#fbbf24" font-size="11.5" font-weight="600">build_agent_run_context()</text>
+      <text x="460" y="188" text-anchor="middle" fill="#8b8fa3" font-size="10">Tools + system prompt + history</text>
+
+      <!-- Step 4: LLM Turn -->
+      <rect x="340" y="220" width="240" height="50" rx="8" fill="rgba(251,146,60,0.1)" stroke="#fb923c" stroke-width="2"/>
+      <text x="460" y="242" text-anchor="middle" fill="#fb923c" font-size="12" font-weight="700">run_sync_agent_loop()</text>
+      <text x="460" y="258" text-anchor="middle" fill="#8b8fa3" font-size="10">LLM streaming turn</text>
+
+      <!-- Step 5: Stream text -->
+      <line x1="370" y1="300" x2="190" y2="300" stroke="#34d399" stroke-width="1.5" marker-end="url(#a2)" opacity="0.7"/>
+      <rect x="200" y="290" width="165" height="30" rx="6" fill="rgba(52,211,153,0.06)" stroke="#34d399" stroke-width="1"/>
+      <text x="282" y="309" text-anchor="middle" fill="#34d399" font-size="10.5">agent:message_delta</text>
+      <rect x="30" y="288" width="155" height="30" rx="6" fill="rgba(96,165,250,0.06)" stroke="#60a5fa" stroke-width="1"/>
+      <text x="108" y="307" text-anchor="middle" fill="#60a5fa" font-size="10.5">Render streaming</text>
+
+      <!-- Step 5b: Thinking -->
+      <line x1="370" y1="340" x2="190" y2="340" stroke="#34d399" stroke-width="1.5" marker-end="url(#a2)" opacity="0.5"/>
+      <rect x="200" y="330" width="165" height="28" rx="6" fill="rgba(52,211,153,0.04)" stroke="#34d399" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="282" y="348" text-anchor="middle" fill="#34d399" font-size="10">agent:reasoning_delta</text>
+
+      <!-- Branch: LLM calls tool -->
+      <rect x="330" y="385" width="260" height="36" rx="7" fill="rgba(244,114,182,0.1)" stroke="#f472b6" stroke-width="1.5"/>
+      <text x="460" y="407" text-anchor="middle" fill="#f472b6" font-size="11.5" font-weight="600">LLM requests tool call</text>
+
+      <!-- Decision: local or remote? -->
+      <text x="460" y="445" text-anchor="middle" fill="#8b8fa3" font-size="11" font-style="italic">Tool type?</text>
+
+      <!-- Remote tool path -->
+      <rect x="580" y="460" width="200" height="44" rx="8" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="680" y="478" text-anchor="middle" fill="#34d399" font-size="11" font-weight="600">REMOTE TOOL</text>
+      <text x="680" y="494" text-anchor="middle" fill="#8b8fa3" font-size="10">Execute in-process</text>
+      <line x1="520" y1="450" x2="580" y2="475" stroke="#34d399" stroke-width="1" opacity="0.5"/>
+
+      <line x1="680" y1="510" x2="680" y2="540" stroke="#34d399" stroke-width="1" marker-end="url(#a2)" opacity="0.5"/>
+      <rect x="605" y="540" width="150" height="30" rx="6" fill="rgba(52,211,153,0.06)" stroke="#34d399" stroke-width="1"/>
+      <text x="680" y="559" text-anchor="middle" fill="#34d399" font-size="10">tool:delta (result)</text>
+
+      <!-- Local tool path -->
+      <rect x="200" y="460" width="200" height="44" rx="8" fill="rgba(96,165,250,0.08)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="300" y="478" text-anchor="middle" fill="#60a5fa" font-size="11" font-weight="600">LOCAL TOOL</text>
+      <text x="300" y="494" text-anchor="middle" fill="#8b8fa3" font-size="10">Send to client</text>
+      <line x1="400" y1="450" x2="345" y2="467" stroke="#60a5fa" stroke-width="1" opacity="0.5"/>
+
+      <line x1="300" y1="510" x2="180" y2="540" stroke="#f472b6" stroke-width="1.5" marker-end="url(#a3)" opacity="0.7"/>
+      <rect x="30" y="530" width="155" height="36" rx="7" fill="rgba(244,114,182,0.08)" stroke="#f472b6" stroke-width="1.5"/>
+      <text x="108" y="552" text-anchor="middle" fill="#f472b6" font-size="10.5" font-weight="600">tool:request</text>
+
+      <!-- Approval check -->
+      <rect x="30" y="580" width="155" height="36" rx="7" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="108" y="600" text-anchor="middle" fill="#fbbf24" font-size="10.5">Approval check</text>
+      <text x="108" y="635" text-anchor="middle" fill="#8b8fa3" font-size="10" font-style="italic">User approves / auto-allowed</text>
+
+      <!-- Execute locally -->
+      <rect x="30" y="650" width="155" height="36" rx="7" fill="rgba(96,165,250,0.08)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="108" y="672" text-anchor="middle" fill="#60a5fa" font-size="10.5">Execute tool locally</text>
+
+      <!-- Send result back -->
+      <line x1="190" y1="720" x2="370" y2="720" stroke="#6c63ff" stroke-width="1.5" marker-end="url(#a1)" opacity="0.7"/>
+      <rect x="30" y="705" width="155" height="34" rx="7" fill="rgba(96,165,250,0.06)" stroke="#60a5fa" stroke-width="1"/>
+      <text x="108" y="726" text-anchor="middle" fill="#60a5fa" font-size="10.5">tool:result</text>
+
+      <!-- Handler processes result -->
+      <rect x="370" y="705" width="180" height="34" rx="7" fill="rgba(251,146,60,0.08)" stroke="#fb923c" stroke-width="1.5"/>
+      <text x="460" y="726" text-anchor="middle" fill="#fb923c" font-size="10.5">handle_tool_result()</text>
+
+      <line x1="555" y1="730" x2="700" y2="760" stroke="#a78bfa" stroke-width="1" marker-end="url(#a1)" opacity="0.5"/>
+      <rect x="700" y="748" width="160" height="28" rx="6" fill="rgba(167,139,250,0.06)" stroke="#a78bfa" stroke-width="1"/>
+      <text x="780" y="766" text-anchor="middle" fill="#a78bfa" font-size="10">Persist tool result</text>
+
+      <!-- Decision: more pending? -->
+      <rect x="370" y="760" width="180" height="34" rx="7" fill="rgba(251,146,60,0.05)" stroke="#fb923c" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="460" y="781" text-anchor="middle" fill="#8b8fa3" font-size="10">More pending tools?</text>
+
+      <!-- Continue LLM -->
+      <rect x="340" y="820" width="240" height="44" rx="8" fill="rgba(251,146,60,0.1)" stroke="#fb923c" stroke-width="2"/>
+      <text x="460" y="838" text-anchor="middle" fill="#fb923c" font-size="11.5" font-weight="600">Continue LLM turn</text>
+      <text x="460" y="854" text-anchor="middle" fill="#8b8fa3" font-size="10">Feed tool result to LLM</text>
+
+      <!-- Loop arrow -->
+      <text x="460" y="890" text-anchor="middle" fill="#8b8fa3" font-size="10" font-style="italic">Repeat until LLM finishes</text>
+
+      <!-- Final: agent:done -->
+      <line x1="370" y1="920" x2="190" y2="920" stroke="#34d399" stroke-width="2" marker-end="url(#a2)" opacity="0.8"/>
+      <rect x="30" y="905" width="155" height="36" rx="8" fill="rgba(52,211,153,0.1)" stroke="#34d399" stroke-width="2"/>
+      <text x="108" y="927" text-anchor="middle" fill="#34d399" font-size="11.5" font-weight="700">agent:done</text>
+
+      <rect x="370" y="905" width="180" height="36" rx="8" fill="rgba(251,146,60,0.05)" stroke="#fb923c" stroke-width="1"/>
+      <text x="460" y="927" text-anchor="middle" fill="#fb923c" font-size="10.5">Set status = IDLE</text>
+
+      <line x1="555" y1="930" x2="700" y2="960" stroke="#a78bfa" stroke-width="1" marker-end="url(#a1)" opacity="0.5"/>
+      <rect x="700" y="948" width="160" height="28" rx="6" fill="rgba(167,139,250,0.06)" stroke="#a78bfa" stroke-width="1"/>
+      <text x="780" y="966" text-anchor="middle" fill="#a78bfa" font-size="10">Persist assistant msg</text>
+
+      <!-- Step labels -->
+      <circle cx="20" cy="65" r="10" fill="rgba(108,99,255,0.15)"/>
+      <text x="20" y="69" text-anchor="middle" fill="#6c63ff" font-size="9" font-weight="700">1</text>
+      <circle cx="20" cy="175" r="10" fill="rgba(251,191,36,0.15)"/>
+      <text x="20" y="179" text-anchor="middle" fill="#fbbf24" font-size="9" font-weight="700">2</text>
+      <circle cx="20" cy="245" r="10" fill="rgba(251,146,60,0.15)"/>
+      <text x="20" y="249" text-anchor="middle" fill="#fb923c" font-size="9" font-weight="700">3</text>
+      <circle cx="20" cy="400" r="10" fill="rgba(244,114,182,0.15)"/>
+      <text x="20" y="404" text-anchor="middle" fill="#f472b6" font-size="9" font-weight="700">4</text>
+      <circle cx="20" cy="920" r="10" fill="rgba(52,211,153,0.15)"/>
+      <text x="20" y="924" text-anchor="middle" fill="#34d399" font-size="9" font-weight="700">5</text>
+    </svg>
+  </div>
+
+  <h2>Key Implementation Details</h2>
+  <div class="expand-card">
+    <div class="expand-header" onclick="toggleExpand(this)">
+      <span class="expand-arrow">&#9654;</span>
+      <div class="expand-dot" style="background:var(--accent)"></div>
+      <div class="expand-title">Stop Flag Checking</div>
+    </div>
+    <div class="expand-content">
+      <p>During LLM streaming, the handler checks Redis for a stop flag every <code>STOP_CHECK_INTERVAL</code> (10 stream events). If flagged, emits <code>agent:stopped</code> and sets session status to IDLE. Triggered by the <code>agent:stop</code> event from client.</p>
+    </div>
+  </div>
+  <div class="expand-card">
+    <div class="expand-header" onclick="toggleExpand(this)">
+      <span class="expand-arrow">&#9654;</span>
+      <div class="expand-dot" style="background:var(--orange)"></div>
+      <div class="expand-title">Pending Tool Queue</div>
+    </div>
+    <div class="expand-content">
+      <p>When the LLM requests multiple tool calls in one turn, they're queued in <code>pending_local_tools</code> (JSONB on AgentSession). After each <code>tool:result</code>, the handler checks if more tools are pending. If yes, emits the next <code>tool:request</code>. If no, continues the LLM turn with all results.</p>
+    </div>
+  </div>
+  <div class="expand-card">
+    <div class="expand-header" onclick="toggleExpand(this)">
+      <span class="expand-arrow">&#9654;</span>
+      <div class="expand-dot" style="background:var(--green)"></div>
+      <div class="expand-title">Reconnection (agent:rejoin)</div>
+    </div>
+    <div class="expand-content">
+      <p>Socket.IO rooms are keyed by <code>session:{session_id}</code>. On reconnect, client emits <code>agent:rejoin</code> to re-join the room. If the agent is still running (status = RUNNING or AWAITING_TOOL), events continue to flow. Session state reconstructed from DB.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ CRON FLOW ═══════ -->
+<div class="section" id="sec-cron-flow">
+  <h1>Cron Execution Flow</h1>
+  <p class="subtitle">Scheduled agent runs via Celery Beat. Non-streaming, suspension-aware for local tool execution.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 480" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="ca" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c"/>
+        </marker>
+      </defs>
+
+      <rect x="50" y="30" width="220" height="42" rx="9" fill="rgba(251,146,60,0.1)" stroke="#fb923c" stroke-width="2"/>
+      <text x="160" y="56" text-anchor="middle" fill="#fb923c" font-size="13" font-weight="700">Celery Beat Trigger</text>
+
+      <line x1="160" y1="78" x2="160" y2="110" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ca)" opacity="0.6"/>
+
+      <rect x="50" y="110" width="220" height="50" rx="9" fill="rgba(167,139,250,0.08)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="160" y="132" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="600">Create CronExecution</text>
+      <text x="160" y="150" text-anchor="middle" fill="#8b8fa3" font-size="10">status = PENDING</text>
+
+      <line x1="160" y1="165" x2="160" y2="195" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ca)" opacity="0.6"/>
+
+      <rect x="30" y="195" width="260" height="55" rx="9" fill="rgba(251,146,60,0.1)" stroke="#fb923c" stroke-width="2"/>
+      <text x="160" y="218" text-anchor="middle" fill="#fb923c" font-size="13" font-weight="700">CronAgentOrchestrator</text>
+      <text x="160" y="238" text-anchor="middle" fill="#8b8fa3" font-size="10">run_sync_agent_loop() - non-streaming</text>
+
+      <!-- Branch: local tool needed? -->
+      <line x1="295" y1="222" x2="400" y2="222" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ca)" opacity="0.5"/>
+      <text x="350" y="215" text-anchor="middle" fill="#8b8fa3" font-size="9">local tool?</text>
+
+      <rect x="400" y="200" width="200" height="44" rx="8" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="500" y="218" text-anchor="middle" fill="#fbbf24" font-size="11.5" font-weight="600">Suspend to DB</text>
+      <text x="500" y="234" text-anchor="middle" fill="#8b8fa3" font-size="10">status = SUSPENDED</text>
+
+      <line x1="500" y1="250" x2="500" y2="280" stroke="#fbbf24" stroke-width="1" opacity="0.5"/>
+      <text x="500" y="295" text-anchor="middle" fill="#8b8fa3" font-size="10" font-style="italic">Next trigger resumes</text>
+
+      <!-- Normal completion -->
+      <line x1="160" y1="255" x2="160" y2="310" stroke="#fb923c" stroke-width="1.5" marker-end="url(#ca)" opacity="0.6"/>
+
+      <rect x="35" y="310" width="250" height="44" rx="8" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="160" y="328" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">Accumulate Results</text>
+      <text x="160" y="344" text-anchor="middle" fill="#8b8fa3" font-size="10">CronRunResult object</text>
+
+      <line x1="160" y1="360" x2="160" y2="390" stroke="#34d399" stroke-width="1.5" marker-end="url(#ca)" opacity="0.6"/>
+
+      <rect x="30" y="390" width="260" height="50" rx="9" fill="rgba(52,211,153,0.1)" stroke="#34d399" stroke-width="2"/>
+      <text x="160" y="412" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">Deduplication Check</text>
+      <text x="160" y="430" text-anchor="middle" fill="#8b8fa3" font-size="10">24h window, NO_ACTION_NEEDED marker</text>
+
+      <!-- Right side: features -->
+      <rect x="440" y="340" width="300" height="100" rx="9" fill="rgba(108,99,255,0.04)" stroke="var(--border)" stroke-width="1"/>
+      <text x="590" y="365" text-anchor="middle" fill="var(--text-muted)" font-size="11" font-weight="600">Cron Features</text>
+      <text x="590" y="385" text-anchor="middle" fill="#8b8fa3" font-size="10">&bull; Schedule types: CRON, INTERVAL, ONE_SHOT</text>
+      <text x="590" y="403" text-anchor="middle" fill="#8b8fa3" font-size="10">&bull; Statuses: PENDING, RUNNING, SUSPENDED,</text>
+      <text x="590" y="418" text-anchor="middle" fill="#8b8fa3" font-size="10">  COMPLETED, FAILED, SKIPPED</text>
+      <text x="590" y="436" text-anchor="middle" fill="#8b8fa3" font-size="10">&bull; Tables: AgentCronJob, AgentCronExecution</text>
+    </svg>
+  </div>
+</div>
+
+<!-- ═══════ INBOX FLOW ═══════ -->
+<div class="section" id="sec-inbox-flow">
+  <h1>Inbox Processing Flow</h1>
+  <p class="subtitle">Inter-agent communication. One agent sends a message, the target agent processes it with specialized reply/escalate/complete tools.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 360" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="ia" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#34d399"/>
+        </marker>
+      </defs>
+
+      <rect x="50" y="30" width="200" height="44" rx="9" fill="rgba(52,211,153,0.1)" stroke="#34d399" stroke-width="2"/>
+      <text x="150" y="48" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">Inbox Message</text>
+      <text x="150" y="64" text-anchor="middle" fill="#8b8fa3" font-size="10">from another agent</text>
+
+      <line x1="255" y1="52" x2="330" y2="52" stroke="#34d399" stroke-width="1.5" marker-end="url(#ia)" opacity="0.6"/>
+
+      <rect x="330" y="30" width="240" height="44" rx="9" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="450" y="48" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">InboxAgentOrchestrator</text>
+      <text x="450" y="64" text-anchor="middle" fill="#8b8fa3" font-size="10">run_sync_agent_loop()</text>
+
+      <!-- Three outcomes -->
+      <line x1="350" y1="80" x2="150" y2="130" stroke="#34d399" stroke-width="1" opacity="0.5"/>
+      <line x1="450" y1="80" x2="400" y2="130" stroke="#fbbf24" stroke-width="1" opacity="0.5"/>
+      <line x1="530" y1="80" x2="650" y2="130" stroke="#f472b6" stroke-width="1" opacity="0.5"/>
+
+      <rect x="50" y="130" width="200" height="50" rx="8" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="150" y="150" text-anchor="middle" fill="#34d399" font-size="11.5" font-weight="600">send_message</text>
+      <text x="150" y="168" text-anchor="middle" fill="#8b8fa3" font-size="10">Agent replies directly</text>
+      <text x="150" y="200" text-anchor="middle" fill="#34d399" font-size="10">Status: RESPONDED</text>
+
+      <rect x="300" y="130" width="200" height="50" rx="8" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="400" y="150" text-anchor="middle" fill="#fbbf24" font-size="11.5" font-weight="600">escalate_to_user</text>
+      <text x="400" y="168" text-anchor="middle" fill="#8b8fa3" font-size="10">Needs human input</text>
+      <text x="400" y="200" text-anchor="middle" fill="#fbbf24" font-size="10">Status: AWAITING_USER</text>
+
+      <rect x="550" y="130" width="200" height="50" rx="8" fill="rgba(244,114,182,0.08)" stroke="#f472b6" stroke-width="1.5"/>
+      <text x="650" y="150" text-anchor="middle" fill="#f472b6" font-size="11.5" font-weight="600">complete_goal</text>
+      <text x="650" y="168" text-anchor="middle" fill="#8b8fa3" font-size="10">Goal achieved</text>
+      <text x="650" y="200" text-anchor="middle" fill="#f472b6" font-size="10">Status: COMPLETED</text>
+
+      <!-- Inbox result -->
+      <rect x="200" y="250" width="400" height="50" rx="9" fill="rgba(108,99,255,0.06)" stroke="var(--border)" stroke-width="1"/>
+      <text x="400" y="270" text-anchor="middle" fill="var(--text-muted)" font-size="11" font-weight="600">InboxRunResult</text>
+      <text x="400" y="288" text-anchor="middle" fill="#8b8fa3" font-size="10">replied: bool &bull; escalated: bool &bull; content: str</text>
+    </svg>
+  </div>
+</div>
+
+<!-- ═══════ STATE MACHINE ═══════ -->
+<div class="section" id="sec-state-machine">
+  <h1>Session State Machine</h1>
+  <p class="subtitle">Execution status transitions for an agent session. Two levels: session status (lifecycle) and execution status (real-time).</p>
+
+  <h2>Execution Status (Real-Time)</h2>
+  <div class="state-machine">
+    <svg viewBox="0 0 800 280" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="sa" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#8b8fa3"/>
+        </marker>
+      </defs>
+
+      <!-- IDLE -->
+      <rect x="30" y="100" width="100" height="44" rx="10" fill="rgba(108,99,255,0.1)" stroke="#6c63ff" stroke-width="2"/>
+      <text x="80" y="126" text-anchor="middle" fill="#6c63ff" font-size="12" font-weight="700">IDLE</text>
+
+      <!-- RUNNING -->
+      <rect x="220" y="100" width="120" height="44" rx="10" fill="rgba(52,211,153,0.1)" stroke="#34d399" stroke-width="2"/>
+      <text x="280" y="126" text-anchor="middle" fill="#34d399" font-size="12" font-weight="700">RUNNING</text>
+
+      <!-- AWAITING_TOOL -->
+      <rect x="440" y="40" width="160" height="44" rx="10" fill="rgba(96,165,250,0.1)" stroke="#60a5fa" stroke-width="2"/>
+      <text x="520" y="66" text-anchor="middle" fill="#60a5fa" font-size="11" font-weight="700">AWAITING_TOOL</text>
+
+      <!-- AWAITING_APPROVAL -->
+      <rect x="440" y="160" width="190" height="44" rx="10" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="2"/>
+      <text x="535" y="186" text-anchor="middle" fill="#fbbf24" font-size="11" font-weight="700">AWAITING_APPROVAL</text>
+
+      <!-- Arrows -->
+      <line x1="135" y1="122" x2="215" y2="122" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#sa)"/>
+      <text x="175" y="115" text-anchor="middle" fill="#8b8fa3" font-size="9">agent:execute</text>
+
+      <line x1="345" y1="110" x2="435" y2="68" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#sa)"/>
+      <text x="400" y="80" text-anchor="middle" fill="#8b8fa3" font-size="9">local tool call</text>
+
+      <line x1="435" y1="52" x2="345" y2="112" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#sa)"/>
+      <text x="370" y="68" text-anchor="middle" fill="#60a5fa" font-size="9">tool:result</text>
+
+      <line x1="345" y1="135" x2="435" y2="175" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#sa)"/>
+      <text x="400" y="170" text-anchor="middle" fill="#8b8fa3" font-size="9">needs approval</text>
+
+      <line x1="435" y1="190" x2="345" y2="135" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#sa)"/>
+      <text x="370" y="178" text-anchor="middle" fill="#fbbf24" font-size="9">approved</text>
+
+      <line x1="280" y1="148" x2="80" y2="148" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#sa)"/>
+      <text x="180" y="160" text-anchor="middle" fill="#8b8fa3" font-size="9">LLM finishes / agent:done</text>
+
+      <!-- STOPPED -->
+      <rect x="220" y="220" width="120" height="38" rx="9" fill="rgba(248,113,113,0.1)" stroke="#f87171" stroke-width="1.5"/>
+      <text x="280" y="244" text-anchor="middle" fill="#f87171" font-size="11" font-weight="600">STOPPED</text>
+      <line x1="280" y1="148" x2="280" y2="216" stroke="#f87171" stroke-width="1" marker-end="url(#sa)" stroke-dasharray="4,4"/>
+      <text x="295" y="198" fill="#f87171" font-size="9">agent:stop</text>
+    </svg>
+  </div>
+
+  <h2>Session Status (Lifecycle)</h2>
+  <table class="data-table">
+    <thead><tr><th>Status</th><th>Description</th><th>Terminal?</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tag-green">ACTIVE</span></td><td>Session is live and can accept messages</td><td>No</td></tr>
+      <tr><td><span class="tag tag-blue">COMPLETED</span></td><td>Session explicitly completed</td><td>Yes</td></tr>
+      <tr><td><span class="tag tag-red">FAILED</span></td><td>Unrecoverable error occurred</td><td>Yes</td></tr>
+      <tr><td><span class="tag tag-orange">STOPPED</span></td><td>User manually stopped the session</td><td>Yes</td></tr>
+      <tr><td><span class="tag tag-purple">COMPACTED</span></td><td>History summarized, new session created</td><td>Yes</td></tr>
+      <tr><td><span class="tag tag-yellow">SUSPENDED</span></td><td>Cron waiting for local tool execution</td><td>No</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ ORCHESTRATORS ═══════ -->
+<div class="section" id="sec-orchestrators">
+  <h1>Orchestrators</h1>
+  <p class="subtitle">Three execution engines share a unified LLM loop but deliver results differently.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon" style="background:rgba(108,99,255,0.12);color:var(--accent-light)">&#9889;</div>
+      <div class="card-title">BudAgentOrchestrator</div>
+      <div class="card-desc">Legacy SSE-based orchestrator. Runs agent loop in background thread, yields JSON-line packets via queue. Being replaced by Socket.IO handler.</div>
+      <div class="card-path">bud_agent/orchestrator.py (~550 lines)</div>
+      <div style="margin-top:8px"><span class="tag tag-accent">DEPRECATED</span> <span class="tag tag-blue">SSE streaming</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,146,60,0.12);color:var(--orange)">&#128337;</div>
+      <div class="card-title">CronAgentOrchestrator</div>
+      <div class="card-desc">Non-streaming orchestrator for scheduled jobs. Accumulates results in <code>CronRunResult</code>. Suspension-aware: pauses on local tools, resumes on next trigger.</div>
+      <div class="card-path">bud_agent/cron_orchestrator.py (~200 lines)</div>
+      <div style="margin-top:8px"><span class="tag tag-orange">Cron</span> <span class="tag tag-yellow">Suspension</span> <span class="tag tag-green">Dedup</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(52,211,153,0.12);color:var(--green)">&#128233;</div>
+      <div class="card-title">InboxAgentOrchestrator</div>
+      <div class="card-desc">Processes inter-agent messages. Specialized tools: <code>send_message</code>, <code>escalate_to_user</code>, <code>complete_goal</code>. Tracks response/escalation status.</div>
+      <div class="card-path">bud_agent/inbox_orchestrator.py (~150 lines)</div>
+      <div style="margin-top:8px"><span class="tag tag-green">Inbox</span> <span class="tag tag-pink">Multi-agent</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,191,36,0.12);color:var(--yellow)">&#128736;</div>
+      <div class="card-title">AgentHandler (Socket.IO)</div>
+      <div class="card-desc">The new primary handler. Stateless, instantiated per event. Manages interactive sessions via Socket.IO with room-based routing and full tool lifecycle.</div>
+      <div class="card-path">server/agent/agent_handler.py (~700 lines)</div>
+      <div style="margin-top:8px"><span class="tag tag-accent">PRIMARY</span> <span class="tag tag-purple">Socket.IO</span></div>
+    </div>
+  </div>
+
+  <h2>Shared: run_sync_agent_loop()</h2>
+  <p>All orchestrators call this unified function in <code>agent_context.py</code>. It:</p>
+  <ul>
+    <li>Takes an <code>AgentRunContext</code> with tools, prompt, LLM config, and history</li>
+    <li>Calls the LLM with streaming enabled</li>
+    <li>Processes stream events (text delta, thinking, tool calls)</li>
+    <li>Handles remote tool execution inline</li>
+    <li>Returns pending local tools for the caller to route</li>
+  </ul>
+</div>
+
+<!-- ═══════ AGENT CONTEXT ═══════ -->
+<div class="section" id="sec-agent-context">
+  <h1>Agent Context Building</h1>
+  <p class="subtitle">How the system prompt, tools, and message history are assembled before each LLM turn.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 450" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="bca" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24"/>
+        </marker>
+      </defs>
+
+      <!-- build_agent_run_context() -->
+      <rect x="250" y="20" width="300" height="48" rx="10" fill="rgba(251,191,36,0.12)" stroke="#fbbf24" stroke-width="2"/>
+      <text x="400" y="49" text-anchor="middle" fill="#fbbf24" font-size="14" font-weight="700">build_agent_run_context()</text>
+
+      <!-- Fan out -->
+      <line x1="300" y1="72" x2="120" y2="120" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#bca)" opacity="0.5"/>
+      <line x1="400" y1="72" x2="400" y2="120" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#bca)" opacity="0.5"/>
+      <line x1="500" y1="72" x2="680" y2="120" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#bca)" opacity="0.5"/>
+
+      <!-- System Prompt -->
+      <rect x="30" y="120" width="200" height="120" rx="9" fill="rgba(34,211,238,0.08)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="130" y="142" text-anchor="middle" fill="#22d3ee" font-size="12" font-weight="600">System Prompt</text>
+      <text x="130" y="163" text-anchor="middle" fill="#8b8fa3" font-size="10">context_builder.py</text>
+      <line x1="30" y1="175" x2="230" y2="175" stroke="var(--border)" stroke-width="1"/>
+      <text x="40" y="192" fill="#8b8fa3" font-size="10">AGENTS.md</text>
+      <text x="40" y="207" fill="#8b8fa3" font-size="10">SOUL.md &bull; IDENTITY.md</text>
+      <text x="40" y="222" fill="#8b8fa3" font-size="10">USER.md &bull; MEMORY.md</text>
+      <text x="40" y="237" fill="#8b8fa3" font-size="10">+ Injected memories (Vespa)</text>
+
+      <!-- Tools -->
+      <rect x="280" y="120" width="240" height="120" rx="9" fill="rgba(244,114,182,0.08)" stroke="#f472b6" stroke-width="1.5"/>
+      <text x="400" y="142" text-anchor="middle" fill="#f472b6" font-size="12" font-weight="600">Tool Assembly</text>
+      <line x1="280" y1="153" x2="520" y2="153" stroke="var(--border)" stroke-width="1"/>
+      <text x="290" y="172" fill="#8b8fa3" font-size="10">17 Local tools (schemas)</text>
+      <text x="290" y="188" fill="#8b8fa3" font-size="10">11 Remote FunctionTools</text>
+      <text x="290" y="204" fill="#8b8fa3" font-size="10">MCP connector tools (dynamic)</text>
+      <text x="290" y="220" fill="#8b8fa3" font-size="10">Skill tools (catalog)</text>
+      <text x="290" y="236" fill="#8b8fa3" font-size="10">Mode-specific tools (inbox)</text>
+
+      <!-- Message History -->
+      <rect x="570" y="120" width="200" height="120" rx="9" fill="rgba(167,139,250,0.08)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="670" y="142" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="600">Message History</text>
+      <text x="670" y="163" text-anchor="middle" fill="#8b8fa3" font-size="10">build_message_history()</text>
+      <line x1="570" y1="175" x2="770" y2="175" stroke="var(--border)" stroke-width="1"/>
+      <text x="580" y="192" fill="#8b8fa3" font-size="10">Load from AgentMessage</text>
+      <text x="580" y="207" fill="#8b8fa3" font-size="10">Compaction summary if exists</text>
+      <text x="580" y="222" fill="#8b8fa3" font-size="10">Unread inbox messages</text>
+      <text x="580" y="237" fill="#8b8fa3" font-size="10">Session &gt;300K? &rarr; compact</text>
+
+      <!-- Output -->
+      <line x1="400" y1="245" x2="400" y2="290" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#bca)" opacity="0.6"/>
+
+      <rect x="200" y="290" width="400" height="55" rx="10" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="400" y="314" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="700">AgentRunContext</text>
+      <text x="400" y="334" text-anchor="middle" fill="#8b8fa3" font-size="10">tools + system_prompt + history + llm_config + mode</text>
+
+      <line x1="400" y1="350" x2="400" y2="390" stroke="#fb923c" stroke-width="2" marker-end="url(#bca)" opacity="0.7"/>
+
+      <rect x="230" y="390" width="340" height="45" rx="10" fill="rgba(251,146,60,0.1)" stroke="#fb923c" stroke-width="2"/>
+      <text x="400" y="418" text-anchor="middle" fill="#fb923c" font-size="13" font-weight="700">run_sync_agent_loop()</text>
+    </svg>
+  </div>
+
+  <h2>Workspace File Loading</h2>
+  <p>The context builder loads 5 workspace files into the system prompt: <code>AGENTS.md</code>, <code>SOUL.md</code>, <code>IDENTITY.md</code>, <code>USER.md</code>, <code>MEMORY.md</code>. Files exceeding 20K characters are truncated (70% head + 20% tail kept).</p>
+</div>
+
+<!-- ═══════ TOOL OVERVIEW ═══════ -->
+<div class="section" id="sec-tool-overview">
+  <h1>Tool Architecture</h1>
+  <p class="subtitle">Three categories of tools with different execution strategies and approval requirements.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 320" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="ta" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#8b8fa3"/>
+        </marker>
+      </defs>
+
+      <!-- LLM -->
+      <rect x="300" y="20" width="200" height="42" rx="10" fill="rgba(251,146,60,0.1)" stroke="#fb923c" stroke-width="2"/>
+      <text x="400" y="46" text-anchor="middle" fill="#fb923c" font-size="13" font-weight="700">LLM Tool Call</text>
+
+      <!-- ToolRouter -->
+      <line x1="400" y1="66" x2="400" y2="100" stroke="#8b8fa3" stroke-width="1.5" marker-end="url(#ta)"/>
+      <rect x="300" y="100" width="200" height="40" rx="9" fill="rgba(244,114,182,0.08)" stroke="#f472b6" stroke-width="1.5"/>
+      <text x="400" y="124" text-anchor="middle" fill="#f472b6" font-size="12" font-weight="600">ToolRouter</text>
+
+      <!-- Three branches -->
+      <line x1="330" y1="144" x2="130" y2="185" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#ta)"/>
+      <line x1="400" y1="144" x2="400" y2="185" stroke="#34d399" stroke-width="1.5" marker-end="url(#ta)"/>
+      <line x1="470" y1="144" x2="670" y2="185" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ta)"/>
+
+      <!-- Local -->
+      <rect x="30" y="185" width="200" height="60" rx="9" fill="rgba(96,165,250,0.08)" stroke="#60a5fa" stroke-width="2"/>
+      <text x="130" y="207" text-anchor="middle" fill="#60a5fa" font-size="12" font-weight="600">LocalToolExecutor</text>
+      <text x="130" y="227" text-anchor="middle" fill="#8b8fa3" font-size="10">&#8594; tool:request to client</text>
+      <text x="130" y="263" text-anchor="middle" fill="#60a5fa" font-size="10">17 tools &bull; Desktop execution</text>
+
+      <!-- Remote -->
+      <rect x="280" y="185" width="240" height="60" rx="9" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="2"/>
+      <text x="400" y="207" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">RemoteToolExecutor</text>
+      <text x="400" y="227" text-anchor="middle" fill="#8b8fa3" font-size="10">Execute in-process (FunctionTool)</text>
+      <text x="400" y="263" text-anchor="middle" fill="#34d399" font-size="10">11 tools &bull; Backend execution</text>
+
+      <!-- Connector -->
+      <rect x="570" y="185" width="200" height="60" rx="9" fill="rgba(167,139,250,0.08)" stroke="#a78bfa" stroke-width="2"/>
+      <text x="670" y="207" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="600">ConnectorToolExecutor</text>
+      <text x="670" y="227" text-anchor="middle" fill="#8b8fa3" font-size="10">MCP gateway execution</text>
+      <text x="670" y="263" text-anchor="middle" fill="#a78bfa" font-size="10">Dynamic &bull; Per-user approval</text>
+    </svg>
+  </div>
+</div>
+
+<!-- ═══════ TOOL CATALOG ═══════ -->
+<div class="section" id="sec-tool-catalog">
+  <h1>Tool Catalog</h1>
+  <p class="subtitle">Complete list of all tools available to the Bud Agent.</p>
+
+  <input type="text" class="search-box" placeholder="Search tools..." oninput="filterTable(this.value, 'tool-table')">
+
+  <h2>Local Tools <span class="tag tag-blue">17 tools</span> <span class="tag tag-orange">Desktop execution</span></h2>
+  <table class="data-table" id="tool-table">
+    <thead><tr><th>Tool</th><th>Description</th><th>Approval</th></tr></thead>
+    <tbody>
+      <tr><td><code>bash</code></td><td>Execute shell commands</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>write_file</code></td><td>Create or overwrite a file</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>edit_file</code></td><td>Edit a file with search/replace</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>read_file</code></td><td>Read file contents</td><td><span class="tag tag-green">Auto</span></td></tr>
+      <tr><td><code>list_directory</code></td><td>List files in a directory</td><td><span class="tag tag-green">Auto</span></td></tr>
+      <tr><td><code>glob_search</code></td><td>Find files by glob pattern</td><td><span class="tag tag-green">Auto</span></td></tr>
+      <tr><td><code>grep_search</code></td><td>Search file contents with regex</td><td><span class="tag tag-green">Auto</span></td></tr>
+      <tr><td><code>file_info</code></td><td>Get file metadata (size, modified, etc.)</td><td><span class="tag tag-green">Auto</span></td></tr>
+      <tr><td><code>browser_open</code></td><td>Open URL in browser</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>browser_screenshot</code></td><td>Capture browser screenshot</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>browser_click</code></td><td>Click element in browser</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>browser_type</code></td><td>Type text into browser input</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>browser_scroll</code></td><td>Scroll browser page</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>browser_navigate</code></td><td>Navigate to URL in browser</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>browser_eval</code></td><td>Execute JavaScript in browser</td><td><span class="tag tag-yellow">Required</span></td></tr>
+      <tr><td><code>process_start</code></td><td>Start a background process</td><td><span class="tag tag-green">Auto</span></td></tr>
+      <tr><td><code>process_status</code></td><td>Check process status</td><td><span class="tag tag-green">Auto</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Remote Tools <span class="tag tag-green">11 tools</span> <span class="tag tag-purple">Backend execution</span></h2>
+  <table class="data-table">
+    <thead><tr><th>Tool</th><th>Description</th><th>Implementation</th></tr></thead>
+    <tbody>
+      <tr><td><code>memory_store</code></td><td>Store a memory (PG + Vespa)</td><td>memory_service.py</td></tr>
+      <tr><td><code>memory_search</code></td><td>Search memories (hybrid vector + BM25)</td><td>memory_service.py</td></tr>
+      <tr><td><code>web_search</code></td><td>Search the web (Serper/Exa)</td><td>web_search_service.py</td></tr>
+      <tr><td><code>open_url</code></td><td>Fetch and extract URL content</td><td>web_search_service.py</td></tr>
+      <tr><td><code>workspace_read</code></td><td>Read a workspace file</td><td>workspace_service.py</td></tr>
+      <tr><td><code>workspace_write</code></td><td>Write a workspace file</td><td>workspace_service.py</td></tr>
+      <tr><td><code>workspace_list</code></td><td>List workspace files</td><td>workspace_service.py</td></tr>
+      <tr><td><code>render_artifact</code></td><td>Generate renderable artifact (HTML, code)</td><td>artifact_tool.py</td></tr>
+      <tr><td><code>ask_user_questions</code></td><td>Ask user for input with options</td><td>ask_user_tool.py</td></tr>
+      <tr><td><code>use_skill</code></td><td>Execute a skill from the catalog</td><td>skill_service.py</td></tr>
+      <tr><td><code>send_message</code></td><td>Send message to another agent (inbox)</td><td>inbox_service.py</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Connector Tools <span class="tag tag-purple">Dynamic</span> <span class="tag tag-cyan">MCP</span></h2>
+  <p>Discovered dynamically from MCP servers registered in the database. Each connector's tools are wrapped as <code>FunctionTool</code> objects with schema sanitization. Per-user approval via <code>AgentToolPermission</code> / <code>AgentConnectorPreference</code>.</p>
+</div>
+
+<!-- ═══════ TOOL APPROVAL ═══════ -->
+<div class="section" id="sec-tool-approval">
+  <h1>Tool Approval Pipeline</h1>
+  <p class="subtitle">How tool permissions are checked and approval is requested from the user.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 380" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="ap" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24"/>
+        </marker>
+      </defs>
+
+      <rect x="280" y="20" width="240" height="40" rx="9" fill="rgba(244,114,182,0.08)" stroke="#f472b6" stroke-width="1.5"/>
+      <text x="400" y="45" text-anchor="middle" fill="#f472b6" font-size="12" font-weight="600">LLM requests tool</text>
+
+      <line x1="400" y1="64" x2="400" y2="95" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ap)" opacity="0.6"/>
+
+      <rect x="270" y="95" width="260" height="40" rx="9" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="400" y="119" text-anchor="middle" fill="#fbbf24" font-size="12" font-weight="600">Check AgentToolPermission</text>
+
+      <!-- Three branches -->
+      <line x1="310" y1="139" x2="130" y2="180" stroke="#34d399" stroke-width="1.5" marker-end="url(#ap)" opacity="0.5"/>
+      <line x1="400" y1="139" x2="400" y2="180" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ap)" opacity="0.5"/>
+      <line x1="490" y1="139" x2="670" y2="180" stroke="#f87171" stroke-width="1.5" marker-end="url(#ap)" opacity="0.5"/>
+
+      <!-- ALWAYS_ALLOW -->
+      <rect x="30" y="180" width="200" height="44" rx="8" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="130" y="200" text-anchor="middle" fill="#34d399" font-size="11.5" font-weight="600">ALWAYS_ALLOW</text>
+      <text x="130" y="215" text-anchor="middle" fill="#8b8fa3" font-size="10">Execute immediately</text>
+
+      <!-- NEED_APPROVAL -->
+      <rect x="280" y="180" width="240" height="44" rx="8" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="400" y="200" text-anchor="middle" fill="#fbbf24" font-size="11.5" font-weight="600">NEED_APPROVAL</text>
+      <text x="400" y="215" text-anchor="middle" fill="#8b8fa3" font-size="10">Emit tool:approval_required</text>
+
+      <!-- BLOCKED -->
+      <rect x="570" y="180" width="200" height="44" rx="8" fill="rgba(248,113,113,0.08)" stroke="#f87171" stroke-width="1.5"/>
+      <text x="670" y="200" text-anchor="middle" fill="#f87171" font-size="11.5" font-weight="600">BLOCKED</text>
+      <text x="670" y="215" text-anchor="middle" fill="#8b8fa3" font-size="10">Skip or error</text>
+
+      <!-- Approval flow -->
+      <line x1="400" y1="228" x2="400" y2="265" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ap)" opacity="0.5"/>
+
+      <rect x="290" y="265" width="105" height="36" rx="7" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1"/>
+      <text x="342" y="287" text-anchor="middle" fill="#34d399" font-size="11">Approved</text>
+
+      <rect x="405" y="265" width="105" height="36" rx="7" fill="rgba(248,113,113,0.08)" stroke="#f87171" stroke-width="1"/>
+      <text x="457" y="287" text-anchor="middle" fill="#f87171" font-size="11">Denied</text>
+
+      <line x1="342" y1="305" x2="342" y2="340" stroke="#34d399" stroke-width="1" marker-end="url(#ap)" opacity="0.5"/>
+      <text x="342" y="358" text-anchor="middle" fill="#34d399" font-size="11">Execute tool</text>
+
+      <line x1="457" y1="305" x2="457" y2="340" stroke="#f87171" stroke-width="1" marker-end="url(#ap)" opacity="0.5"/>
+      <text x="457" y="358" text-anchor="middle" fill="#f87171" font-size="11">Persist error, continue LLM</text>
+    </svg>
+  </div>
+
+  <p>Permissions stored in <code>AgentToolPermission</code> table. Per-user, per-tool. Levels: <code>ALWAYS_ALLOW</code>, <code>NEED_APPROVAL</code> (default for 8 tools), <code>BLOCKED</code>.</p>
+</div>
+
+<!-- ═══════ MCP INTEGRATION ═══════ -->
+<div class="section" id="sec-mcp">
+  <h1>MCP Integration</h1>
+  <p class="subtitle">Model Context Protocol for connecting agents to external services and APIs.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Discovery</div>
+      <div class="card-desc">MCP servers are registered as <code>MCPServer</code> records in PostgreSQL. System-managed (not per-message discovery). Loaded at context build time.</div>
+      <div class="card-path">mcp_service.py: create_default_mcp_tools()</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Schema Wrapping</div>
+      <div class="card-desc">Each MCP tool's JSON schema is sanitized for LLM compatibility. Wrapped as a <code>FunctionTool</code> with the MCP call as the execution handler.</div>
+      <div class="card-path">Schema sanitization for edge cases</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Execution</div>
+      <div class="card-desc">Tool calls dispatched to the MCP server via <code>call_mcp_tool()</code>. Results fed back to the LLM in the same turn. Per-user approval via <code>AgentConnectorPreference</code>.</div>
+      <div class="card-path">connector_service.py</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Approval Gating</div>
+      <div class="card-desc">Connector tools check <code>AgentConnectorPreference</code> for the user. If approval required, emits <code>tool:approval_required</code> event. Uses event-driven approval via Socket.IO.</div>
+      <div class="card-path">tool_definitions.py: is_connector_tool()</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ SOCKET.IO PROTOCOL ═══════ -->
+<div class="section" id="sec-socketio">
+  <h1>Socket.IO Protocol</h1>
+  <p class="subtitle">Event-driven bidirectional communication between client and backend.</p>
+
+  <h2>Events Reference</h2>
+
+  <h3>Client &rarr; Server</h3>
+  <table class="data-table">
+    <thead><tr><th>Event</th><th>Payload</th><th>Handler</th></tr></thead>
+    <tbody>
+      <tr><td><code>agent:execute</code></td><td><code>{session_id, message, files?}</code></td><td>handle_execute()</td></tr>
+      <tr><td><code>tool:result</code></td><td><code>{session_id, tool_call_id, output, error?}</code></td><td>handle_tool_result()</td></tr>
+      <tr><td><code>tool:approval</code></td><td><code>{session_id, tool_call_id, approved, always?}</code></td><td>handle_approval()</td></tr>
+      <tr><td><code>agent:stop</code></td><td><code>{session_id}</code></td><td>handle_stop()</td></tr>
+      <tr><td><code>agent:rejoin</code></td><td><code>{session_id}</code></td><td>Re-join room</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Server &rarr; Client</h3>
+  <table class="data-table">
+    <thead><tr><th>Event</th><th>Payload</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>agent:message_delta</code></td><td><code>{content, session_id}</code></td><td>Streaming text from LLM</td></tr>
+      <tr><td><code>agent:reasoning_delta</code></td><td><code>{content, session_id}</code></td><td>Thinking/reasoning content</td></tr>
+      <tr><td><code>tool:request</code></td><td><code>{tool_name, tool_input, tool_call_id}</code></td><td>Execute local tool</td></tr>
+      <tr><td><code>tool:delta</code></td><td><code>{tool_name, content, tool_call_id}</code></td><td>Remote tool result streaming</td></tr>
+      <tr><td><code>tool:approval_required</code></td><td><code>{tool_name, tool_input, tool_call_id}</code></td><td>Needs user approval</td></tr>
+      <tr><td><code>agent:done</code></td><td><code>{session_id, usage?}</code></td><td>Agent turn complete</td></tr>
+      <tr><td><code>agent:error</code></td><td><code>{error, session_id}</code></td><td>Error occurred</td></tr>
+      <tr><td><code>agent:stopped</code></td><td><code>{session_id}</code></td><td>Gracefully stopped</td></tr>
+      <tr><td><code>agent:compacted</code></td><td><code>{old_id, new_id, summary}</code></td><td>Session was compacted</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Connection Setup</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Endpoint</div>
+      <div class="card-desc"><code>/ws/agent/</code> path, mounted as ASGI app on the FastAPI server.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Authentication</div>
+      <div class="card-desc">JWT token in headers, session cookie, or auth token in handshake. Validated on <code>connect</code> event.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Rooms</div>
+      <div class="card-desc">Clients join <code>session:{session_id}</code> room. Enables multi-tab and reconnection support. Events routed to room or direct SID.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Timeouts</div>
+      <div class="card-desc">Extended ping interval and timeout for long-running tool operations. Prevents false disconnects during bash execution.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ REST API ═══════ -->
+<div class="section" id="sec-api-endpoints">
+  <h1>REST API Endpoints</h1>
+  <p class="subtitle">FastAPI endpoints for session management, memory, workspace, and tool permissions.</p>
+
+  <h2>Session Management</h2>
+  <table class="data-table">
+    <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tag-green">POST</span></td><td><code>/agent/session</code></td><td>Create new session (deactivates previous)</td></tr>
+      <tr><td><span class="tag tag-blue">GET</span></td><td><code>/agent/session/{id}</code></td><td>Get session details</td></tr>
+      <tr><td><span class="tag tag-blue">GET</span></td><td><code>/agent/sessions</code></td><td>List user's sessions</td></tr>
+      <tr><td><span class="tag tag-blue">GET</span></td><td><code>/agent/session/{id}/messages</code></td><td>Get session message history</td></tr>
+      <tr><td><span class="tag tag-green">POST</span></td><td><code>/agent/session/{id}/execute</code></td><td>Execute agent (SSE, legacy)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Memory &amp; Workspace</h2>
+  <table class="data-table">
+    <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tag-blue">GET</span></td><td><code>/agent/memories</code></td><td>List user's memories</td></tr>
+      <tr><td><span class="tag tag-blue">GET</span></td><td><code>/agent/workspace-files</code></td><td>List workspace files</td></tr>
+      <tr><td><span class="tag tag-green">POST</span></td><td><code>/agent/workspace-files</code></td><td>Upload workspace file</td></tr>
+      <tr><td><span class="tag tag-blue">GET</span></td><td><code>/agent/tool-permissions</code></td><td>Get tool permission settings</td></tr>
+      <tr><td><span class="tag tag-orange">PUT</span></td><td><code>/agent/tool-permissions</code></td><td>Update tool permissions</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════ DB MODELS ═══════ -->
+<div class="section" id="sec-db-models">
+  <h1>Database Models</h1>
+  <p class="subtitle">PostgreSQL tables backing the Bud Agent system. Defined in <code>backend/onyx/db/models.py</code>.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon" style="background:rgba(108,99,255,0.12);color:var(--accent-light)">&#128203;</div>
+      <div class="card-title">AgentSession</div>
+      <div class="card-desc">
+        <code>id</code>, <code>user_id</code>, <code>title</code>, <code>description</code><br>
+        <code>status</code> (ACTIVE/COMPLETED/FAILED/STOPPED/COMPACTED/SUSPENDED)<br>
+        <code>execution_status</code> (IDLE/RUNNING/AWAITING_TOOL/AWAITING_APPROVAL)<br>
+        <code>pending_local_tools</code> (JSONB) - queued tool calls<br>
+        <code>total_tokens_used</code>, <code>total_tool_calls</code><br>
+        <code>compaction_summary</code> - summary from old session
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(52,211,153,0.12);color:var(--green)">&#128488;</div>
+      <div class="card-title">AgentMessage</div>
+      <div class="card-desc">
+        <code>id</code>, <code>session_id</code>, <code>role</code> (USER/ASSISTANT/TOOL/SYSTEM)<br>
+        <code>content</code>, <code>thinking_content</code><br>
+        <code>tool_name</code>, <code>tool_input</code>, <code>tool_output</code>, <code>tool_error</code><br>
+        <code>tool_call_id</code>, <code>step_number</code><br>
+        <code>ui_spec</code> (JSONB) - frontend rendering hints
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(34,211,238,0.12);color:var(--cyan)">&#129504;</div>
+      <div class="card-title">AgentMemory</div>
+      <div class="card-desc">
+        <code>id</code>, <code>user_id</code>, <code>content</code><br>
+        <code>embedding</code> (vector) - for Vespa indexing<br>
+        <code>source</code> (SESSION/USER_INPUT/AUTO)<br>
+        Dual-stored: PostgreSQL + Vespa
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,191,36,0.12);color:var(--yellow)">&#128196;</div>
+      <div class="card-title">AgentWorkspaceFile</div>
+      <div class="card-desc">
+        <code>id</code>, <code>user_id</code>, <code>file_name</code><br>
+        <code>content</code> - file contents<br>
+        Used for AGENTS.md, SOUL.md, IDENTITY.md, etc.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,146,60,0.12);color:var(--orange)">&#128337;</div>
+      <div class="card-title">AgentCronJob</div>
+      <div class="card-desc">
+        <code>id</code>, <code>user_id</code>, <code>schedule</code>, <code>schedule_type</code><br>
+        (CRON/INTERVAL/ONE_SHOT)<br>
+        <code>prompt</code>, <code>enabled</code>, <code>last_run</code>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,146,60,0.12);color:var(--orange)">&#9881;</div>
+      <div class="card-title">AgentCronExecution</div>
+      <div class="card-desc">
+        <code>id</code>, <code>cron_job_id</code><br>
+        <code>status</code> (PENDING/RUNNING/SUSPENDED/COMPLETED/FAILED/SKIPPED)<br>
+        <code>result</code>, <code>error</code>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(244,114,182,0.12);color:var(--pink)">&#128274;</div>
+      <div class="card-title">AgentToolPermission</div>
+      <div class="card-desc">
+        <code>user_id</code>, <code>tool_name</code><br>
+        <code>level</code> (ALWAYS_ALLOW/NEED_APPROVAL/BLOCKED)<br>
+        Per-user, per-tool permission settings
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(167,139,250,0.12);color:var(--purple)">&#128268;</div>
+      <div class="card-title">AgentConnectorPreference</div>
+      <div class="card-desc">
+        <code>user_id</code>, <code>connector_id</code><br>
+        Per-user connector-specific approval settings<br>
+        Controls MCP tool access
+      </div>
+    </div>
+  </div>
+
+  <h2>Key DB Operations</h2>
+  <p>All operations in <code>backend/onyx/db/agent.py</code> (~600 lines):</p>
+  <ul>
+    <li><strong>Session</strong>: create, get, list, update status, deactivate previous</li>
+    <li><strong>Messages</strong>: add (user/assistant/tool/system), get history, update tool result</li>
+    <li><strong>Execution</strong>: set/get execution status, check stopped flag</li>
+    <li><strong>Pending tools</strong>: persist and load pending_local_tools JSONB</li>
+    <li><strong>Compaction</strong>: create compacted session, mark old as COMPACTED</li>
+    <li><strong>Memory</strong>: create, search by text, list for user</li>
+    <li><strong>Workspace</strong>: upsert, get, list workspace files</li>
+  </ul>
+</div>
+
+<!-- ═══════ MEMORY SYSTEM ═══════ -->
+<div class="section" id="sec-memory">
+  <h1>Memory System</h1>
+  <p class="subtitle">Persistent agent memory with hybrid search across Vespa vector store and PostgreSQL.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 340" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="ma" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee"/>
+        </marker>
+      </defs>
+
+      <!-- Store -->
+      <rect x="30" y="20" width="340" height="130" rx="10" fill="rgba(34,211,238,0.06)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="200" y="42" text-anchor="middle" fill="#22d3ee" font-size="13" font-weight="700">store_memory()</text>
+      <line x1="30" y1="52" x2="370" y2="52" stroke="var(--border)" stroke-width="1"/>
+      <text x="45" y="72" fill="#8b8fa3" font-size="10.5">1. Create AgentMemory in PostgreSQL</text>
+      <text x="45" y="90" fill="#8b8fa3" font-size="10.5">2. Generate embedding vector</text>
+      <text x="45" y="108" fill="#8b8fa3" font-size="10.5">3. Index to Vespa (hybrid schema)</text>
+      <text x="45" y="126" fill="#8b8fa3" font-size="10.5">4. Return memory ID</text>
+      <text x="45" y="144" fill="#8b8fa3" font-size="10.5">Sources: SESSION, USER_INPUT, AUTO</text>
+
+      <!-- Search -->
+      <rect x="430" y="20" width="340" height="130" rx="10" fill="rgba(167,139,250,0.06)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="600" y="42" text-anchor="middle" fill="#a78bfa" font-size="13" font-weight="700">search_memories()</text>
+      <line x1="430" y1="52" x2="770" y2="52" stroke="var(--border)" stroke-width="1"/>
+      <text x="445" y="72" fill="#8b8fa3" font-size="10.5">1. Try Vespa hybrid search</text>
+      <text x="445" y="90" fill="#8b8fa3" font-size="10.5">   70% vector + 30% BM25 scoring</text>
+      <text x="445" y="108" fill="#8b8fa3" font-size="10.5">2. Fallback: PostgreSQL text search</text>
+      <text x="445" y="126" fill="#8b8fa3" font-size="10.5">3. Deduplicate results</text>
+      <text x="445" y="144" fill="#8b8fa3" font-size="10.5">4. Format for system prompt injection</text>
+
+      <!-- Context injection -->
+      <rect x="150" y="200" width="500" height="55" rx="10" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="400" y="222" text-anchor="middle" fill="#fbbf24" font-size="12" font-weight="600">Auto-Injection into System Prompt</text>
+      <text x="400" y="240" text-anchor="middle" fill="#8b8fa3" font-size="10.5">context_builder.py auto-searches memories based on user message content</text>
+
+      <!-- Vespa detail -->
+      <rect x="150" y="280" width="500" height="40" rx="8" fill="rgba(34,211,238,0.04)" stroke="var(--border)" stroke-width="1"/>
+      <text x="400" y="304" text-anchor="middle" fill="#8b8fa3" font-size="10.5">Vespa: vespa_memory.py &bull; index_memory_to_vespa() &bull; search_memories_vespa() &bull; delete_memory_from_vespa()</text>
+    </svg>
+  </div>
+</div>
+
+<!-- ═══════ WORKSPACE FILES ═══════ -->
+<div class="section" id="sec-workspace">
+  <h1>Workspace Files</h1>
+  <p class="subtitle">Configuration files injected into the agent's system prompt. Customizable per-user.</p>
+
+  <table class="data-table">
+    <thead><tr><th>File</th><th>Purpose</th><th>Injection</th></tr></thead>
+    <tbody>
+      <tr><td><code>AGENTS.md</code></td><td>Agent behavior instructions, capabilities, boundaries</td><td>Always loaded</td></tr>
+      <tr><td><code>SOUL.md</code></td><td>Agent personality, tone, communication style</td><td>Always loaded</td></tr>
+      <tr><td><code>IDENTITY.md</code></td><td>Agent identity, name, role context</td><td>Always loaded</td></tr>
+      <tr><td><code>USER.md</code></td><td>User-specific context, preferences, team info</td><td>Always loaded</td></tr>
+      <tr><td><code>MEMORY.md</code></td><td>Structured memory index (auto-maintained)</td><td>Always loaded</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:14px;">Files exceeding 20K characters are smart-truncated: keep 70% from the start and 20% from the end, with a truncation marker in between. Stored in the <code>AgentWorkspaceFile</code> table, managed via REST API and <code>workspace_service.py</code>.</p>
+</div>
+
+<!-- ═══════ FRONTEND ═══════ -->
+<div class="section" id="sec-frontend">
+  <h1>Frontend Architecture</h1>
+  <p class="subtitle">Client-side agent system under <code>web/src/lib/agent/</code> and <code>web/src/app/agent/</code>.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon" style="background:rgba(96,165,250,0.12);color:var(--blue)">&#9889;</div>
+      <div class="card-title">AgentExecutor</div>
+      <div class="card-desc">Main agent loop on desktop. Async generator yielding <code>AgentEvent</code>s (thinking, text, tool_start, tool_result, approval_required, complete, error, done). Manages tool registry.</div>
+      <div class="card-path">lib/agent/executor.ts (~200 lines)</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(167,139,250,0.12);color:var(--purple)">&#128225;</div>
+      <div class="card-title">LocalGateway</div>
+      <div class="card-desc">Socket.IO client connecting to <code>/ws/agent/</code>. Handles <code>tool:request</code> events, executes local tools via registry, sends <code>tool:result</code> back. Auto-reconnection with exponential backoff.</div>
+      <div class="card-path">lib/agent/gateway.ts (~200 lines)</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(52,211,153,0.12);color:var(--green)">&#128203;</div>
+      <div class="card-title">SessionClient</div>
+      <div class="card-desc">REST client for session persistence. Creates/retrieves sessions, manages message history, workspace file operations, memory management.</div>
+      <div class="card-path">lib/agent/session-client.ts (~200 lines)</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(244,114,182,0.12);color:var(--pink)">&#128193;</div>
+      <div class="card-title">Types</div>
+      <div class="card-desc"><code>AgentState</code>: idle, thinking, executing_tool, waiting_approval, streaming, completed, failed, stopped. <code>AgentEvent</code> union type. <code>Message</code>, <code>ToolCall</code> interfaces.</div>
+      <div class="card-path">lib/agent/types.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,191,36,0.12);color:var(--yellow)">&#129504;</div>
+      <div class="card-title">Context Builder</div>
+      <div class="card-desc">Client-side system prompt construction. Loads context files from workspace, builds connector tool catalog.</div>
+      <div class="card-path">lib/agent/context-builder.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(34,211,238,0.12);color:var(--cyan)">&#128225;</div>
+      <div class="card-title">LLM Client</div>
+      <div class="card-desc">OpenAI API client with streaming response handling, tool call parsing, and message history management.</div>
+      <div class="card-path">lib/agent/llm-client.ts (~200 lines)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ GATEWAY ═══════ -->
+<div class="section" id="sec-gateway">
+  <h1>LocalGateway</h1>
+  <p class="subtitle">The Socket.IO client that bridges backend agent events to local tool execution on the desktop.</p>
+
+  <div class="flow-diagram">
+    <svg viewBox="0 0 800 280" width="100%" style="max-width:800px;">
+      <defs>
+        <marker id="ga" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+          <polygon points="0 0, 7 2.5, 0 5" fill="#60a5fa"/>
+        </marker>
+      </defs>
+
+      <rect x="30" y="30" width="180" height="44" rx="9" fill="rgba(167,139,250,0.08)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="120" y="48" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="600">Backend emits</text>
+      <text x="120" y="64" text-anchor="middle" fill="#8b8fa3" font-size="10">tool:request</text>
+
+      <line x1="215" y1="52" x2="290" y2="52" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#ga)" opacity="0.6"/>
+
+      <rect x="290" y="20" width="220" height="60" rx="10" fill="rgba(96,165,250,0.1)" stroke="#60a5fa" stroke-width="2"/>
+      <text x="400" y="42" text-anchor="middle" fill="#60a5fa" font-size="13" font-weight="700">LocalGateway</text>
+      <text x="400" y="60" text-anchor="middle" fill="#8b8fa3" font-size="10">Socket.IO client listener</text>
+
+      <line x1="400" y1="84" x2="400" y2="120" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#ga)" opacity="0.6"/>
+
+      <rect x="290" y="120" width="220" height="50" rx="9" fill="rgba(96,165,250,0.06)" stroke="#60a5fa" stroke-width="1.5"/>
+      <text x="400" y="140" text-anchor="middle" fill="#60a5fa" font-size="12" font-weight="600">Tool Registry Lookup</text>
+      <text x="400" y="158" text-anchor="middle" fill="#8b8fa3" font-size="10">Find matching tool executor</text>
+
+      <line x1="400" y1="175" x2="400" y2="208" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#ga)" opacity="0.6"/>
+
+      <rect x="260" y="208" width="280" height="44" rx="9" fill="rgba(52,211,153,0.08)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="400" y="226" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">Execute Local Tool</text>
+      <text x="400" y="243" text-anchor="middle" fill="#8b8fa3" font-size="10">bash, read_file, write_file, browser...</text>
+
+      <line x1="400" y1="256" x2="120" y2="256" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ga)" opacity="0.6"/>
+      <rect x="30" y="244" width="180" height="34" rx="7" fill="rgba(167,139,250,0.06)" stroke="#a78bfa" stroke-width="1"/>
+      <text x="120" y="265" text-anchor="middle" fill="#a78bfa" font-size="10.5">Send tool:result</text>
+
+      <!-- Right side: features -->
+      <rect x="570" y="30" width="200" height="220" rx="9" fill="rgba(108,99,255,0.03)" stroke="var(--border)" stroke-width="1"/>
+      <text x="670" y="55" text-anchor="middle" fill="var(--text-muted)" font-size="11" font-weight="600">Gateway Features</text>
+      <text x="580" y="80" fill="#8b8fa3" font-size="10">&bull; Auto-reconnect (exp. backoff)</text>
+      <text x="580" y="100" fill="#8b8fa3" font-size="10">&bull; Room re-join on reconnect</text>
+      <text x="580" y="120" fill="#8b8fa3" font-size="10">&bull; Event queuing during disconnect</text>
+      <text x="580" y="140" fill="#8b8fa3" font-size="10">&bull; Tool execution timeout</text>
+      <text x="580" y="160" fill="#8b8fa3" font-size="10">&bull; Error capture and reporting</text>
+      <text x="580" y="180" fill="#8b8fa3" font-size="10">&bull; Agent event forwarding</text>
+      <text x="580" y="200" fill="#8b8fa3" font-size="10">&bull; Listens: tool:*, agent:*</text>
+    </svg>
+  </div>
+</div>
+
+<!-- ═══════ LOCAL TOOLS ═══════ -->
+<div class="section" id="sec-local-tools">
+  <h1>Desktop Tools</h1>
+  <p class="subtitle">Local tool implementations that execute on the user's machine. Located under <code>web/src/lib/agent/tools/</code>.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon" style="background:rgba(96,165,250,0.12);color:var(--blue)">&#128196;</div>
+      <div class="card-title">File Tools</div>
+      <div class="card-desc"><code>ReadFileTool</code>, <code>WriteFileTool</code>, <code>EditFileTool</code>. Read, create, and modify files with search/replace editing.</div>
+      <div class="card-path">tools/file-tools.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(52,211,153,0.12);color:var(--green)">&#128187;</div>
+      <div class="card-title">Bash Tool</div>
+      <div class="card-desc">Shell command execution with approval checks. Captures stdout/stderr. Timeout management.</div>
+      <div class="card-path">tools/bash-tool.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,191,36,0.12);color:var(--yellow)">&#128270;</div>
+      <div class="card-title">Search Tools</div>
+      <div class="card-desc">Glob pattern file search and grep content search. Regex support.</div>
+      <div class="card-path">tools/search-tools.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(244,114,182,0.12);color:var(--pink)">&#127760;</div>
+      <div class="card-title">Browser Tools</div>
+      <div class="card-desc">Browser automation: open, screenshot, click, type, scroll, navigate, eval. Playwright-style interaction.</div>
+      <div class="card-path">tools/browser/browser-tools.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(251,146,60,0.12);color:var(--orange)">&#9881;</div>
+      <div class="card-title">Process Tool</div>
+      <div class="card-desc">Start and monitor background processes. Process status tracking.</div>
+      <div class="card-path">tools/process-tool.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(34,211,238,0.12);color:var(--cyan)">&#129504;</div>
+      <div class="card-title">Memory Tools</div>
+      <div class="card-desc">Local SQLite memory storage and search. Embedding generation for semantic search.</div>
+      <div class="card-path">tools/memory-tools.ts</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(167,139,250,0.12);color:var(--purple)">&#128270;</div>
+      <div class="card-title">Onyx Search Tool</div>
+      <div class="card-desc">Backend Onyx document search integration. Queries the RAG pipeline.</div>
+      <div class="card-path">tools/onyx-search-tool.ts</div>
+    </div>
+  </div>
+
+  <h2>Tool Base Class</h2>
+  <p><code>BaseTool</code> in <code>tools/base.ts</code> provides the abstract interface. Each tool implements <code>execute(input)</code> and declares its JSON schema. Tools are registered in <code>local-execution.ts</code>.</p>
+</div>
+
+<!-- ═══════ DIRECTORY LAYOUT ═══════ -->
+<div class="section" id="sec-directory">
+  <h1>Directory Layout</h1>
+  <p class="subtitle">Key files and directories for the Bud Agent system.</p>
+
+  <div class="tree">
+<span class="highlight">backend/onyx/agents/bud_agent/</span>            <span class="comment"># Core agent engine (~8,200 lines)</span>
+├── <span class="file">orchestrator.py</span>              <span class="comment"># Legacy SSE orchestrator (deprecated)</span>
+├── <span class="file">cron_orchestrator.py</span>         <span class="comment"># Cron job orchestrator</span>
+├── <span class="file">inbox_orchestrator.py</span>        <span class="comment"># Inbox message orchestrator</span>
+├── <span class="highlight">agent_context.py</span>             <span class="comment"># Shared context, unified LLM loop</span>
+├── <span class="file">context_builder.py</span>           <span class="comment"># System prompt construction</span>
+├── <span class="file">tool_definitions.py</span>          <span class="comment"># Tool schemas &amp; classification</span>
+├── <span class="file">tool_router.py</span>               <span class="comment"># Tool dispatch routing</span>
+├── <span class="file">tool_executor.py</span>             <span class="comment"># Execution strategy ABCs</span>
+├── <span class="file">local_tool_bridge.py</span>         <span class="comment"># DEPRECATED: Redis BLPOP bridge</span>
+├── <span class="file">memory_service.py</span>            <span class="comment"># Memory store/search (Vespa + PG)</span>
+├── <span class="file">mcp_service.py</span>               <span class="comment"># MCP tool wrapping</span>
+├── <span class="file">skill_service.py</span>             <span class="comment"># Skill catalog &amp; execution</span>
+├── <span class="file">web_search_service.py</span>        <span class="comment"># Web search integration</span>
+├── <span class="file">connector_service.py</span>         <span class="comment"># Connector tool management</span>
+├── <span class="file">workspace_service.py</span>         <span class="comment"># Workspace file ops</span>
+├── <span class="file">cron_service.py</span>              <span class="comment"># Cron job management</span>
+├── <span class="file">inbox_service.py</span>             <span class="comment"># Inbox tools</span>
+├── <span class="file">ask_user_tool.py</span>             <span class="comment"># Interactive question tool</span>
+├── <span class="file">artifact_tool.py</span>             <span class="comment"># Renderable artifacts</span>
+├── <span class="file">streaming_models.py</span>          <span class="comment"># Packet types</span>
+├── <span class="file">packet_utils.py</span>              <span class="comment"># DB → packet reconstruction</span>
+├── <span class="file">vespa_memory.py</span>              <span class="comment"># Vespa memory integration</span>
+└── <span class="file">budapp_client.py</span>             <span class="comment"># BudApp connector gateway</span>
+
+<span class="highlight">backend/onyx/server/agent/</span>                 <span class="comment"># API layer</span>
+├── <span class="highlight">agent_handler.py</span>             <span class="comment"># Socket.IO event handler (~700 lines)</span>
+├── <span class="highlight">socketio_server.py</span>           <span class="comment"># Socket.IO server setup (~400 lines)</span>
+├── <span class="file">api.py</span>                       <span class="comment"># REST endpoints (~600 lines)</span>
+├── <span class="file">connector_api.py</span>             <span class="comment"># Connector endpoints</span>
+├── <span class="file">cron_api.py</span>                  <span class="comment"># Cron job endpoints</span>
+├── <span class="file">inbox_api.py</span>                 <span class="comment"># Inbox endpoints</span>
+└── <span class="file">events_api.py</span>                <span class="comment"># Event streaming</span>
+
+<span class="highlight">backend/onyx/db/</span>                            <span class="comment"># Database layer</span>
+├── <span class="file">agent.py</span>                     <span class="comment"># All agent DB operations (~600 lines)</span>
+├── <span class="file">models.py</span>                    <span class="comment"># AgentSession, AgentMessage, etc.</span>
+└── <span class="file">enums.py</span>                     <span class="comment"># Status/role enums</span>
+
+<span class="highlight">web/src/lib/agent/</span>                          <span class="comment"># Frontend agent system</span>
+├── <span class="file">executor.ts</span>                  <span class="comment"># Main agent loop (~200 lines)</span>
+├── <span class="file">gateway.ts</span>                   <span class="comment"># Socket.IO client (~200 lines)</span>
+├── <span class="file">session-client.ts</span>            <span class="comment"># REST session client (~200 lines)</span>
+├── <span class="file">types.ts</span>                     <span class="comment"># Type definitions</span>
+├── <span class="file">llm-client.ts</span>                <span class="comment"># LLM API client (~200 lines)</span>
+├── <span class="file">context-builder.ts</span>           <span class="comment"># Client-side prompt building</span>
+├── <span class="file">connector-utils.ts</span>           <span class="comment"># Connector tool catalog</span>
+├── <span class="dir">tools/</span>                       <span class="comment"># Local tool implementations (~1,500 lines)</span>
+│   ├── <span class="file">base.ts</span>                  <span class="comment"># BaseTool abstract class</span>
+│   ├── <span class="file">file-tools.ts</span>            <span class="comment"># Read, Write, Edit</span>
+│   ├── <span class="file">bash-tool.ts</span>             <span class="comment"># Shell execution</span>
+│   ├── <span class="file">search-tools.ts</span>          <span class="comment"># Glob, Grep</span>
+│   ├── <span class="dir">browser/</span>                 <span class="comment"># Browser automation</span>
+│   ├── <span class="file">memory-tools.ts</span>          <span class="comment"># SQLite memory</span>
+│   ├── <span class="file">onyx-search-tool.ts</span>      <span class="comment"># Backend search</span>
+│   └── <span class="file">local-execution.ts</span>       <span class="comment"># Tool registry init</span>
+├── <span class="dir">memory/</span>                      <span class="comment"># Local memory system (~400 lines)</span>
+│   ├── <span class="file">database.ts</span>              <span class="comment"># SQLite storage</span>
+│   ├── <span class="file">search.ts</span>                <span class="comment"># Memory search</span>
+│   └── <span class="file">embedder.ts</span>              <span class="comment"># Embedding generation</span>
+└── <span class="dir">utils/</span>                       <span class="comment"># Errors, retry, rate limiting</span>
+  </div>
+</div>
+
+<!-- ═══════ ENUMS & CONSTANTS ═══════ -->
+<div class="section" id="sec-enums">
+  <h1>Enums &amp; Constants</h1>
+  <p class="subtitle">Status enums, roles, and key constants used across the Bud Agent system.</p>
+
+  <h2>Session Enums</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">AgentSessionStatus</div>
+      <div class="card-desc">
+        <span class="tag tag-green">ACTIVE</span>
+        <span class="tag tag-blue">COMPLETED</span>
+        <span class="tag tag-red">FAILED</span>
+        <span class="tag tag-orange">STOPPED</span>
+        <span class="tag tag-purple">COMPACTED</span>
+        <span class="tag tag-yellow">SUSPENDED</span>
+      </div>
+      <div class="card-path">Terminal: COMPLETED, FAILED, STOPPED, COMPACTED</div>
+    </div>
+    <div class="card">
+      <div class="card-title">AgentSessionExecutionStatus</div>
+      <div class="card-desc">
+        <span class="tag tag-accent">IDLE</span>
+        <span class="tag tag-green">RUNNING</span>
+        <span class="tag tag-blue">AWAITING_TOOL</span>
+        <span class="tag tag-yellow">AWAITING_APPROVAL</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AgentMessageRole</div>
+      <div class="card-desc">
+        <span class="tag tag-blue">USER</span>
+        <span class="tag tag-green">ASSISTANT</span>
+        <span class="tag tag-pink">TOOL</span>
+        <span class="tag tag-purple">SYSTEM</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Tool &amp; Memory Enums</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">AgentToolPermissionLevel</div>
+      <div class="card-desc">
+        <span class="tag tag-green">ALWAYS_ALLOW</span>
+        <span class="tag tag-yellow">NEED_APPROVAL</span>
+        <span class="tag tag-red">BLOCKED</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AgentMemorySource</div>
+      <div class="card-desc">
+        <span class="tag tag-blue">SESSION</span>
+        <span class="tag tag-green">USER_INPUT</span>
+        <span class="tag tag-purple">AUTO</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AgentExecutionMode</div>
+      <div class="card-desc">
+        <span class="tag tag-accent">INTERACTIVE</span>
+        <span class="tag tag-orange">CRON</span>
+        <span class="tag tag-green">INBOX</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Cron Enums</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">AgentCronScheduleType</div>
+      <div class="card-desc">
+        <span class="tag tag-orange">CRON</span>
+        <span class="tag tag-blue">INTERVAL</span>
+        <span class="tag tag-purple">ONE_SHOT</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AgentCronExecutionStatus</div>
+      <div class="card-desc">
+        <span class="tag tag-accent">PENDING</span>
+        <span class="tag tag-green">RUNNING</span>
+        <span class="tag tag-yellow">SUSPENDED</span>
+        <span class="tag tag-blue">COMPLETED</span>
+        <span class="tag tag-red">FAILED</span>
+        <span class="tag tag-orange">SKIPPED</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Key Constants</h2>
+  <table class="data-table">
+    <thead><tr><th>Constant</th><th>Value</th><th>Context</th></tr></thead>
+    <tbody>
+      <tr><td><code>STOP_CHECK_INTERVAL</code></td><td>10</td><td>Check Redis stop flag every N stream events</td></tr>
+      <tr><td><code>SESSION_COMPACTION_THRESHOLD</code></td><td>300,000 chars</td><td>Compact when history exceeds this</td></tr>
+      <tr><td><code>WORKSPACE_TRUNCATION_LIMIT</code></td><td>20,000 chars</td><td>Smart-truncate workspace files beyond this</td></tr>
+      <tr><td><code>TRUNCATION_HEAD_RATIO</code></td><td>70%</td><td>Keep from start during truncation</td></tr>
+      <tr><td><code>TRUNCATION_TAIL_RATIO</code></td><td>20%</td><td>Keep from end during truncation</td></tr>
+      <tr><td><code>MEMORY_VECTOR_WEIGHT</code></td><td>0.7</td><td>Vespa hybrid search vector weight</td></tr>
+      <tr><td><code>MEMORY_BM25_WEIGHT</code></td><td>0.3</td><td>Vespa hybrid search BM25 weight</td></tr>
+      <tr><td><code>DEDUP_WINDOW_HOURS</code></td><td>24</td><td>Cron action deduplication window</td></tr>
+      <tr><td><code>LOCAL_TOOLS count</code></td><td>17</td><td>Number of local (desktop) tools</td></tr>
+      <tr><td><code>REMOTE_TOOLS count</code></td><td>11</td><td>Number of remote (backend) tools</td></tr>
+      <tr><td><code>APPROVAL_REQUIRED count</code></td><td>8</td><td>Tools requiring user approval by default</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</div><!-- /main -->
+
+<script>
+  function showSection(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    const sec = document.getElementById('sec-' + id);
+    if (sec) sec.classList.add('active');
+    document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+    event.target.classList.add('active');
+    window.scrollTo(0, 0);
+    document.querySelector('.nav').classList.remove('open');
+    if (id === 'high-level') setTimeout(drawHLConnections, 150);
+  }
+
+  function toggleExpand(header) {
+    const content = header.nextElementSibling;
+    const arrow = header.querySelector('.expand-arrow');
+    content.classList.toggle('open');
+    if (arrow) arrow.classList.toggle('open');
+  }
+
+  function filterTable(query, tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const rows = table.querySelectorAll('tbody tr');
+    const q = query.toLowerCase();
+    rows.forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+
+  function highlightNode(node) {
+    document.querySelectorAll('.diagram-node').forEach(n => n.classList.remove('highlight'));
+    node.classList.add('highlight');
+    const info = node.dataset.info;
+    if (info) {
+      const tooltip = document.getElementById('tooltip');
+      const title = node.querySelector('.diagram-node-title').textContent;
+      tooltip.innerHTML = '<div class="tooltip-title">' + title + '</div>' + info;
+      tooltip.classList.add('visible');
+      const rect = node.getBoundingClientRect();
+      let left = rect.right + 10;
+      let top = rect.top;
+      if (left + 340 > window.innerWidth) left = rect.left - 352;
+      if (top + 200 > window.innerHeight) top = window.innerHeight - 220;
+      if (top < 10) top = 10;
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+    }
+  }
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.diagram-node')) {
+      document.getElementById('tooltip').classList.remove('visible');
+      document.querySelectorAll('.diagram-node').forEach(n => n.classList.remove('highlight'));
+    }
+  });
+
+  function drawHLConnections() {
+    const svg = document.getElementById('hl-svg');
+    const container = document.getElementById('hl-diagram');
+    if (!svg || !container) return;
+
+    // Don't draw if the section is hidden (getBoundingClientRect returns 0)
+    if (container.offsetParent === null) return;
+
+    const cr = container.getBoundingClientRect();
+    svg.innerHTML = '';
+    svg.setAttribute('width', container.scrollWidth);
+    svg.setAttribute('height', container.scrollHeight);
+
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', 'hlArrow');
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('refX', '8');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('orient', 'auto');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', '0 0, 8 3, 0 6');
+    poly.setAttribute('fill', 'rgba(108,99,255,0.7)');
+    marker.appendChild(poly);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    const nodes = container.querySelectorAll('.diagram-node');
+
+    // Connection definitions: [fromIndex, toIndex, color (optional)]
+    // Nodes: 0=Client, 1=SocketIO, 2=REST, 3=AgentHandler, 4=Cron&Inbox,
+    //   5=AgentContext, 6=ConnectorService, 7=Memory, 8=MCPService, 9=OtherSvc,
+    //   10=BudApp, 11=BudMCP, 12=BudGateway(LLM), 13=LLM Providers,
+    //   14=PostgreSQL, 15=Vespa, 16=Redis, 17=LiteLLM
+    const connections = [
+      // Client → Backend
+      [0, 1, null],        // Client → Socket.IO
+      [0, 2, null],        // Client → REST API
+      // Backend internal
+      [1, 3, null],        // Socket.IO → AgentHandler
+      [2, 4, null],        // REST → Cron & Inbox
+      [3, 5, null],        // AgentHandler → Agent Context
+      [4, 5, null],        // Cron & Inbox → Agent Context
+      [5, 6, null],        // Agent Context → Connector Service
+      [5, 7, null],        // Agent Context → Memory
+      [5, 8, null],        // Agent Context → MCP Service
+      [5, 9, null],        // Agent Context → Other Services
+      // Services → Data Stores
+      [7, 14, null],       // Memory → PostgreSQL
+      [7, 15, null],       // Memory → Vespa
+      [3, 16, null],       // AgentHandler → Redis (stop flags)
+      [5, 14, null],       // Agent Context → PostgreSQL
+      // LLM path: Agent Context → LiteLLM → BudGateway → LLM Providers
+      [5, 17, null],       // Agent Context → LiteLLM
+      [17, 12, '#fbbf24'], // LiteLLM → BudGateway (api_base + OAuth token)
+      [12, 13, '#fbbf24'], // BudGateway → LLM Providers
+      // Connector Service → BudApp + BudMCP (cross-boundary)
+      [6, 10, '#fb923c'],  // Connector Service → BudApp (REST: list connectors, OAuth)
+      [6, 11, '#a78bfa'],  // Connector Service → BudMCP (MCP: tool discovery + execution)
+      [2, 10, '#fb923c'],  // REST API → BudApp (connector management UI calls)
+      // Bud Foundry internal
+      [10, 11, '#fb923c'], // BudApp → BudMCP (tool registry)
+    ];
+    connections.forEach(([from, to, color]) => {
+      if (!nodes[from] || !nodes[to]) return;
+      const r1 = nodes[from].getBoundingClientRect();
+      const r2 = nodes[to].getBoundingClientRect();
+
+      const cx1 = r1.left + r1.width/2 - cr.left;
+      const cy1 = r1.top + r1.height/2 - cr.top;
+      const cx2 = r2.left + r2.width/2 - cr.left;
+      const cy2 = r2.top + r2.height/2 - cr.top;
+
+      const dx = cx2 - cx1, dy = cy2 - cy1;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 1) return;
+      const ux = dx/dist, uy = dy/dist;
+      const x1 = cx1 + ux * (r1.width/2 * 0.6);
+      const y1 = cy1 + uy * (r1.height/2 * 0.8);
+      const x2 = cx2 - ux * (r2.width/2 * 0.6);
+      const y2 = cy2 - uy * (r2.height/2 * 0.8);
+
+      const strokeColor = color || 'rgba(108,99,255,0.45)';
+      const opacity = color ? '0.6' : '1';
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('stroke', strokeColor);
+      line.setAttribute('stroke-opacity', opacity);
+      line.setAttribute('stroke-width', '1.5');
+      line.setAttribute('stroke-dasharray', '6,4');
+
+      // Create per-color marker
+      const markerId = 'hlArrow_' + (color || 'default').replace('#','');
+      if (!svg.querySelector('#' + markerId)) {
+        const m = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        m.setAttribute('id', markerId);
+        m.setAttribute('markerWidth', '8');
+        m.setAttribute('markerHeight', '6');
+        m.setAttribute('refX', '8');
+        m.setAttribute('refY', '3');
+        m.setAttribute('orient', 'auto');
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        p.setAttribute('points', '0 0, 8 3, 0 6');
+        p.setAttribute('fill', color || 'rgba(108,99,255,0.7)');
+        m.appendChild(p);
+        (svg.querySelector('defs') || svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg','defs'))).appendChild(m);
+      }
+      line.setAttribute('marker-end', 'url(#' + markerId + ')');
+      svg.appendChild(line);
+    });
+  }
+
+  // Only draw on resize (section switch triggers draw via showSection)
+  window.addEventListener('resize', drawHLConnections);
+</script>
+
+</body>
+</html>
