@@ -6,7 +6,7 @@ sources:
   - "https://github.com/BudEcosystem/BudStudio"
 type: application
 version: 0.4.4
-appVersion: 0.3.0
+appVersion: 0.3.1
 annotations:
   category: Productivity
   licenses: MIT
