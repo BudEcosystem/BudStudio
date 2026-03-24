@@ -5,6 +5,7 @@ compaction, and the synchronous agent loop into reusable functions so
 that the interactive, cron, and inbox orchestrators can share a single
 code path for common work.
 """
+
 import json
 import queue
 from collections.abc import Callable
