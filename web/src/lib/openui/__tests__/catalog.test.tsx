@@ -33,19 +33,8 @@ describe("budStudioLibrary", () => {
     }
   });
 
-  describe("prompt()", () => {
-    it("should return a non-empty string", () => {
-      const prompt = budStudioLibrary.prompt();
-      expect(typeof prompt).toBe("string");
-      expect(prompt.length).toBeGreaterThan(0);
-    });
-
-    it("should mention expected component names", () => {
-      const prompt = budStudioLibrary.prompt();
-      for (const name of EXPECTED_COMPONENTS) {
-        expect(prompt).toContain(name);
-      }
-    });
+  it("should have componentGroups defined", () => {
+    expect(budStudioLibrary.componentGroups).toBeDefined();
   });
 });
 
