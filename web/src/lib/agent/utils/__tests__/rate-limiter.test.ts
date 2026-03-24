@@ -42,7 +42,11 @@ describe("RateLimiter", () => {
 
     it("should throw error for negative maxBurst", () => {
       expect(() => {
-        new RateLimiter({ tokensPerInterval: 10, interval: 1000, maxBurst: -1 });
+        new RateLimiter({
+          tokensPerInterval: 10,
+          interval: 1000,
+          maxBurst: -1,
+        });
       }).toThrow("maxBurst cannot be negative");
     });
 
@@ -585,7 +589,9 @@ describe("DEFAULT_TOOL_RATE_LIMITS", () => {
 
   it("should have reasonable default values", () => {
     // bash should be more restrictive
-    expect(DEFAULT_TOOL_RATE_LIMITS.bash!.tokensPerInterval).toBeLessThanOrEqual(
+    expect(
+      DEFAULT_TOOL_RATE_LIMITS.bash!.tokensPerInterval
+    ).toBeLessThanOrEqual(
       DEFAULT_TOOL_RATE_LIMITS.read_file!.tokensPerInterval
     );
 
