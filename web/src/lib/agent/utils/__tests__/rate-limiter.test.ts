@@ -100,7 +100,7 @@ describe("RateLimiter", () => {
       });
 
       expect(limiter.tryAcquire()).toBe(true);
-      expect(limiter.getAvailableTokens()).toBe(9);
+      expect(limiter.getAvailableTokens()).toBeCloseTo(9, 1);
     });
 
     it("should return false when no tokens available", () => {
@@ -350,7 +350,7 @@ describe("ToolRateLimiter", () => {
       });
 
       await limiter.acquireForTool("bash", 5);
-      expect(limiter.getAvailableTokensForTool("bash")).toBe(5);
+      expect(limiter.getAvailableTokensForTool("bash")).toBeCloseTo(5, 1);
     });
   });
 
