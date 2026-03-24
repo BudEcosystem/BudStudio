@@ -1,0 +1,39 @@
+name: Deploy Architecture Docs
+
+on:
+  push:
+    branches: [main]
+    paths: [docs/**]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-branch
+
+      - name: Copy docs to gh-pages/docs
+        run: |
+          mkdir -p gh-pages-branch/docs
+          cp docs/architecture.html gh-pages-branch/docs/index.html
+          cp docs/architecture.html gh-pages-branch/docs/architecture.html
+
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages-branch
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git add docs/
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "docs: update architecture page"
+          git push
