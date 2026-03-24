@@ -16,7 +16,17 @@ OPENAPI_VERSION = "3.0.3"
 
 def go(filename: str) -> None:
     with open(filename, "w") as f:
-        app: FastAPI = app_fn()
+        raw_app = app_fn()
+        # get_application() may return nested socketio.ASGIApp wrappers
+        # around the FastAPI instance.  Unwrap until we find it.
+        app = raw_app
+        while not isinstance(app, FastAPI):
+            if hasattr(app, "other_asgi_app"):
+                app = app.other_asgi_app
+            elif hasattr(app, "app"):
+                app = app.app
+            else:
+                break
         app.openapi_version = OPENAPI_VERSION
         json.dump(
             get_openapi(

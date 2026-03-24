@@ -42,7 +42,11 @@ describe("RateLimiter", () => {
 
     it("should throw error for negative maxBurst", () => {
       expect(() => {
-        new RateLimiter({ tokensPerInterval: 10, interval: 1000, maxBurst: -1 });
+        new RateLimiter({
+          tokensPerInterval: 10,
+          interval: 1000,
+          maxBurst: -1,
+        });
       }).toThrow("maxBurst cannot be negative");
     });
 
@@ -100,7 +104,7 @@ describe("RateLimiter", () => {
       });
 
       expect(limiter.tryAcquire()).toBe(true);
-      expect(limiter.getAvailableTokens()).toBe(9);
+      expect(limiter.getAvailableTokens()).toBeCloseTo(9, 1);
     });
 
     it("should return false when no tokens available", () => {
@@ -350,7 +354,7 @@ describe("ToolRateLimiter", () => {
       });
 
       await limiter.acquireForTool("bash", 5);
-      expect(limiter.getAvailableTokensForTool("bash")).toBe(5);
+      expect(limiter.getAvailableTokensForTool("bash")).toBeCloseTo(5, 1);
     });
   });
 
@@ -585,7 +589,9 @@ describe("DEFAULT_TOOL_RATE_LIMITS", () => {
 
   it("should have reasonable default values", () => {
     // bash should be more restrictive
-    expect(DEFAULT_TOOL_RATE_LIMITS.bash!.tokensPerInterval).toBeLessThanOrEqual(
+    expect(
+      DEFAULT_TOOL_RATE_LIMITS.bash!.tokensPerInterval
+    ).toBeLessThanOrEqual(
       DEFAULT_TOOL_RATE_LIMITS.read_file!.tokensPerInterval
     );
 

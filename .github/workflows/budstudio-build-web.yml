@@ -9,7 +9,7 @@ on:
         type: string
 
 env:
-  REGISTRY_IMAGE: budstudio/onyx-web-server
+  REGISTRY_IMAGE: budstudio/studio-web
 
 jobs:
   build:

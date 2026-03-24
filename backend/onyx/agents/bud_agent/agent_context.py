@@ -23,12 +23,11 @@ from agents import RawResponsesStreamEvent
 from agents import RunConfig
 from agents import ToolCallItem
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
-from onyx.agents.bud_agent.ask_user_tool import create_ask_user_tool
 from onyx.agents.bud_agent.artifact_tool import create_artifact_tool
+from onyx.agents.bud_agent.ask_user_tool import create_ask_user_tool
 from onyx.agents.bud_agent.connector_service import create_connector_tools
 from onyx.agents.bud_agent.context_builder import BudAgentContextBuilder
 from onyx.agents.bud_agent.cron_service import create_cron_tools
@@ -63,6 +62,7 @@ MAX_HISTORY_CHARS = 400_000
 # 1. AgentExecutionMode
 # ---------------------------------------------------------------------------
 
+
 class AgentExecutionMode(str, Enum):
     INTERACTIVE = "interactive"
     CRON = "cron"
@@ -72,6 +72,7 @@ class AgentExecutionMode(str, Enum):
 # ---------------------------------------------------------------------------
 # 2. AgentRunContext
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AgentRunContext:
@@ -94,6 +95,7 @@ class AgentRunContext:
 # 3. build_run_config
 # ---------------------------------------------------------------------------
 
+
 def build_run_config(llm: Any, model_name: str) -> RunConfig:
     """Build an Agents SDK RunConfig from Onyx's LLM configuration."""
     api_key: str = llm.config.api_key or "not-needed"
@@ -102,6 +104,8 @@ def build_run_config(llm: Any, model_name: str) -> RunConfig:
     extra_headers: dict[str, str] = {}
     if hasattr(llm, "_model_kwargs"):
         extra_headers = llm._model_kwargs.get("extra_headers", {})
+
+    from openai import AsyncOpenAI
 
     client = AsyncOpenAI(
         api_key=api_key,
@@ -121,6 +125,7 @@ def build_run_config(llm: Any, model_name: str) -> RunConfig:
 # ---------------------------------------------------------------------------
 # 4. build_agent_run_context
 # ---------------------------------------------------------------------------
+
 
 def build_agent_run_context(
     session_id: UUID,
@@ -158,8 +163,11 @@ def build_agent_run_context(
         db_session=db_session,
         user_id=user.id,
         paths=[
-            "AGENTS.md", "SOUL.md", "IDENTITY.md",
-            "USER.md", "MEMORY.md",
+            "AGENTS.md",
+            "SOUL.md",
+            "IDENTITY.md",
+            "USER.md",
+            "MEMORY.md",
         ],
     )
 
@@ -226,11 +234,7 @@ def build_agent_run_context(
 
     # Step 6b: resolve LLM early so artifact tool can use it
     llm, _ = get_default_llms(user=user)
-    model_name: str = (
-        llm.config.model_name
-        if (not model or model == "auto")
-        else model
-    )
+    model_name: str = llm.config.model_name if (not model or model == "auto") else model
     # When the user picks a specific model, override the LLM's internal
     # model version so downstream callers (e.g. artifact generation) use
     # the same model.  llm.config is a property that creates a new
@@ -266,10 +270,14 @@ def build_agent_run_context(
     )
 
     # Step 8: local tools
-    resolved_local_tools: list[FunctionTool] = local_tools if local_tools is not None else []
+    resolved_local_tools: list[FunctionTool] = (
+        local_tools if local_tools is not None else []
+    )
 
     # Step 9: extra tools
-    resolved_extra_tools: list[FunctionTool] = extra_tools if extra_tools is not None else []
+    resolved_extra_tools: list[FunctionTool] = (
+        extra_tools if extra_tools is not None else []
+    )
 
     # Step 10: concatenate all tools
     all_tools: list[FunctionTool] = (
@@ -298,10 +306,9 @@ def build_agent_run_context(
     all_tools.extend(skill_tools)
 
     # Step 11: connector tool names
-    connector_tool_names: list[str] = (
-        [t.name for t in connector_tools]
-        + [t.name for t in default_mcp_tools]
-    )
+    connector_tool_names: list[str] = [t.name for t in connector_tools] + [
+        t.name for t in default_mcp_tools
+    ]
 
     # Step 12: build system prompt
     context_builder = BudAgentContextBuilder(
@@ -352,6 +359,7 @@ def build_agent_run_context(
 # 5. build_message_history
 # ---------------------------------------------------------------------------
 
+
 def build_message_history(
     db_session: Session,
     session_id: UUID,
@@ -392,16 +400,14 @@ def build_message_history(
 
     def _emit_reasoning(thinking: str, msg_id: Any) -> None:
         """Append a reasoning item to history."""
-        history.append({
-            "type": "reasoning",
-            "id": f"rs_{msg_id}",
-            "summary": [
-                {"type": "summary_text", "text": thinking}
-            ],
-            "content": [
-                {"type": "reasoning_text", "text": thinking}
-            ],
-        })
+        history.append(
+            {
+                "type": "reasoning",
+                "id": f"rs_{msg_id}",
+                "summary": [{"type": "summary_text", "text": thinking}],
+                "content": [{"type": "reasoning_text", "text": thinking}],
+            }
+        )
 
     def _emit_tool_pairs(
         tools: list[Any],
@@ -427,26 +433,28 @@ def build_message_history(
         # First: all function_call items (grouped into one assistant msg by SDK)
         for t in tools:
             call_id: str = t.tool_call_id or t.tool_name or "unknown"
-            history.append({
-                "type": "function_call",
-                "call_id": call_id,
-                "name": t.tool_name or "unknown",
-                "arguments": json.dumps(t.tool_input) if t.tool_input else "{}",
-            })
+            history.append(
+                {
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": t.tool_name or "unknown",
+                    "arguments": json.dumps(t.tool_input) if t.tool_input else "{}",
+                }
+            )
 
         # Then: all function_call_output items
         for t in tools:
             call_id = t.tool_call_id or t.tool_name or "unknown"
             output: str = (
-                json.dumps(t.tool_output)
-                if t.tool_output
-                else (t.tool_error or "")
+                json.dumps(t.tool_output) if t.tool_output else (t.tool_error or "")
             )
-            history.append({
-                "type": "function_call_output",
-                "call_id": call_id,
-                "output": output,
-            })
+            history.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                }
+            )
 
     pending_tools: list[Any] = []
 
@@ -497,10 +505,12 @@ def build_message_history(
                 # Don't emit empty {role: "assistant", content: ""}
                 # for thinking-only turns — the reasoning block suffices.
                 if msg.content:
-                    history.append({
-                        "role": "assistant",
-                        "content": msg.content,
-                    })
+                    history.append(
+                        {
+                            "role": "assistant",
+                            "content": msg.content,
+                        }
+                    )
 
             # If there's text content alongside tools, emit it after
             if has_tools and msg.content:
@@ -547,6 +557,7 @@ def build_message_history(
 # ---------------------------------------------------------------------------
 # 6. compact_session
 # ---------------------------------------------------------------------------
+
 
 def compact_session(
     db_session: Session,
@@ -635,6 +646,7 @@ def compact_session(
 # 7. SyncLoopResult + run_sync_agent_loop
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SyncLoopResult:
     response_text: str = ""
@@ -706,9 +718,7 @@ def run_sync_agent_loop(
         if stream.streamed is None:
             break
 
-        messages = cast(
-            list[dict[str, Any]], stream.streamed.to_input_list()
-        )
+        messages = cast(list[dict[str, Any]], stream.streamed.to_input_list())
 
         if not has_tool_calls:
             last_call_is_final = True
