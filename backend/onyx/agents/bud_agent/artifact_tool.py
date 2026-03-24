@@ -320,12 +320,17 @@ def _make_invoke_handler(
                     exc_info=True,
                 )
 
-        # Generate OpenUI Lang via LLM
+        # Generate OpenUI Lang via LLM.
+        # Run in a thread to avoid blocking the async event loop
+        # (the sync llm.stream() call can take 1-5 minutes and would
+        # block Socket.IO ping/pong, disconnecting all clients).
         openui_lang: str | None = None
         if llm and content:
             try:
-                openui_lang = _generate_openui_via_llm(
-                    llm, artifact_type, title, content
+                import asyncio
+                openui_lang = await asyncio.to_thread(
+                    _generate_openui_via_llm,
+                    llm, artifact_type, title, content,
                 )
             except Exception:
                 logger.warning(

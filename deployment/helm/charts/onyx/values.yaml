@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.  
 global:
   # Global version for all Onyx components (overrides .Chart.AppVersion)
-  version: "0.2.0"
+  version: "0.3.0"
   # Global pull policy for all Onyx component images
   pullPolicy: "Always"
   security:
@@ -93,7 +93,7 @@ inferenceCapability:
     - key: app
       value: inference-model-server
   image:
-    repository: budstudio/onyx-model-server
+    repository: budstudio/studio-model-server
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
   containerPorts:
@@ -130,7 +130,7 @@ indexCapability:
   containerPorts:
     server: 9000
   image:
-    repository: budstudio/onyx-model-server
+    repository: budstudio/studio-model-server
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
   limitConcurrency: 10
@@ -208,7 +208,7 @@ nginx:
 webserver:
   replicaCount: 1
   image:
-    repository: budstudio/onyx-web-server
+    repository: budstudio/studio-web
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
   deploymentLabels:
@@ -279,7 +279,7 @@ webserver:
 api:
   replicaCount: 1
   image:
-    repository: budstudio/onyx-backend
+    repository: budstudio/studio-backend
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
   deploymentLabels:
@@ -355,7 +355,7 @@ api:
 ######################################################################
 celery_shared:
   image:
-    repository: budstudio/onyx-backend
+    repository: budstudio/studio-backend
     tag: "" # Overrides the image tag whose default is the chart appVersion.
   startupProbe:
     # startupProbe fails after 2m
@@ -643,7 +643,7 @@ slackbot:
   enabled: true
   replicaCount: 1
   image:
-    repository: budstudio/onyx-backend
+    repository: budstudio/studio-backend
     tag: "" # Overrides the image tag whose default is the chart appVersion.
   podAnnotations: {}
   podLabels:
