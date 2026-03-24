@@ -23,7 +23,6 @@ from agents import RawResponsesStreamEvent
 from agents import RunConfig
 from agents import ToolCallItem
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
@@ -102,6 +101,8 @@ def build_run_config(llm: Any, model_name: str) -> RunConfig:
     extra_headers: dict[str, str] = {}
     if hasattr(llm, "_model_kwargs"):
         extra_headers = llm._model_kwargs.get("extra_headers", {})
+
+    from openai import AsyncOpenAI
 
     client = AsyncOpenAI(
         api_key=api_key,
