@@ -1,6 +1,6 @@
 """add agent session execution status fields
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 8b6145a874d9
 Revises: 5ea281e39ac5
 Create Date: 2026-03-22 00:00:00.000000
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = "a1b2c3d4e5f6"
+revision = "8b6145a874d9"
 down_revision = "5ea281e39ac5"
 branch_labels = None
 depends_on = None
