@@ -149,7 +149,7 @@ jobs:
 
           - Updated Chart.yaml appVersion to $VERSION
           - Updated global.version in values.yaml to $VERSION
-          - Images published: budstudio/onyx-backend, budstudio/onyx-web-server, budstudio/onyx-model-server
+          - Images published: budstudio/studio-backend, budstudio/studio-web, budstudio/studio-model-server
 
           Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
           EOF
@@ -165,9 +165,9 @@ jobs:
 
           ### Images Published
           All images built and pushed to DockerHub with tags \`$VERSION\` and \`latest\`:
-          - \`budstudio/onyx-backend:$VERSION\`
-          - \`budstudio/onyx-web-server:$VERSION\`
-          - \`budstudio/onyx-model-server:$VERSION\`
+          - \`budstudio/studio-backend:$VERSION\`
+          - \`budstudio/studio-web:$VERSION\`
+          - \`budstudio/studio-model-server:$VERSION\`
 
           ### Helm Chart Changes
           - \`Chart.yaml\` appVersion: \`$VERSION\`
