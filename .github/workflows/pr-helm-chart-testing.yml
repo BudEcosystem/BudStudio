@@ -1,10 +1,7 @@
 name: Helm - Lint and Test Charts
 
 on:
-  merge_group:
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:  # Manual only — needs large runner for kind cluster
   
 jobs:
   helm-chart-check:
