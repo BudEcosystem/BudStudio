@@ -16,7 +16,7 @@ export {
 } from "./file-tools";
 export { BashTool } from "./bash-tool";
 export { ProcessTool } from "./process-tool";
-export { CliAgentTool, type SandboxLevel } from "./cli-agent-tool";
+export { CliAgentTool, formatCliCompletionMessage, type SandboxLevel } from "./cli-agent-tool";
 export { GlobTool, GrepTool } from "./search-tools";
 // Browser tools are NOT re-exported from the barrel to avoid pulling in
 // playwright-core at import time. Use require("./browser") for lazy loading.

@@ -1,17 +1,16 @@
 /**
- * Unit tests for the CliAgentTool
+ * Unit tests for the CliAgentTool and formatCliCompletionMessage
  */
 
-import { CliAgentTool } from "../cli-agent-tool";
+import { CliAgentTool, formatCliCompletionMessage } from "../cli-agent-tool";
 
 describe("CliAgentTool", () => {
   let tool: CliAgentTool;
   const mockWorkspace = "/test/workspace";
-  const mockOnComplete = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
-    tool = new CliAgentTool(mockWorkspace, mockOnComplete);
+    tool = new CliAgentTool(mockWorkspace);
   });
 
   describe("initialization", () => {
@@ -25,7 +24,6 @@ describe("CliAgentTool", () => {
       const paramNames = tool.parameters.map((p) => p.name);
       expect(paramNames).toContain("prompt");
       expect(paramNames).toContain("working_directory");
-      expect(paramNames).toContain("model");
       expect(paramNames).toContain("sandbox");
       expect(paramNames).toContain("skip_git_check");
       expect(paramNames).toContain("ephemeral");
@@ -59,12 +57,6 @@ describe("CliAgentTool", () => {
 
     it("working_directory should be optional and of type string", () => {
       const param = tool.parameters.find((p) => p.name === "working_directory");
-      expect(param?.required).toBe(false);
-      expect(param?.type).toBe("string");
-    });
-
-    it("model should be optional and of type string", () => {
-      const param = tool.parameters.find((p) => p.name === "model");
       expect(param?.required).toBe(false);
       expect(param?.type).toBe("string");
     });
@@ -121,22 +113,9 @@ describe("CliAgentTool", () => {
     it("should store workspace path", () => {
       expect((tool as any).workspacePath).toBe(mockWorkspace);
     });
-
-    it("should store onSessionComplete callback", () => {
-      expect((tool as any).onSessionComplete).toBe(mockOnComplete);
-    });
-
-    it("should allow undefined onSessionComplete", () => {
-      const toolNoCallback = new CliAgentTool(mockWorkspace);
-      expect((toolNoCallback as any).onSessionComplete).toBeUndefined();
-    });
   });
 
   describe("description and metadata", () => {
-    it("description should mention session ID tracking", () => {
-      expect(tool.description).toContain("session ID");
-    });
-
     it("description should mention sandbox levels", () => {
       expect(tool.description).toContain("sandbox");
     });
@@ -144,5 +123,45 @@ describe("CliAgentTool", () => {
     it("description should mention autonomous execution", () => {
       expect(tool.description).toContain("autonomous");
     });
+  });
+});
+
+describe("formatCliCompletionMessage", () => {
+  it("should format successful exit (code 0)", () => {
+    const msg = formatCliCompletionMessage("done", 0);
+    expect(msg).toContain("completed successfully");
+    expect(msg).toContain("done");
+  });
+
+  it("should format failed exit (non-zero code)", () => {
+    const msg = formatCliCompletionMessage("error output", 1);
+    expect(msg).toContain("failed with exit code 1");
+    expect(msg).toContain("error output");
+  });
+
+  it("should format terminated exit (code 137)", () => {
+    const msg = formatCliCompletionMessage("killed", 137);
+    expect(msg).toContain("was terminated");
+  });
+
+  it("should format terminated exit (code 143)", () => {
+    const msg = formatCliCompletionMessage("killed", 143);
+    expect(msg).toContain("was terminated");
+  });
+
+  it("should format unknown exit (null code)", () => {
+    const msg = formatCliCompletionMessage("output", null);
+    expect(msg).toContain("completed (exit status unknown)");
+  });
+
+  it("should include full output in message", () => {
+    const output = "line 1\nline 2\nline 3";
+    const msg = formatCliCompletionMessage(output, 0);
+    expect(msg).toContain(output);
+  });
+
+  it("should ask for summary", () => {
+    const msg = formatCliCompletionMessage("", 0);
+    expect(msg).toContain("summarize what was accomplished");
   });
 });

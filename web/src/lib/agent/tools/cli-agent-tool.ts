@@ -7,9 +7,8 @@
  * Supports:
  * - Multiple sandbox security levels (read-only, workspace-write, danger-full-access)
  * - Custom working directories
- * - Optional session completion callbacks
  * - Git repository validation (optional)
- * - Background execution with session IDs
+ * - Awaits process completion and returns the full output as the tool result
  */
 
 import * as fs from "fs";
@@ -37,6 +36,32 @@ export type SandboxLevel =
   | "danger-full-access";
 
 /**
+ * Format the completion message from a CLI agent process exit.
+ * Interprets exit codes and structures the output for the LLM.
+ */
+export function formatCliCompletionMessage(
+  output: string,
+  exitCode: number | null
+): string {
+  let exitDescription: string;
+  if (exitCode === null) {
+    exitDescription = "completed (exit status unknown)";
+  } else if (exitCode === 0) {
+    exitDescription = "completed successfully";
+  } else if (exitCode === 137 || exitCode === 143) {
+    exitDescription = "was terminated";
+  } else {
+    exitDescription = `failed with exit code ${exitCode}`;
+  }
+
+  return (
+    `Codex ${exitDescription}.\n\n` +
+    `Full output:\n\n${output}\n\n` +
+    `Please summarize what was accomplished, including any errors or unexpected outcomes. Be concise.`
+  );
+}
+
+/**
  * CLI Agent tool that spawns a Codex agent for code analysis and modifications.
  */
 export class CliAgentTool implements Tool {
@@ -47,7 +72,7 @@ export class CliAgentTool implements Tool {
   description =
     "Spawn a Codex agent to autonomously analyze and modify code. " +
     "Supports multiple sandbox levels for security control. " +
-    "Returns a session ID for tracking progress via the process tool.";
+    "Awaits completion and returns the full output.";
 
   /** Tool parameters definition */
   parameters: ToolParameter[] = [
@@ -95,28 +120,25 @@ export class CliAgentTool implements Tool {
   /** The workspace directory for resolving relative paths */
   private workspacePath: string;
 
-  /** Optional callback invoked when the Codex session completes */
-  private onSessionComplete?: (sessionId: string, output: string, exitCode: number | null) => void;
-
   /**
    * Creates a new CliAgentTool instance.
    *
    * @param workspacePath - The path to the workspace directory
-   * @param onSessionComplete - Optional callback when session completes
    */
-  constructor(
-    workspacePath: string,
-    onSessionComplete?: (sessionId: string, output: string, exitCode: number | null) => void
-  ) {
+  constructor(workspacePath: string) {
     this.workspacePath = workspacePath;
-    this.onSessionComplete = onSessionComplete;
   }
 
   /**
    * Executes the CLI agent tool by spawning a Codex process.
    *
+   * The returned Promise resolves only when the process exits, delivering
+   * the full output as the tool result. This lets the gateway's generic
+   * `await tool.execute()` → `sendToolResult()` flow work without any
+   * special-casing — identical to how `bash` and other tools behave.
+   *
    * @param params - The execution parameters
-   * @returns A promise that resolves to a session ID and status message
+   * @returns A promise that resolves to the formatted completion message
    */
   async execute(params: Record<string, unknown>): Promise<string> {
     debugLog(`CliAgentTool.execute() called with params: ${JSON.stringify(params).substring(0, 200)}`);
@@ -162,40 +184,22 @@ export class CliAgentTool implements Tool {
     const command = this.buildCodexCommand(prompt, sandbox, ephemeral);
     debugLog(`Built command: ${command}`);
 
-    // Spawn the process
-    try {
-      const registry = ProcessRegistry.getInstance();
-      const env = createShellEnv();
-      debugLog(`Spawning process with cwd: ${cwd}, pty: true`);
-      const sessionId = registry.spawn(command, cwd, { pty: true, env });
-      debugLog(`Process spawned with sessionId: ${sessionId}`);
+    // Spawn the process and await its completion
+    const registry = ProcessRegistry.getInstance();
+    const env = createShellEnv();
+    debugLog(`Spawning process with cwd: ${cwd}, pty: true`);
+    const sessionId = registry.spawn(command, cwd, { pty: true, env });
+    debugLog(`Process spawned with sessionId: ${sessionId}, awaiting completion...`);
 
-      // Register callback if provided
-      if (this.onSessionComplete) {
-        debugLog(`Registering onExit callback for sessionId: ${sessionId}`);
-        registry.registerOnExit(
-          sessionId,
-          (output: string, exitCode: number | null) => {
-            this.onSessionComplete!(sessionId, output, exitCode);
-          }
-        );
-      }
-
-      const sandboxLevel = sandbox || "workspace-write";
-      const response = (
-        `CLI agent started in session ${sessionId}\n` +
-        `Working directory: ${cwd}\n` +
-        `Sandbox level: ${sandboxLevel}\n` +
-        `Status: Running in background — I will automatically follow up when complete.\n` +
-        `You can also use the process tool (action: log, poll, list) to check status.`
+    return new Promise<string>((resolve) => {
+      registry.registerOnExit(
+        sessionId,
+        (output: string, exitCode: number | null) => {
+          debugLog(`Process ${sessionId} exited with code ${exitCode}`);
+          resolve(formatCliCompletionMessage(output, exitCode));
+        }
       );
-      debugLog(`Returning response: ${response}`);
-      return response;
-    } catch (err) {
-      const error = err instanceof Error ? err.message : "Unknown error";
-      debugLog(`Error during spawn: ${error}`);
-      throw err;
-    }
+    });
   }
 
   /**

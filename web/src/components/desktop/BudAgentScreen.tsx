@@ -346,15 +346,6 @@ export function BudAgentScreen() {
   // supports cookie-based auth from the browser, so this may work as-is.
   const { execute, abort, stop, approve, sendToolResult } = useAgentSocket(BACKEND_URL, "");
 
-  // Wire execute function into AgentSessionContext for resume_execute event handling
-  const { executeRef } = useAgentSession();
-  useEffect(() => {
-    executeRef.current = execute;
-    return () => {
-      executeRef.current = null;
-    };
-  }, [execute, executeRef]);
-
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
   const { agents: availableAssistants, currentAgent } = useAgentsContext();
