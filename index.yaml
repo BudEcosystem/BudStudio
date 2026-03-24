@@ -12,8 +12,8 @@ entries:
           image: vespaengine/vespa:8.526.15
       licenses: MIT
     apiVersion: v2
-    appVersion: 0.2.0
-    created: "2026-03-23T16:54:11.83424951Z"
+    appVersion: 0.3.0
+    created: "2026-03-24T04:54:58.09640626Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -38,7 +38,7 @@ entries:
       version: 5.4.0
     description: A Helm chart for BudStudio - AI-powered chat and enterprise search
       platform
-    digest: 6d4d49e3dda9c15e7e1ac4a7e1d7a0ba7a2741f49b4e7b8add3fa824b0113cf2
+    digest: 4e1a406b4958f5d4a3a7a0481b57e019fed447d2dd4375580bdce485731d5c89
     home: https://bud.studio/
     name: budstudio
     sources:
@@ -47,4 +47,4 @@ entries:
     urls:
     - https://BudEcosystem.github.io/BudStudio/budstudio-0.4.4.tgz
     version: 0.4.4
-generated: "2026-03-23T16:54:11.813615035Z"
+generated: "2026-03-24T04:54:58.07661834Z"
