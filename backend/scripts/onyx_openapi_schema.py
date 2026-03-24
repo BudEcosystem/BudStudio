@@ -17,16 +17,16 @@ OPENAPI_VERSION = "3.0.3"
 def go(filename: str) -> None:
     with open(filename, "w") as f:
         raw_app = app_fn()
-        # get_application() may return a socketio.ASGIApp wrapping the
-        # FastAPI instance.  Unwrap if necessary.
-        if isinstance(raw_app, FastAPI):
-            app = raw_app
-        else:
-            app = getattr(raw_app, "other_asgi_app", raw_app)
-            # The other_asgi_app may itself be a Starlette Mount; keep
-            # unwrapping until we find the FastAPI instance.
-            while not isinstance(app, FastAPI) and hasattr(app, "app"):
+        # get_application() may return nested socketio.ASGIApp wrappers
+        # around the FastAPI instance.  Unwrap until we find it.
+        app = raw_app
+        while not isinstance(app, FastAPI):
+            if hasattr(app, "other_asgi_app"):
+                app = app.other_asgi_app
+            elif hasattr(app, "app"):
                 app = app.app
+            else:
+                break
         app.openapi_version = OPENAPI_VERSION
         json.dump(
             get_openapi(
