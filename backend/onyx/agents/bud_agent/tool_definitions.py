@@ -257,16 +257,32 @@ LOCAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "cli_agent": {
         "name": "cli_agent",
         "description": (
-            "Spawn an autonomous CLI sub-agent for long-running tasks. "
-            "Returns immediately with a session ID. The agent runs in the background "
-            "and automatically resumes when complete."
+            "Spawn an autonomous sub-agent that can do anything achievable from a command line. "
+            "Use for any complex task that benefits from autonomous exploration and multi-step reasoning: "
+            "code analysis, system administration, data processing, log analysis, infrastructure setup, "
+            "file organization, debugging, refactoring, and more. Prefer this over manual bash/grep/read_file "
+            "sequences when the task needs exploration or 3+ steps. "
+            "The sub-agent shares the same workspace and runs in the background — "
+            "results are returned automatically when complete."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "The task/instruction to give to Codex.",
+                    "description": (
+                        "The task/instruction for the agent. For 'exec': describes the task. "
+                        "For 'resume': provides the user's answer or follow-up instruction."
+                    ),
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["exec", "resume"],
+                    "description": (
+                        "Action mode: 'exec' (default) starts a new session, "
+                        "'resume' continues the most recent session with a follow-up prompt "
+                        "(e.g., user's answer to a question the agent asked)."
+                    ),
                 },
                 "working_directory": {
                     "type": "string",

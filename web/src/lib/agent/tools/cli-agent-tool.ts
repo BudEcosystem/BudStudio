@@ -80,8 +80,16 @@ export class CliAgentTool implements Tool {
       name: "prompt",
       type: "string",
       description:
-        "The task prompt for the agent. Should clearly describe what analysis or modifications are needed.",
+        "The task prompt for the agent. For 'exec': describes the task. For 'resume': provides the user's answer or follow-up instruction.",
       required: true,
+    },
+    {
+      name: "action",
+      type: "string",
+      description:
+        'Action mode: "exec" (default) starts a new session, "resume" continues the most recent session with a follow-up prompt (e.g., user\'s answer to a question the agent asked).',
+      enum: ["exec", "resume"],
+      required: false,
     },
     {
       name: "working_directory",
@@ -144,6 +152,7 @@ export class CliAgentTool implements Tool {
     debugLog(`CliAgentTool.execute() called with params: ${JSON.stringify(params).substring(0, 200)}`);
 
     const prompt = params.prompt as string | undefined;
+    const action = (params.action as string | undefined) || "exec";
     const workingDirectory = params.working_directory as string | undefined;
     const sandbox = params.sandbox as SandboxLevel | undefined;
     const skipGitCheck = params.skip_git_check as boolean | undefined;
@@ -154,7 +163,7 @@ export class CliAgentTool implements Tool {
       debugLog("Error: Prompt parameter is required and must be a non-empty string");
       throw new Error("Prompt parameter is required and must be a non-empty string");
     }
-    debugLog(`Prompt validated: ${prompt.substring(0, 100)}...`);
+    debugLog(`Prompt validated (action=${action}): ${prompt.substring(0, 100)}...`);
 
     // Resolve working directory
     let cwd = this.workspacePath;
@@ -170,8 +179,8 @@ export class CliAgentTool implements Tool {
       cwd = resolvedPath;
     }
 
-    // Validate git repository (unless skipped)
-    if (!skipGitCheck) {
+    // Validate git repository (unless skipped) — only for exec, resume uses existing session
+    if (action === "exec" && !skipGitCheck) {
       if (!fs.existsSync(`${cwd}/.git`)) {
         throw new Error(
           `Working directory is not a git repository: ${cwd}. ` +
@@ -180,8 +189,13 @@ export class CliAgentTool implements Tool {
       }
     }
 
-    // Build the Codex command
-    const command = this.buildCodexCommand(prompt, sandbox, ephemeral);
+    // Build the Codex command based on action
+    let command: string;
+    if (action === "resume") {
+      command = this.buildResumeCommand(prompt);
+    } else {
+      command = this.buildCodexCommand(prompt, sandbox, ephemeral);
+    }
     debugLog(`Built command: ${command}`);
 
     // Spawn the process and await its completion
@@ -234,6 +248,17 @@ export class CliAgentTool implements Tool {
     command += ` ${escapedPrompt}`;
 
     return command;
+  }
+
+  /**
+   * Builds a Codex resume command to continue the most recent session.
+   *
+   * @param prompt - The follow-up prompt (e.g., user's answer)
+   * @returns The complete command string
+   */
+  private buildResumeCommand(prompt: string): string {
+    const escapedPrompt = this.escapeShellArg(prompt);
+    return `codex resume --last ${escapedPrompt}`;
   }
 
   /**

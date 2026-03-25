@@ -101,10 +101,17 @@ class LocalToolBridge:
         )
         self._packet_queue.put(Packet(ind=ind, obj=obj))
 
+    # Local tools exposed to the LLM as callable functions.
+    # Other local tools (bash, read_file, etc.) still exist in LOCAL_TOOL_SCHEMAS
+    # for the gateway/cli_agent sub-agent, but are not shown to the LLM directly.
+    LLM_VISIBLE_LOCAL_TOOLS: set[str] = {"cli_agent"}
+
     def create_all_local_tools(self) -> list[FunctionTool]:
-        """Create FunctionTool objects for all local tools."""
+        """Create FunctionTool objects for local tools visible to the LLM."""
         tools: list[FunctionTool] = []
         for tool_name, schema in LOCAL_TOOL_SCHEMAS.items():
+            if tool_name not in self.LLM_VISIBLE_LOCAL_TOOLS:
+                continue
             tool = self._create_function_tool(tool_name, schema)
             tools.append(tool)
         return tools
