@@ -21,6 +21,7 @@ import { copyAll, handleCopy } from "@/app/chat/message/copyingUtils";
 import MessageSwitcher from "@/app/chat/message/MessageSwitcher";
 import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import {
+  buildInterleavedSegments,
   getTextContent,
   isDisplayPacket,
   isFinalAnswerComing,
@@ -278,65 +279,77 @@ export default function AIMessage({
                         <BlinkingDot addMargin />
                       ) : (
                         (() => {
-                          // Simple split: tools vs non-tools
-                          const toolGroups = groupedPackets.filter(
-                            (group) =>
-                              group.packets[0] && isToolPacket(group.packets[0])
-                          ) as { ind: number; packets: Packet[] }[];
+                          // Build interleaved segments: consecutive tool groups
+                          // form one segment, each display group is its own segment.
+                          // This preserves the natural order: tools → text → tools → text.
+                          const segments =
+                            buildInterleavedSegments(groupedPackets);
 
-                          // Non-tools include messages AND image generation
-                          const displayGroups =
-                            finalAnswerComing || toolGroups.length === 0
-                              ? groupedPackets.filter(
-                                  (group) =>
-                                    group.packets[0] &&
-                                    isDisplayPacket(group.packets[0])
-                                )
-                              : [];
-
-                          const lastDisplayGroup =
-                            displayGroups.length > 0
-                              ? displayGroups[displayGroups.length - 1]
-                              : null;
+                          // Find the last tool segment index for gating logic
+                          const lastToolSegIdx = segments.reduce(
+                            (acc, seg, idx) =>
+                              seg.type === "tools" ? idx : acc,
+                            -1
+                          );
 
                           return (
                             <>
-                              {/* Render tool groups in multi-tool renderer */}
-                              {toolGroups.length > 0 && (
-                                <MultiToolRenderer
-                                  packetGroups={toolGroups}
-                                  chatState={chatState}
-                                  isComplete={finalAnswerComing}
-                                  isFinalAnswerComing={
-                                    finalAnswerComingRef.current
-                                  }
-                                  stopPacketSeen={stopPacketSeen}
-                                  onAllToolsDisplayed={() =>
-                                    setFinalAnswerComing(true)
-                                  }
-                                />
-                              )}
+                              {segments.map((segment, segIdx) => {
+                                if (segment.type === "tools") {
+                                  const isLastToolSeg =
+                                    segIdx === lastToolSegIdx;
+                                  // Non-last tool segments are already complete
+                                  // (text content followed them). Only the last
+                                  // tool segment uses the streaming animation.
+                                  const segComplete =
+                                    !isLastToolSeg || finalAnswerComing;
+                                  return (
+                                    <MultiToolRenderer
+                                      key={`tools-${segment.groups[0]?.ind ?? segIdx}`}
+                                      packetGroups={segment.groups}
+                                      chatState={chatState}
+                                      isComplete={segComplete}
+                                      isFinalAnswerComing={
+                                        !isLastToolSeg ||
+                                        finalAnswerComingRef.current
+                                      }
+                                      stopPacketSeen={stopPacketSeen}
+                                      onAllToolsDisplayed={
+                                        isLastToolSeg
+                                          ? () => setFinalAnswerComing(true)
+                                          : undefined
+                                      }
+                                    />
+                                  );
+                                }
 
-                              {/* Render non-tool groups (messages + image generation) in main area */}
-                              {lastDisplayGroup && (
-                                <RendererComponent
-                                  key={lastDisplayGroup.ind}
-                                  packets={lastDisplayGroup.packets}
-                                  chatState={chatState}
-                                  onComplete={() => {
-                                    // if we've reverted to final answer not coming, don't set display complete
-                                    // this happens when using claude and a tool calling packet comes after
-                                    // some message packets
-                                    if (finalAnswerComingRef.current) {
-                                      setDisplayComplete(true);
-                                    }
-                                  }}
-                                  animate={false}
-                                  stopPacketSeen={stopPacketSeen}
-                                >
-                                  {({ content }) => <div>{content}</div>}
-                                </RendererComponent>
-                              )}
+                                // Display segment — show if before the last
+                                // tool segment, or once finalAnswerComing is
+                                // true (last tool animation finished), or if
+                                // there are no tool segments at all.
+                                const showDisplay =
+                                  segIdx < lastToolSegIdx ||
+                                  finalAnswerComing ||
+                                  lastToolSegIdx === -1;
+                                if (!showDisplay) return null;
+
+                                return (
+                                  <RendererComponent
+                                    key={`display-${segment.group.ind}`}
+                                    packets={segment.group.packets}
+                                    chatState={chatState}
+                                    onComplete={() => {
+                                      if (finalAnswerComingRef.current) {
+                                        setDisplayComplete(true);
+                                      }
+                                    }}
+                                    animate={false}
+                                    stopPacketSeen={stopPacketSeen}
+                                  >
+                                    {({ content }) => <div>{content}</div>}
+                                  </RendererComponent>
+                                );
+                              })}
 
                               {/* Render artifact cards from artifact_generation and custom_tool_delta packets */}
                               {rawPackets

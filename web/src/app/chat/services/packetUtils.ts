@@ -103,6 +103,47 @@ export function getTextContent(packets: Packet[]) {
     .join("");
 }
 
+export type InterleavedSegment =
+  | { type: "tools"; groups: { ind: number; packets: Packet[] }[] }
+  | { type: "display"; group: { ind: number; packets: Packet[] } };
+
+/**
+ * Walk sorted grouped packets and produce interleaved segments.
+ * Consecutive tool groups are merged into a single "tools" segment;
+ * each display group becomes its own "display" segment.
+ * This preserves the natural order: tools → text → tools → text.
+ */
+export function buildInterleavedSegments(
+  groupedPackets: { ind: number; packets: Packet[] }[]
+): InterleavedSegment[] {
+  const segments: InterleavedSegment[] = [];
+  let currentToolRun: { ind: number; packets: Packet[] }[] = [];
+
+  for (const group of groupedPackets) {
+    const firstPacket = group.packets[0];
+    if (!firstPacket) continue;
+
+    if (isToolPacket(firstPacket, false)) {
+      currentToolRun.push(group);
+    } else if (isDisplayPacket(firstPacket)) {
+      // Flush accumulated tool run before the display group
+      if (currentToolRun.length > 0) {
+        segments.push({ type: "tools", groups: [...currentToolRun] });
+        currentToolRun = [];
+      }
+      segments.push({ type: "display", group });
+    }
+    // Other packet types (citations, stop, etc.) are handled separately
+  }
+
+  // Flush remaining tool run (tools at the end with no following text)
+  if (currentToolRun.length > 0) {
+    segments.push({ type: "tools", groups: currentToolRun });
+  }
+
+  return segments;
+}
+
 export function getCitations(packets: Packet[]): StreamingCitation[] {
   const citations: StreamingCitation[] = [];
 

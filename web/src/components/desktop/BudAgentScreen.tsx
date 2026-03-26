@@ -70,7 +70,12 @@ import type {
 import type { OnyxDocument, MinimalOnyxDocument } from "@/lib/search/interfaces";
 import type { FullChatState } from "@/app/chat/message/messageComponents/interfaces";
 import type { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
-import { groupPacketsByInd } from "@/app/chat/services/packetUtils";
+import {
+  buildInterleavedSegments,
+  getTextContent,
+  groupPacketsByInd,
+  isToolPacket,
+} from "@/app/chat/services/packetUtils";
 import { PacketType } from "@/app/chat/services/streamingModels";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
 
@@ -1150,24 +1155,115 @@ export function BudAgentScreen() {
                             </span>
                           )}
 
-                          {/* Tool calls display — packet-based rendering */}
-                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => p.obj && [PacketType.CUSTOM_TOOL_START, PacketType.SEARCH_TOOL_START, PacketType.FETCH_TOOL_START, PacketType.REASONING_START].includes(p.obj.type as PacketType)) ? (
-                            <div
-                              className="mb-3"
-                              data-testid="agent-tool-calls"
-                            >
-                              <MultiToolRenderer
-                                packetGroups={groupPacketsByInd(msg.packets)}
-                                chatState={minimalChatState}
-                                isComplete={
-                                  msg.status === "complete" || msg.status === "error" || msg.status === "stopped" ||
-                                  msg.packets.some((p) => p.obj?.type === "message_start")
-                                }
-                                isFinalAnswerComing={msg.packets.some((p) => p.obj?.type === "message_start")}
-                                stopPacketSeen={msg.packets.some((p) => p.obj?.type === "stop")}
-                              />
-                            </div>
-                          ) : msg.toolCalls && msg.toolCalls.length > 0 ? (
+                          {/* Interleaved tool calls + content rendering */}
+                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => p.obj && isToolPacket(p, false)) ? (() => {
+                            const grouped = groupPacketsByInd(msg.packets);
+                            const segments = buildInterleavedSegments(grouped);
+                            const isMessageDone = msg.status === "complete" || msg.status === "error" || msg.status === "stopped";
+                            const hasStop = msg.packets.some((p) => p.obj?.type === "stop");
+                            const citationData = extractCitationData(msg.packets);
+                            const hasCitations = citationData.citations.length > 0;
+                            const isSourcesExpanded = sidebarSourcesMsgId === msg.id;
+                            const lastToolSegIdx = segments.reduce((acc, seg, idx) => seg.type === "tools" ? idx : acc, -1);
+                            const lastDisplaySegIdx = segments.reduce((acc, seg, idx) => seg.type === "display" ? idx : acc, -1);
+
+                            return (
+                              <>
+                                {segments.map((segment, segIdx) => {
+                                  if (segment.type === "tools") {
+                                    const isLastToolSeg = segIdx === lastToolSegIdx;
+                                    // Complete if: not the last tool segment, OR message is done,
+                                    // OR there's a display segment after this tool segment
+                                    const hasFollowingDisplay = lastDisplaySegIdx > segIdx;
+                                    const segComplete = !isLastToolSeg || isMessageDone || hasFollowingDisplay;
+                                    return (
+                                      <div key={`tools-${segment.groups[0]?.ind ?? segIdx}`} className="mb-3" data-testid="agent-tool-calls">
+                                        <MultiToolRenderer
+                                          packetGroups={segment.groups}
+                                          chatState={minimalChatState}
+                                          isComplete={segComplete}
+                                          isFinalAnswerComing={segComplete}
+                                          stopPacketSeen={hasStop}
+                                        />
+                                      </div>
+                                    );
+                                  }
+
+                                  // Display segment — extract text from packets
+                                  const segmentText = getTextContent(segment.group.packets);
+                                  if (!segmentText) return null;
+                                  const isLastDisplay = segIdx === lastDisplaySegIdx;
+
+                                  return (
+                                    <div key={`display-${segment.group.ind}`}>
+                                      <AgentMessageContent
+                                        content={segmentText}
+                                        docs={citationData.docs}
+                                        assistant={selectedAssistant}
+                                      />
+                                      {isLastDisplay && isMessageDone && (
+                                        <div className="flex items-center gap-x-0.5 mt-1">
+                                          <IconButton
+                                            icon={copiedMessageId === msg.id ? SvgCheck : SvgCopy}
+                                            onClick={() => {
+                                              copyAll(msg.content);
+                                              setCopiedMessageId(msg.id);
+                                              if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+                                              copyTimeoutRef.current = setTimeout(() => setCopiedMessageId(null), 2000);
+                                            }}
+                                            tertiary
+                                            tooltip={copiedMessageId === msg.id ? "Copied!" : "Copy"}
+                                          />
+                                          {hasCitations && (
+                                            <CitedSourcesToggle
+                                              citations={citationData.citations}
+                                              documentMap={citationData.documentMap}
+                                              nodeId={0}
+                                              onToggle={() => setSidebarSourcesMsgId(isSourcesExpanded ? null : msg.id)}
+                                            />
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Fallback: tools exist but no display segments yet — show msg.content if available */}
+                                {lastDisplaySegIdx === -1 && msg.content && (
+                                  <>
+                                    <AgentMessageContent
+                                      content={msg.content}
+                                      docs={citationData.docs}
+                                      assistant={selectedAssistant}
+                                    />
+                                    {isMessageDone && (
+                                      <div className="flex items-center gap-x-0.5 mt-1">
+                                        <IconButton
+                                          icon={copiedMessageId === msg.id ? SvgCheck : SvgCopy}
+                                          onClick={() => {
+                                            copyAll(msg.content);
+                                            setCopiedMessageId(msg.id);
+                                            if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+                                            copyTimeoutRef.current = setTimeout(() => setCopiedMessageId(null), 2000);
+                                          }}
+                                          tertiary
+                                          tooltip={copiedMessageId === msg.id ? "Copied!" : "Copy"}
+                                        />
+                                        {hasCitations && (
+                                          <CitedSourcesToggle
+                                            citations={citationData.citations}
+                                            documentMap={citationData.documentMap}
+                                            nodeId={0}
+                                            onToggle={() => setSidebarSourcesMsgId(isSourcesExpanded ? null : msg.id)}
+                                          />
+                                        )}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            );
+                          })() : msg.toolCalls && msg.toolCalls.length > 0 ? (
                             /* Fallback for legacy sessions without packets */
                             <div
                               className="mb-3 space-y-2"
@@ -1182,8 +1278,8 @@ export function BudAgentScreen() {
                             </div>
                           ) : null}
 
-                          {/* Markdown content with citation popovers */}
-                          {msg.content && (() => {
+                          {/* Markdown content — only when NOT using interleaved rendering */}
+                          {!(msg.packets && msg.packets.length > 0 && msg.packets.some((p) => p.obj && isToolPacket(p, false))) && msg.content && (() => {
                             const citationData = msg.packets && msg.packets.length > 0
                               ? extractCitationData(msg.packets)
                               : null;
