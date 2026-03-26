@@ -384,14 +384,25 @@ function dispatchEvent(
       emitPacket({ type: "section_end" });
       break;
 
-    case "agent:message_start":
-      emitPacket({ type: "message_start" });
+    case "agent:message_start": {
+      const startContent = (data.content as string) || "";
+      emitPacket({ type: "message_start", content: startContent });
       break;
+    }
 
     case "agent:message_delta": {
       const content = (data.content as string) || "";
+      emitPacket({ type: "message_delta", content });
       accumulatedContentRef.current += content;
       cbs.onText?.(content);
+      break;
+    }
+
+    case "agent:citation": {
+      const citations = data.citations as unknown[];
+      if (citations) {
+        emitPacket({ type: "citation_delta", citations });
+      }
       break;
     }
 
