@@ -85,6 +85,7 @@ module.exports = {
       testMatch: [
         // Pure unit tests that don't need DOM
         "**/src/**/codeUtils.test.ts",
+        "**/src/**/packetUtils.test.ts",
         "**/src/lib/**/*.test.ts",
         // Add more patterns here as you add more unit tests
       ],
