@@ -11,6 +11,7 @@
  * - Awaits process completion and returns the full output as the tool result
  */
 
+import * as path from "path";
 import * as fsp from "fs/promises";
 import { execFile } from "child_process";
 import type { Tool, ToolParameter } from "./base";
@@ -169,9 +170,13 @@ export class CliAgentTool implements Tool {
     // Resolve working directory
     let cwd = this.workspacePath;
     if (workingDirectory) {
-      const resolvedPath = workingDirectory.startsWith("/")
-        ? workingDirectory
-        : `${this.workspacePath}/${workingDirectory}`;
+      const resolvedPath = path.resolve(this.workspacePath, workingDirectory);
+
+      if (!resolvedPath.startsWith(this.workspacePath)) {
+        throw new Error(
+          `Working directory is outside of the allowed workspace: ${workingDirectory}`
+        );
+      }
 
       try {
         await fsp.access(resolvedPath);
