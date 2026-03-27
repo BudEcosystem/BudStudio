@@ -133,15 +133,37 @@ async fn start_next_server(handle: tauri::AppHandle, next_server_arc: Arc<TokioM
         .expect("Failed to get resource directory");
 
     let standalone_path = if cfg!(debug_assertions) {
-        let current_dir = std::env::current_dir().expect("Failed to get current directory");
-        current_dir
-            .parent()
-            .expect("Failed to get parent directory (src-tauri)")
-            .parent()
-            .expect("Failed to get parent directory (desktop)")
-            .join("web")
-            .join(".next")
-            .join("standalone")
+        // In debug mode, construct the path from the binary location
+        // The binary is in target/debug/, so go up to find the onyx root
+        if let Ok(current_exe) = std::env::current_exe() {
+            if let Some(parent) = current_exe.parent() {
+                // target/debug/ -> target/ -> src-tauri/ -> desktop/ -> onyx/
+                if let Some(target) = parent.parent() {
+                    if let Some(src_tauri) = target.parent() {
+                        if let Some(desktop) = src_tauri.parent() {
+                            if let Some(onyx_root) = desktop.parent() {
+                                onyx_root
+                                    .join("web")
+                                    .join(".next")
+                                    .join("standalone")
+                            } else {
+                                resource_path.join("web").join(".next").join("standalone")
+                            }
+                        } else {
+                            resource_path.join("web").join(".next").join("standalone")
+                        }
+                    } else {
+                        resource_path.join("web").join(".next").join("standalone")
+                    }
+                } else {
+                    resource_path.join("web").join(".next").join("standalone")
+                }
+            } else {
+                resource_path.join("web").join(".next").join("standalone")
+            }
+        } else {
+            resource_path.join("web").join(".next").join("standalone")
+        }
     } else {
         resource_path.join("web").join(".next").join("standalone")
     };

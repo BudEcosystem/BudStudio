@@ -101,10 +101,20 @@ class LocalToolBridge:
         )
         self._packet_queue.put(Packet(ind=ind, obj=obj))
 
+    # Local tools hidden from the LLM. These still exist in LOCAL_TOOL_SCHEMAS
+    # for the cli_agent sub-agent to use, but the BudAgent LLM should use
+    # cli_agent instead of calling them directly.
+    LLM_HIDDEN_LOCAL_TOOLS: set[str] = {
+        "read_file", "write_file", "edit_file", "bash",
+        "glob", "grep", "process",
+    }
+
     def create_all_local_tools(self) -> list[FunctionTool]:
-        """Create FunctionTool objects for all local tools."""
+        """Create FunctionTool objects for local tools visible to the LLM."""
         tools: list[FunctionTool] = []
         for tool_name, schema in LOCAL_TOOL_SCHEMAS.items():
+            if tool_name in self.LLM_HIDDEN_LOCAL_TOOLS:
+                continue
             tool = self._create_function_tool(tool_name, schema)
             tools.append(tool)
         return tools

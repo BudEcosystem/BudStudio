@@ -34,6 +34,7 @@ def publish_event(
         "inbox_message",
         "inbox_status_change",
         "cron_status_change",
+        "resume_execute",
     ],
     data: dict[str, Any] | None = None,
 ) -> None:
@@ -47,7 +48,7 @@ def publish_event(
         Target user who should receive the event.
     event_type:
         One of ``session_message``, ``inbox_message``,
-        ``inbox_status_change``, ``cron_status_change``.
+        ``inbox_status_change``, ``cron_status_change``, ``resume_execute``.
     data:
         Arbitrary JSON-serialisable payload.
     """

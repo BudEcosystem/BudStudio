@@ -243,7 +243,6 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   );
   // Track which sessions have had their messages loaded from the backend
   const loadedSessionsRef = useRef<Set<string>>(new Set());
-
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
 
   // ──────────────────────────────────────────────────────────────────────────

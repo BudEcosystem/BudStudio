@@ -17,6 +17,8 @@ from onyx.agents.bud_agent.orchestrator import BudAgentOrchestrator
 from onyx.agents.bud_agent.packet_utils import translate_agent_messages_to_packets
 from onyx.auth.users import current_user
 from onyx.context.search.utils import get_query_embeddings
+from onyx.redis.event_publisher import publish_event
+from shared_configs.contextvars import get_current_tenant_id
 from onyx.db.agent import add_session_message
 from onyx.db.agent import create_session
 from onyx.db.agent import delete_session
@@ -203,6 +205,15 @@ class ToolResultRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     tool_call_id: str
     approved: bool
+
+
+class PublishEventRequest(BaseModel):
+    event_type: str
+    data: dict[str, Any]
+
+
+class PublishEventResponse(BaseModel):
+    status: str
 
 
 # ==============================================================================
@@ -951,3 +962,32 @@ def stop_agent(
     redis_client.set(f"bud_agent_stop:{session_id}", "1", ex=300)
 
     return StatusResponse(status="stopping")
+
+
+@router.post("/events/publish")
+def publish_agent_event(
+    request: PublishEventRequest,
+    user: User | None = Depends(current_user),
+) -> PublishEventResponse:
+    """Publish an event to the current user's event channel.
+
+    This endpoint allows the Next.js server to publish events that will be
+    streamed to the frontend via SSE. The event is published to a per-user
+    Redis Pub/Sub channel scoped to the current tenant.
+
+    Common event types:
+    - resume_execute: Resume execution of a paused agent session
+    """
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    tenant_id = get_current_tenant_id()
+
+    publish_event(
+        tenant_id=tenant_id,
+        user_id=user.id,
+        event_type=request.event_type,  # type: ignore
+        data=request.data,
+    )
+
+    return PublishEventResponse(status="ok")

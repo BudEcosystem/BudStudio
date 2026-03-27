@@ -240,6 +240,26 @@ async function executeLocalTool(
   apiBaseUrl: string,
   cookieString: string
 ): Promise<{ output?: string; error?: string }> {
+  // cli_agent requires the Socket.IO gateway path — it spawns a long-running
+  // process and awaits its exit via the singleton ProcessRegistry. The SSE
+  // proxy cannot keep the connection alive long enough and shares the same
+  // ProcessRegistry, causing session ID collisions. Reject it here so the
+  // backend falls back to the gateway.
+  if (toolName === "cli_agent") {
+    const error =
+      "cli_agent is not supported via the SSE proxy. Use the Socket.IO gateway.";
+    debugLog(error);
+    await submitToolResult(
+      sessionId,
+      toolCallId,
+      undefined,
+      error,
+      apiBaseUrl,
+      cookieString
+    );
+    return { error };
+  }
+
   const tool = registry.get(toolName);
   if (!tool) {
     const error = `Unknown local tool: ${toolName}`;

@@ -669,10 +669,11 @@ export function BudAgentScreen() {
 
         onError: (error) => {
           messageFinalizedRef.current = true;
+          const existing = accumulatedContentRef.current;
           updateAgentMsg({
-            content:
-              accumulatedContentRef.current ||
-              `Error: ${error}`,
+            content: existing
+              ? `${existing}\n\n**Error:** ${error}`
+              : `Error: ${error}`,
             status: "error",
           });
         },

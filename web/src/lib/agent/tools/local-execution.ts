@@ -2,7 +2,7 @@
  * Shared local tool execution utility.
  *
  * Provides functions to create a ToolRegistry and execute local tools,
- * used by both the interactive SSE proxy and the cron tool execution route.
+ * used by the LocalGateway and the cron tool execution route.
  */
 
 import * as fs from "fs";
@@ -16,6 +16,7 @@ import {
   GlobTool,
   GrepTool,
   ProcessTool,
+  CliAgentTool,
 } from "@/lib/agent/tools";
 /** Default workspace path when the requested path doesn't exist on the server. */
 const SERVER_FALLBACK_WORKSPACE = "/tmp/bud-workspace";
@@ -45,6 +46,8 @@ export function resolveWorkspacePath(requestedPath: string): string {
  * This function is async because browser tools use playwright-core which
  * webpack wraps as an async module. The dynamic import() ensures we properly
  * await the async module initialization.
+ *
+ * @param workspacePath - The path to the workspace directory
  */
 export async function createLocalToolRegistry(
   workspacePath: string
@@ -57,6 +60,7 @@ export async function createLocalToolRegistry(
   registry.register(new GlobTool(workspacePath));
   registry.register(new GrepTool(workspacePath));
   registry.register(new ProcessTool());
+  registry.register(new CliAgentTool(workspacePath));
 
   // Browser automation tools — loaded lazily via dynamic import() to properly
   // await the async module (playwright-core is an external package that webpack

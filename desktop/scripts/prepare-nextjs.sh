@@ -65,4 +65,16 @@ else
     echo "  Warning: $PUBLIC_SRC not found"
 fi
 
+# Copy setup.html and index.html from desktop/src to the app root
+DESKTOP_SRC="$DESKTOP_DIR/src"
+if [ -f "$DESKTOP_SRC/setup.html" ]; then
+    cp "$DESKTOP_SRC/setup.html" "$APP_ROOT/setup.html"
+    echo "  Copied setup.html -> $APP_ROOT/setup.html"
+fi
+
+if [ -f "$DESKTOP_SRC/index.html" ]; then
+    cp "$DESKTOP_SRC/index.html" "$APP_ROOT/index.html"
+    echo "  Copied index.html -> $APP_ROOT/index.html"
+fi
+
 echo "=== Next.js preparation complete ==="

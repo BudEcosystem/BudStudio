@@ -15,6 +15,7 @@ LOCAL_TOOLS: set[str] = {
     "write_file",
     "edit_file",
     "bash",
+    "cli_agent",
     "process",
     "glob",
     "grep",
@@ -47,6 +48,7 @@ REMOTE_TOOLS: set[str] = {
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
     "bash",
+    "cli_agent",
     "write_file",
     "edit_file",
     "browser_navigate",
@@ -250,6 +252,63 @@ LOCAL_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["action"],
+        },
+    },
+    "cli_agent": {
+        "name": "cli_agent",
+        "description": (
+            "Spawn an autonomous sub-agent that can do anything achievable from a command line. "
+            "Use for any complex task that benefits from autonomous exploration and multi-step reasoning: "
+            "code analysis, system administration, data processing, log analysis, infrastructure setup, "
+            "file organization, debugging, refactoring, and more. Prefer this over manual bash/grep/read_file "
+            "sequences when the task needs exploration or 3+ steps. "
+            "The sub-agent shares the same workspace and runs in the background — "
+            "results are returned automatically when complete."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "The task/instruction for the agent. For 'exec': describes the task. "
+                        "For 'resume': provides the user's answer or follow-up instruction."
+                    ),
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["exec", "resume"],
+                    "description": (
+                        "Action mode: 'exec' (default) starts a new session, "
+                        "'resume' continues the most recent session with a follow-up prompt "
+                        "(e.g., user's answer to a question the agent asked)."
+                    ),
+                },
+                "working_directory": {
+                    "type": "string",
+                    "description": (
+                        "Absolute path to the working directory. "
+                        "Defaults to workspace root."
+                    ),
+                },
+                "sandbox": {
+                    "type": "string",
+                    "enum": ["read-only", "workspace-write", "danger-full-access"],
+                    "description": (
+                        "Sandbox level: 'read-only', 'workspace-write' (default), "
+                        "or 'danger-full-access'."
+                    ),
+                },
+                "skip_git_check": {
+                    "type": "boolean",
+                    "description": "If true, skip the git repository check. Default: false.",
+                },
+                "ephemeral": {
+                    "type": "boolean",
+                    "description": "If false, persist the session after completion. Default: true.",
+                },
+            },
+            "required": ["prompt"],
         },
     },
     "glob": {

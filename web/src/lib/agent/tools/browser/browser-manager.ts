@@ -143,7 +143,7 @@ export class BrowserManager {
     }
 
     // Ensure the profile directory exists
-    fs.mkdirSync(this.profilePath, { recursive: true });
+    await fs.promises.mkdir(this.profilePath, { recursive: true });
 
     // Launch using the system-installed Chrome with an isolated profile.
     // "channel: chrome" tells Playwright to use the user's Chrome binary
