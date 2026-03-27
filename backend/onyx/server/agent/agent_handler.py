@@ -800,10 +800,16 @@ class AgentHandler:
                 from onyx.agents.bud_agent.tool_definitions import (
                     LOCAL_TOOL_SCHEMAS,
                 )
+                from onyx.agents.bud_agent.local_tool_bridge import (
+                    LocalToolBridge,
+                )
                 from agents import FunctionTool
 
                 local_tool_stubs: list[FunctionTool] = []
                 for schema in LOCAL_TOOL_SCHEMAS.values():
+                    if schema["name"] in LocalToolBridge.LLM_HIDDEN_LOCAL_TOOLS:
+                        continue
+
                     async def _stub_handler(
                         _ctx: Any, _args: str,
                         _name: str = schema["name"],
