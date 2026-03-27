@@ -5,8 +5,17 @@
  */
 
 import * as fs from "fs";
+import * as fsp from "fs/promises";
 import * as path from "path";
 import { io, Socket } from "socket.io-client";
+
+function debugLog(message: string): void {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] [LocalGateway] ${message}\n`;
+  try {
+    fs.appendFileSync("/tmp/bud-agent-debug.log", logLine);
+  } catch { /* ignore */ }
+}
 import type { ToolRegistry } from "./tools";
 import { createLocalToolRegistry } from "./tools/local-execution";
 
@@ -99,7 +108,7 @@ export class LocalGateway {
 
       this.socket!.on("connect", () => {
         clearTimeout(timeout);
-        console.log(`[LocalGateway] CONNECTED to backend, sid=${this.socket?.id}`);
+        debugLog(`CONNECTED to backend, sid=${this.socket?.id}`);
         this.onEvent("gateway:connected", {});
         this.flushPendingResults();
         resolve();
@@ -107,14 +116,14 @@ export class LocalGateway {
 
       this.socket!.on("connect_error", (err: Error) => {
         clearTimeout(timeout);
-        console.log(`[LocalGateway] CONNECT ERROR: ${err.message}`);
+        debugLog(`CONNECT ERROR: ${err.message}`);
         this.onEvent("gateway:error", { error: err.message });
         reject(err);
       });
     });
 
     this.socket.on("disconnect", (reason: string) => {
-      console.log(`[LocalGateway] DISCONNECTED: ${reason}`);
+      debugLog(`DISCONNECTED: ${reason}, pendingResults=${this.pendingResults.length}`);
       this.onEvent("gateway:disconnected", { reason });
     });
   }
@@ -138,11 +147,28 @@ export class LocalGateway {
     }
 
     this.activeToolAbort = new AbortController();
+
+    debugLog(`handleToolRequest: tool=${tool_name}, toolCallId=${tool_call_id}, socketConnected=${this.socket?.connected}`);
+
+    // Keepalive: emit a lightweight heartbeat every 25s so Socket.IO's
+    // transport stays active during long-running tool execution.
+    const keepalive = setInterval(() => {
+      debugLog(`keepalive heartbeat: connected=${this.socket?.connected}`);
+      this.socket?.volatile.emit("tool:heartbeat", { session_id });
+    }, 25_000);
+
     try {
-      const output = await tool.execute(tool_input);
+      // Yield to the event loop before starting tool execution so any
+      // pending Socket.IO ping/pong frames are processed first.
+      const output = await new Promise<string>((resolve, reject) => {
+        setImmediate(async () => {
+          try { resolve(await tool.execute(tool_input)); }
+          catch (err) { reject(err); }
+        });
+      });
 
       if (tool_name === "write_file" || tool_name === "edit_file") {
-        this.emitFileSync(session_id, tool_input.path as string);
+        await this.emitFileChange(session_id, tool_input.path as string);
       }
 
       this.sendToolResult(session_id, tool_call_id, output, null);
@@ -151,15 +177,16 @@ export class LocalGateway {
       this.sendToolResult(session_id, tool_call_id, null,
         err instanceof Error ? err.message : "Unknown tool execution error");
     } finally {
+      clearInterval(keepalive);
       this.activeToolAbort = null;
     }
   }
 
-  private emitFileSync(sessionId: string, filePath: string): void {
+  private async emitFileChange(sessionId: string, filePath: string): Promise<void> {
     try {
       const resolvedPath = path.resolve(this.workspacePath, filePath);
-      if (!fs.existsSync(resolvedPath)) return;
-      const content = fs.readFileSync(resolvedPath, "utf-8");
+      await fsp.access(resolvedPath);
+      const content = await fsp.readFile(resolvedPath, "utf-8");
       this.socket?.emit("file:sync", {
         session_id: sessionId,
         workspace_path: this.workspacePath,
@@ -171,9 +198,12 @@ export class LocalGateway {
 
   private sendToolResult(sessionId: string, toolCallId: string, output: string | null, error: string | null): void {
     const payload: ToolResultPayload = { session_id: sessionId, tool_call_id: toolCallId, output, error };
-    if (this.socket?.connected) {
-      this.socket.emit("tool:result", payload);
+    const connected = this.socket?.connected ?? false;
+    debugLog(`sendToolResult: connected=${connected}, toolCallId=${toolCallId}, hasOutput=${output !== null}, hasError=${error !== null}`);
+    if (connected) {
+      this.socket!.emit("tool:result", payload);
     } else {
+      debugLog(`Socket disconnected — queuing result (queue size: ${this.pendingResults.length + 1})`);
       this.pendingResults.push(payload);
     }
   }
