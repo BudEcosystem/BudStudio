@@ -188,6 +188,10 @@ def create_inbox_tools(
 
         except Exception as e:
             logger.exception("send_message failed")
+            try:
+                db_session.rollback()
+            except Exception:
+                pass
             return f"Error: {e}"
 
     tool = FunctionTool(

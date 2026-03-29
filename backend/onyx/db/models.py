@@ -4476,6 +4476,7 @@ class InboxConversation(Base):
     goal_status: Mapped[InboxGoalStatus] = mapped_column(
         Enum(InboxGoalStatus, native_enum=False),
         nullable=False,
+        default=InboxGoalStatus.ACTIVE,
         server_default="ACTIVE",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(

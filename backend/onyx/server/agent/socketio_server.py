@@ -292,6 +292,7 @@ def _create_handler(session_data: dict[str, Any], sid: str) -> "AgentHandler":
         model=session_data.get("model"),
         workspace_path=session_data.get("workspace_path"),
         timezone=session_data.get("timezone"),
+        search_query=session_data.get("search_query", ""),
     )
 
 
@@ -312,6 +313,9 @@ async def handle_execute(sid: str, data: dict[str, Any]) -> dict[str, Any]:
             session_data["timezone"] = data["timezone"]
         if data.get("workspace_path"):
             session_data["workspace_path"] = data["workspace_path"]
+        # Persist original message for memory search + skill discovery
+        # on subsequent turns (build_agent_run_context search_query param).
+        session_data["search_query"] = data.get("message", "")
         await sio.save_session(sid, session_data)
 
         # Join the session room so that emits reach this sid (and survive

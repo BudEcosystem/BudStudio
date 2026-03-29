@@ -58,6 +58,19 @@ APPROVAL_REQUIRED_TOOLS: set[str] = {
     "browser_select",
 }
 
+# Local tools hidden from the LLM. These still exist in LOCAL_TOOL_SCHEMAS
+# for the cli_agent sub-agent to use, but the BudAgent LLM should use
+# cli_agent instead of calling them directly.
+LLM_HIDDEN_LOCAL_TOOLS: set[str] = {
+    "read_file",
+    "write_file",
+    "edit_file",
+    "bash",
+    "glob",
+    "grep",
+    "process",
+}
+
 
 def is_local_tool(tool_name: str) -> bool:
     """Check if a tool should be executed on the desktop."""

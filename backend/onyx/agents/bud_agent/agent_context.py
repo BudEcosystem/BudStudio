@@ -13,19 +13,15 @@ from dataclasses import dataclass
 from dataclasses import field
 from enum import Enum
 from typing import Any
-from typing import cast
 from uuid import UUID
 
 import redis
 from agents import Agent
 from agents import FunctionTool
-from agents import RawResponsesStreamEvent
 from agents import RunConfig
-from agents import ToolCallItem
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from sqlalchemy.orm import Session
 
-from onyx.agents.agent_sdk.sync_agent_stream_adapter import SyncAgentStream
 from onyx.agents.bud_agent.artifact_tool import create_artifact_tool
 from onyx.agents.bud_agent.ask_user_tool import create_ask_user_tool
 from onyx.agents.bud_agent.connector_service import create_connector_tools
@@ -45,6 +41,7 @@ from onyx.db.agent import get_session
 from onyx.db.agent import get_session_messages
 from onyx.db.agent import get_workspace_files_as_dict
 from onyx.db.agent import mark_session_compacted
+from onyx.db.agent import update_session_stats
 from onyx.db.enums import AgentMessageRole
 from onyx.db.models import User
 from onyx.llm.factory import get_default_llms
@@ -67,6 +64,29 @@ class AgentExecutionMode(str, Enum):
     INTERACTIVE = "interactive"
     CRON = "cron"
     INBOX = "inbox"
+    EXTERNAL = "external"
+
+
+# Static tool blocklist per execution mode.
+# Applied after tool assembly, before skill tools.
+MODE_TOOL_BLOCKLIST: dict[AgentExecutionMode, set[str]] = {
+    AgentExecutionMode.INTERACTIVE: set(),  # all tools allowed
+    AgentExecutionMode.CRON: {
+        "ask_user_questions",   # user not present
+        "render_canvas",        # no frontend to display it
+    },
+    AgentExecutionMode.INBOX: {
+        "ask_user_questions",   # user not present
+        "render_canvas",        # no frontend to display it
+        "manage_cron",          # inbox shouldn't schedule jobs
+    },
+    AgentExecutionMode.EXTERNAL: {
+        "ask_user_questions",   # user not present
+        "render_canvas",        # no frontend to display it
+        "manage_cron",          # external triggers shouldn't schedule jobs
+        # send_message NOT blocked — agent may need to notify user
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +151,7 @@ def build_agent_run_context(
     session_id: UUID,
     user: User,
     db_session: Session,
-    user_message: str,
+    search_query: str,
     mode: AgentExecutionMode,
     local_tools: list[FunctionTool] | None = None,
     inbox_tools: list[FunctionTool] | None = None,
@@ -145,8 +165,14 @@ def build_agent_run_context(
     step_number_fn: Callable[[], int] | None = None,
     step_increment_fn: Callable[[], None] | None = None,
     blocking_tools: bool = True,
+    tool_filter_fn: Callable[[str, list[FunctionTool]], list[FunctionTool]] | None = None,
 ) -> AgentRunContext:
     """Build the full agent execution context shared by all orchestrators.
+
+    ``search_query`` is used **only** for memory search and skill
+    discovery in the system prompt — it never reaches the LLM's
+    message list.  Pass the original user message so these searches
+    return meaningful results on every turn.
 
     Returns an ``AgentRunContext`` containing the Agent, RunConfig,
     system prompt, tools, and related metadata.
@@ -210,7 +236,11 @@ def build_agent_run_context(
             session_id=session_id,
             packet_queue=resolved_packet_queue,
             step_number_fn=resolved_step_number_fn,
-            auto_approve=mode in (AgentExecutionMode.CRON, AgentExecutionMode.INBOX),
+            auto_approve=mode in (
+                AgentExecutionMode.CRON,
+                AgentExecutionMode.INBOX,
+                AgentExecutionMode.EXTERNAL,
+            ),
         )
     )
     default_mcp_tools = create_default_mcp_tools(
@@ -294,13 +324,22 @@ def build_agent_run_context(
         + resolved_extra_tools
     )
 
-    # Step 10b: skill tools (use_skill FunctionTool + catalog for prompt)
+    # Step 10a: mode-based static blocklist
+    blocked = MODE_TOOL_BLOCKLIST.get(mode, set())
+    if blocked:
+        all_tools = [t for t in all_tools if t.name not in blocked]
+
+    # Step 10b: optional per-turn dynamic filtering (for architecture #5)
+    if tool_filter_fn and search_query:
+        all_tools = tool_filter_fn(search_query, all_tools)
+
+    # Step 10c: skill tools (use_skill FunctionTool + catalog for prompt)
     available_tool_names: set[str] = {t.name for t in all_tools}
     skill_tools, skills_catalog = create_skill_tools(
         db_session=db_session,
         available_tools=available_tool_names,
         mode=mode.value,
-        user_message=user_message,
+        user_message=search_query,
         user_id=user.id,
     )
     all_tools.extend(skill_tools)
@@ -321,7 +360,7 @@ def build_agent_run_context(
     system_prompt: str = context_builder.build(
         db_session=db_session,
         user_id=user.id,
-        user_message=user_message,
+        user_message=search_query,
         connector_tool_names=connector_tool_names,
         skills_catalog=skills_catalog,
     )
@@ -643,89 +682,40 @@ def compact_session(
 
 
 # ---------------------------------------------------------------------------
-# 7. SyncLoopResult + run_sync_agent_loop
+# persist_turn_result
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class SyncLoopResult:
-    response_text: str = ""
-    tool_call_count: int = 0
-    final_messages: list[dict[str, Any]] | None = None
+def persist_turn_result(
+    db_session: Session,
+    session_id: UUID,
+    response_text: str | None,
+    thinking_content: str | None = None,
+    tool_call_count: int = 0,
+    step_number: int | None = None,
+    ui_spec: dict[str, Any] | None = None,
+) -> None:
+    """Persist an assistant turn result to the database.
 
-
-def run_sync_agent_loop(
-    agent: Agent,
-    messages: list[dict[str, Any]],
-    run_config: RunConfig,
-    max_tool_calls: int = 50,
-    should_stop: Callable[[], bool] | None = None,
-) -> SyncLoopResult:
-    """Run the iterative agent loop synchronously until completion.
-
-    This is the shared loop used by the cron and inbox orchestrators.
-    The interactive orchestrator has its own streaming-aware loop with
-    citation processing and SSE packet emission.
-
-    Parameters
-    ----------
-    agent:
-        The ``Agent`` instance to run.
-    messages:
-        The initial message list (system + history + user message).
-    run_config:
-        Agents SDK ``RunConfig`` with provider credentials.
-    max_tool_calls:
-        Hard cap on tool invocations to prevent runaway loops.
-    should_stop:
-        Optional callable returning ``True`` when the loop should
-        terminate early (e.g. suspension or escalation).
+    Combines the message persistence + stats update pattern that is
+    duplicated across all orchestrator implementations.
     """
-    result = SyncLoopResult()
-    last_call_is_final = False
-
-    while not last_call_is_final:
-        if result.tool_call_count >= max_tool_calls:
-            logger.warning(
-                "Max tool calls (%d) reached in sync agent loop",
-                max_tool_calls,
-            )
-            break
-
-        if should_stop is not None and should_stop():
-            break
-
-        stream = SyncAgentStream(
-            agent=agent,
-            input=messages,
-            context=None,
-            run_config=run_config,
+    if response_text or thinking_content:
+        add_session_message(
+            db_session=db_session,
+            session_id=session_id,
+            role=AgentMessageRole.ASSISTANT,
+            content=response_text or "",
+            step_number=step_number,
+            thinking_content=thinking_content,
+            ui_spec=ui_spec,
         )
 
-        has_tool_calls = False
-        for ev in stream:
-            if isinstance(ev, RawResponsesStreamEvent):
-                if (
-                    ev.data.type == "response.output_text.delta"
-                    and len(ev.data.delta) > 0
-                ):
-                    result.response_text += ev.data.delta
+    update_session_stats(
+        db_session, session_id, tool_calls=tool_call_count
+    )
 
-            if isinstance(getattr(ev, "item", None), ToolCallItem):
-                has_tool_calls = True
-                result.tool_call_count += 1
 
-        if stream.streamed is None:
-            break
 
-        messages = cast(list[dict[str, Any]], stream.streamed.to_input_list())
-
-        if not has_tool_calls:
-            last_call_is_final = True
-
-        # Check early-exit after processing (e.g. suspension flag set by tool)
-        if should_stop is not None and should_stop():
-            break
-
-    result.final_messages = messages
-    return result
+# run_sync_agent_loop and SyncLoopResult have been removed.
+# Cron and inbox orchestrators now use TurnDriver directly.
