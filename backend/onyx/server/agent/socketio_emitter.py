@@ -3,6 +3,9 @@
 Provides ``SocketIOEmitter`` (streaming events) and ``SocketIOToolRequester``
 (tool request / approval routing) that the ``TurnDriver`` uses to push
 real-time updates to connected Socket.IO clients.
+
+All emits use room-based routing (``room=session:{session_id}``) so events
+reach only the client(s) subscribed to that session.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ class SocketIOEmitter:
     ) -> None:
         self._sio = sio
         self._session_id = session_id
+        self._room = f"session:{session_id}"
         self._citation_processor: CitationProcessor | None = None
 
         if search_context is not None:
@@ -48,6 +52,7 @@ class SocketIOEmitter:
         await self._sio.emit(
             "agent:reasoning_start",
             {"session_id": self._session_id, "ind": step},
+            room=self._room,
         )
 
     async def reasoning_delta(self, delta: str, step: int) -> None:
@@ -58,6 +63,7 @@ class SocketIOEmitter:
                 "ind": step,
                 "reasoning": delta,
             },
+            room=self._room,
         )
 
     # ------------------------------------------------------------------
@@ -73,6 +79,7 @@ class SocketIOEmitter:
                 "content": "",
                 "final_documents": None,
             },
+            room=self._room,
         )
 
     async def text_delta(self, delta: str, step: int) -> None:
@@ -88,6 +95,7 @@ class SocketIOEmitter:
                         "ind": step,
                         "content": processed,
                     },
+                    room=self._room,
                 )
             if new_citations:
                 await self._sio.emit(
@@ -103,6 +111,7 @@ class SocketIOEmitter:
                             for c in new_citations
                         ],
                     },
+                    room=self._room,
                 )
         else:
             await self._sio.emit(
@@ -112,6 +121,7 @@ class SocketIOEmitter:
                     "ind": step,
                     "content": delta,
                 },
+                room=self._room,
             )
 
     # ------------------------------------------------------------------
@@ -129,10 +139,12 @@ class SocketIOEmitter:
                         "ind": step,
                         "content": flushed,
                     },
+                    room=self._room,
                 )
         await self._sio.emit(
             "agent:section_end",
             {"session_id": self._session_id, "ind": step},
+            room=self._room,
         )
 
     # ------------------------------------------------------------------
@@ -147,6 +159,7 @@ class SocketIOEmitter:
                 "ind": step,
                 "tool_name": tool_name,
             },
+            room=self._room,
         )
 
     async def tool_result_event(
@@ -165,6 +178,7 @@ class SocketIOEmitter:
                 "tool_name": tool_name,
                 "tool_call_id": tool_call_id,
             },
+            room=self._room,
         )
 
         openui_resp: str | None = None
@@ -181,7 +195,7 @@ class SocketIOEmitter:
         }
         if openui_resp:
             payload["openui_response"] = openui_resp
-        await self._sio.emit("tool:delta", payload)
+        await self._sio.emit("tool:delta", payload, room=self._room)
 
     # ------------------------------------------------------------------
     # UI metadata
@@ -211,6 +225,7 @@ class SocketIOToolRequester:
     ) -> None:
         self._sio = sio
         self._session_id = session_id
+        self._room = f"session:{session_id}"
         self._always_allowed_tools = always_allowed_tools or set()
         self._connector_approval_tools = connector_approval_tools or set()
         self._connector_gateway_map = connector_gateway_map or {}
@@ -239,6 +254,7 @@ class SocketIOToolRequester:
                 "tool_name": tool_name,
                 "tool_call_id": tool_id,
             },
+            room=self._room,
         )
 
         if self.last_request_needs_approval:
@@ -252,7 +268,9 @@ class SocketIOToolRequester:
             }
             if gateway_id:
                 payload["gateway_id"] = gateway_id
-            await self._sio.emit("tool:approval_required", payload)
+            await self._sio.emit(
+                "tool:approval_required", payload, room=self._room
+            )
         else:
             await self._sio.emit(
                 "tool:request",
@@ -263,4 +281,5 @@ class SocketIOToolRequester:
                     "tool_input": tool_input,
                     "tool_call_id": tool_id,
                 },
+                room=self._room,
             )

@@ -44,6 +44,12 @@ export interface AgentSession {
   createdAt: Date;
   updatedAt: Date;
   messages: AgentMessage[];
+  /** Type of session: ROOT, SUB_ONE_SHOT, SUB_PERSISTENT, etc. */
+  session_type?: string;
+  /** If this is a sub-session, the ID of the parent session. */
+  parent_session_id?: string;
+  /** Human-readable description of the task this session is working on. */
+  task_description?: string;
 }
 
 /**
@@ -98,7 +104,7 @@ interface BackendSessionSnapshot {
   updated_at: string;
 }
 
-interface BackendMessageSnapshot {
+export interface BackendMessageSnapshot {
   id: string;
   role: string;
   content: string | null;
@@ -113,12 +119,12 @@ interface BackendMessageSnapshot {
   created_at: string;
 }
 
-interface BackendPacketResponse {
+export interface BackendPacketResponse {
   ind: number;
   obj: Record<string, unknown>;
 }
 
-interface BackendHistoryResponse {
+export interface BackendHistoryResponse {
   messages: BackendMessageSnapshot[];
   packets: BackendPacketResponse[][];
 }
@@ -163,7 +169,7 @@ function createDefaultPreferences(): SessionPreferences {
  * Backend messages have separate rows for user, assistant, and tool messages.
  * Frontend groups tool calls into the agent message's toolCalls array.
  */
-function convertBackendMessages(
+export function convertBackendMessages(
   backendMessages: BackendMessageSnapshot[]
 ): AgentMessage[] {
   const result: AgentMessage[] = [];
@@ -195,11 +201,26 @@ function convertBackendMessages(
           toolCalls: [],
         };
       } else if (msg.content) {
-        // Subsequent assistant with content — update the existing
-        // agent message's content (don't flush/create new).
-        // This keeps all tool calls and content from one user
-        // request in a single agent message block.
-        currentAgentMsg.content = msg.content;
+        // Check if this is an injected message (sub-session result, cron
+        // notification, etc.) vs a continuation of the current LLM turn.
+        // Injected messages have no step_number. Turn messages do.
+        const isInjected = msg.step_number == null && currentAgentMsg.content;
+
+        if (isInjected) {
+          // Separate message — flush current and start new.
+          result.push(currentAgentMsg);
+          currentAgentMsg = {
+            id: msg.id,
+            role: "agent",
+            content: msg.content,
+            timestamp: new Date(msg.created_at),
+            status: "complete",
+            toolCalls: [],
+          };
+        } else {
+          // Same turn — update content. Keeps tool calls + packets together.
+          currentAgentMsg.content = msg.content;
+        }
       }
       // else: intermediate thinking-only assistant — skip,
       // keep accumulating tools into the existing currentAgentMsg
@@ -306,14 +327,30 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       const messages = convertBackendMessages(data.messages);
 
       // Map packet turns to agent messages.
-      // Each inner array in data.packets corresponds to one agent turn.
+      // Packet turns are grouped by user-message boundaries. Agent messages
+      // may be split further (e.g. sub-session results injected between turns).
+      // Assign each packet turn to the first agent message that has tool calls.
       if (data.packets && data.packets.length > 0) {
-        const agentMessages = messages.filter((m) => m.role === "agent");
-        for (let i = 0; i < agentMessages.length && i < data.packets.length; i++) {
-          const agentMsg = agentMessages[i];
-          const packetTurn = data.packets[i];
-          if (agentMsg && packetTurn) {
-            agentMsg.packets = packetTurn as unknown as Packet[];
+        const agentMsgs = messages.filter((m) => m.role === "agent");
+        let agentIdx = 0;
+        for (let turnIdx = 0; turnIdx < data.packets.length; turnIdx++) {
+          const packetTurn = data.packets[turnIdx];
+          if (!packetTurn || packetTurn.length === 0) continue;
+
+          // Skip agent messages with no toolCalls and no content
+          // (empty placeholders) to find the right one for this turn
+          while (
+            agentIdx < agentMsgs.length - 1 &&
+            agentMsgs[agentIdx] &&
+            (!agentMsgs[agentIdx].toolCalls || agentMsgs[agentIdx].toolCalls!.length === 0) &&
+            !agentMsgs[agentIdx].content
+          ) {
+            agentIdx++;
+          }
+
+          if (agentIdx < agentMsgs.length) {
+            agentMsgs[agentIdx].packets = packetTurn as unknown as Packet[];
+            agentIdx++;
           }
         }
       }

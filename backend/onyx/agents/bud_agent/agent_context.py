@@ -31,6 +31,7 @@ from onyx.agents.bud_agent.inbox_service import create_inbox_tools
 from onyx.agents.bud_agent.mcp_service import create_default_mcp_tools
 from onyx.agents.bud_agent.memory_service import create_memory_tools
 from onyx.agents.bud_agent.skill_service import create_skill_tools
+from onyx.agents.bud_agent.sub_session_tools import create_sub_session_tools
 from onyx.agents.bud_agent.web_search_service import BudAgentSearchContext
 from onyx.agents.bud_agent.web_search_service import create_web_search_tools
 from onyx.agents.bud_agent.workspace_service import create_workspace_tools
@@ -41,6 +42,7 @@ from onyx.db.agent import get_session
 from onyx.db.agent import get_session_messages
 from onyx.db.agent import get_workspace_files_as_dict
 from onyx.db.agent import mark_session_compacted
+from onyx.db.agent import repoint_sub_sessions_parent
 from onyx.db.agent import update_session_stats
 from onyx.db.enums import AgentMessageRole
 from onyx.db.models import User
@@ -65,6 +67,7 @@ class AgentExecutionMode(str, Enum):
     CRON = "cron"
     INBOX = "inbox"
     EXTERNAL = "external"
+    SUB_SESSION = "sub_session"
 
 
 # Static tool blocklist per execution mode.
@@ -85,6 +88,20 @@ MODE_TOOL_BLOCKLIST: dict[AgentExecutionMode, set[str]] = {
         "render_canvas",        # no frontend to display it
         "manage_cron",          # external triggers shouldn't schedule jobs
         # send_message NOT blocked — agent may need to notify user
+    },
+    AgentExecutionMode.SUB_SESSION: {
+        "ask_user_questions",       # user not present
+        "render_canvas",            # no frontend
+        "spawn_sub_session",        # no nested sub-sessions
+        "cancel_sub_session",       # sub-sessions can't manage siblings
+        "send_to_sub_session",      # sub-sessions can't manage siblings
+        "list_sub_sessions",        # sub-sessions can't manage siblings
+        "inspect_sub_session",      # sub-sessions can't manage siblings
+        "get_sub_session_result",   # sub-sessions can't manage siblings
+        "bash",                     # dangerous: auto-approved
+        "write_file",              # dangerous: auto-approved
+        "edit_file",               # dangerous: auto-approved
+        "cli_agent",               # dangerous: auto-approved
     },
 }
 
@@ -178,24 +195,30 @@ def build_agent_run_context(
     system prompt, tools, and related metadata.
     """
     # Step 1: ensure default workspace files exist
-    ensure_default_workspace_files(
-        db_session=db_session,
-        user=user,
-        timezone=timezone,
-    )
+    # Sub-sessions don't have their own workspace — skip file setup.
+    if mode != AgentExecutionMode.SUB_SESSION:
+        ensure_default_workspace_files(
+            db_session=db_session,
+            user=user,
+            timezone=timezone,
+        )
 
     # Step 2: load workspace files
-    db_context = get_workspace_files_as_dict(
-        db_session=db_session,
-        user_id=user.id,
-        paths=[
-            "AGENTS.md",
-            "SOUL.md",
-            "IDENTITY.md",
-            "USER.md",
-            "MEMORY.md",
-        ],
-    )
+    # Sub-sessions operate without workspace context.
+    if mode == AgentExecutionMode.SUB_SESSION:
+        db_context: dict[str, str] = {}
+    else:
+        db_context = get_workspace_files_as_dict(
+            db_session=db_session,
+            user_id=user.id,
+            paths=[
+                "AGENTS.md",
+                "SOUL.md",
+                "IDENTITY.md",
+                "USER.md",
+                "MEMORY.md",
+            ],
+        )
 
     # Step 3: load session and extract compaction_summary
     current_session = get_session(
@@ -240,6 +263,7 @@ def build_agent_run_context(
                 AgentExecutionMode.CRON,
                 AgentExecutionMode.INBOX,
                 AgentExecutionMode.EXTERNAL,
+                AgentExecutionMode.SUB_SESSION,
             ),
         )
     )
@@ -288,6 +312,14 @@ def build_agent_run_context(
         blocking=blocking_tools,
     )
 
+    # Step 6c: sub-session tools
+    sub_session_tools = create_sub_session_tools(
+        db_session=db_session,
+        user_id=user.id,
+        parent_session_id=session_id,
+        tenant_id=tenant_id,
+    )
+
     # Step 7: inbox tools
     resolved_inbox_tools: list[FunctionTool] = (
         inbox_tools
@@ -320,6 +352,7 @@ def build_agent_run_context(
         + cron_tools
         + artifact_tools
         + ask_user_tools
+        + sub_session_tools
         + resolved_inbox_tools
         + resolved_extra_tools
     )
@@ -663,6 +696,17 @@ def compact_session(
         compaction_summary=summary,
         workspace_path=workspace_path,
     )
+
+    # Re-point active sub-sessions from old session to new compacted session
+    # so they are not orphaned (design decision 0.2).
+    moved = repoint_sub_sessions_parent(db_session, session_id, new_session.id)
+    if moved:
+        logger.info(
+            "Re-pointed %d active sub-session(s) from %s to %s",
+            moved,
+            session_id,
+            new_session.id,
+        )
 
     # Persist the current user message in the new session
     add_session_message(

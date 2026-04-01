@@ -555,3 +555,46 @@ def resume_agent_cron_execution(
                 )
 
     return None
+
+
+@shared_task(
+    name=OnyxCeleryTask.CLEANUP_AGENT_SESSION_EVENTS,
+    soft_time_limit=120,
+    bind=True,
+    ignore_result=True,
+)
+def cleanup_agent_session_events(self: Task, *, tenant_id: str) -> None:
+    """Expire stale events and delete old consumed/expired events.
+
+    Runs hourly via Celery Beat.  Uses a Redis lock to prevent
+    concurrent invocations from overlapping.
+    """
+    from onyx.db.agent_events import cleanup_old_events
+    from onyx.db.agent_events import expire_stale_events
+
+    task_logger.info("cleanup_agent_session_events - Starting")
+
+    redis_client = get_redis_client(tenant_id=tenant_id)
+    lock: RedisLock = redis_client.lock(
+        OnyxRedisLocks.CLEANUP_AGENT_SESSION_EVENTS_LOCK,
+        timeout=CELERY_GENERIC_BEAT_LOCK_TIMEOUT,
+    )
+
+    if not lock.acquire(blocking=False):
+        return None
+
+    try:
+        with get_session_with_current_tenant() as db_session:
+            expired_count = expire_stale_events(db_session)
+            deleted_count = cleanup_old_events(db_session, days=7)
+
+        task_logger.info(
+            "cleanup_agent_session_events - expired=%d deleted=%d",
+            expired_count,
+            deleted_count,
+        )
+    finally:
+        if lock.owned():
+            lock.release()
+
+    return None

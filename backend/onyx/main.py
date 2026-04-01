@@ -93,10 +93,12 @@ from onyx.server.features.tool.api import router as tool_router
 from onyx.server.features.user_oauth_token.api import router as user_oauth_token_router
 from onyx.server.agent.api import router as agent_router
 from onyx.server.agent.socketio_server import sio as agent_sio
+from onyx.server.agent.socketio_server import start_sub_session_event_bridge
 from onyx.server.agent.connector_api import router as agent_connector_router
 from onyx.server.agent.cron_api import router as agent_cron_router
 from onyx.server.agent.events_api import router as agent_events_router
 from onyx.server.agent.inbox_api import router as agent_inbox_router
+from onyx.server.agent.sub_session_api import router as agent_sub_session_router
 from onyx.server.federated.api import router as federated_router
 from onyx.server.workflow.api import router as workflow_router
 from onyx.server.gpts.api import router as gpts_router
@@ -350,6 +352,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if AUTH_RATE_LIMITING_ENABLED:
         await setup_auth_limiter()
 
+    # Start the Redis->Socket.IO bridge for sub-session lifecycle events.
+    # Celery workers publish to Redis channels; this bridge re-emits them
+    # to the correct Socket.IO rooms so the frontend receives real-time
+    # updates about sub-session spawning, progress, completion, and failure.
+    start_sub_session_event_bridge()
+
     yield
 
     SqlEngine.reset_engine()
@@ -466,6 +474,7 @@ def get_application(
     include_router_with_global_prefix_prepended(application, agent_cron_router)
     include_router_with_global_prefix_prepended(application, agent_inbox_router)
     include_router_with_global_prefix_prepended(application, agent_events_router)
+    include_router_with_global_prefix_prepended(application, agent_sub_session_router)
     include_router_with_global_prefix_prepended(application, workflow_router)
 
     if AUTH_TYPE == AuthType.DISABLED:

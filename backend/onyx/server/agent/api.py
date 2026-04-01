@@ -1,6 +1,5 @@
 """API endpoints for agent session management."""
 
-import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -9,11 +8,9 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from onyx.agents.bud_agent.orchestrator import BudAgentOrchestrator
 from onyx.agents.bud_agent.packet_utils import translate_agent_messages_to_packets
 from onyx.auth.users import current_user
 from onyx.context.search.utils import get_query_embeddings
@@ -187,24 +184,6 @@ class WorkspaceFileListResponse(BaseModel):
 class UpsertWorkspaceFileRequest(BaseModel):
     path: str
     content: str
-
-
-class ExecuteAgentRequest(BaseModel):
-    message: str
-    workspace_path: str | None = None
-    model: str | None = None
-    timezone: str | None = None
-
-
-class ToolResultRequest(BaseModel):
-    tool_call_id: str
-    output: str | None = None
-    error: str | None = None
-
-
-class ApprovalRequest(BaseModel):
-    tool_call_id: str
-    approved: bool
 
 
 class PublishEventRequest(BaseModel):
@@ -803,139 +782,6 @@ def delete_agent_workspace_file(
 # ==============================================================================
 # Agent Execution Endpoints
 # ==============================================================================
-
-
-# DEPRECATED: Replaced by Socket.IO stateless handler (agent_handler.py).
-# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.1.
-@router.post("/sessions/{session_id}/execute")
-def execute_agent(
-    session_id: UUID,
-    request: ExecuteAgentRequest,
-    user: User | None = Depends(current_user),
-    db_session: Session = Depends(get_session),
-) -> StreamingResponse:
-    """Execute the agent for a session, streaming results via SSE.
-
-    DEPRECATED: This SSE-based endpoint is replaced by the Socket.IO
-    `agent:execute` event in socketio_server.py / agent_handler.py.
-    Kept for backward compatibility during migration.
-    """
-    if user is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    session = get_session_for_user(
-        db_session=db_session,
-        session_id=session_id,
-        user_id=user.id,
-    )
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    redis_client = get_redis_client()
-
-    orchestrator = BudAgentOrchestrator(
-        session_id=session_id,
-        user=user,
-        redis_client=redis_client,
-        workspace_path=request.workspace_path or session.workspace_path,
-        model=request.model,
-        timezone=request.timezone,
-    )
-
-    return StreamingResponse(
-        orchestrator.run(request.message),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-# DEPRECATED: Replaced by Socket.IO `tool:result` event handler (socketio_server.py).
-# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.3.
-@router.post("/sessions/{session_id}/tool-result")
-def submit_tool_result(
-    session_id: UUID,
-    request: ToolResultRequest,
-    user: User | None = Depends(current_user),
-    db_session: Session = Depends(get_session),
-) -> StatusResponse:
-    """Submit a tool execution result from the desktop.
-
-    DEPRECATED: This HTTP endpoint is replaced by the Socket.IO `tool:result`
-    event in socketio_server.py. Kept for backward compatibility during migration.
-    """
-    if user is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    session = get_session_for_user(
-        db_session=db_session,
-        session_id=session_id,
-        user_id=user.id,
-    )
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if session.status.is_terminal():
-        raise HTTPException(
-            status_code=409,
-            detail="Session is no longer active",
-        )
-
-    redis_client = get_redis_client()
-
-    key = f"bud_agent_tool_result:{session_id}:{request.tool_call_id}"
-    payload = json.dumps({
-        "output": request.output,
-        "error": request.error,
-    })
-    redis_client.rpush(key, payload)
-    redis_client.expire(key, 600)  # 10-minute TTL
-
-    return StatusResponse(status="submitted")
-
-
-# DEPRECATED: Replaced by Socket.IO `tool:approval` event handler (socketio_server.py).
-# Remove after Socket.IO migration is validated. See plans/agent-websocket-tasks.md Phase 7.3.
-@router.post("/sessions/{session_id}/approval")
-def submit_approval(
-    session_id: UUID,
-    request: ApprovalRequest,
-    user: User | None = Depends(current_user),
-    db_session: Session = Depends(get_session),
-) -> StatusResponse:
-    """Submit a tool approval decision from the user.
-
-    DEPRECATED: This HTTP endpoint is replaced by the Socket.IO `tool:approval`
-    event in socketio_server.py. Kept for backward compatibility during migration.
-    """
-    if user is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    session = get_session_for_user(
-        db_session=db_session,
-        session_id=session_id,
-        user_id=user.id,
-    )
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if session.status.is_terminal():
-        raise HTTPException(
-            status_code=409,
-            detail="Session is no longer active",
-        )
-
-    redis_client = get_redis_client()
-
-    key = f"bud_agent_approval:{session_id}:{request.tool_call_id}"
-    payload = json.dumps({"approved": request.approved})
-    redis_client.rpush(key, payload)
-    redis_client.expire(key, 600)
-
-    return StatusResponse(status="submitted")
 
 
 @router.post("/sessions/{session_id}/stop")

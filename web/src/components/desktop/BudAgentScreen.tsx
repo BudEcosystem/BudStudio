@@ -6,8 +6,8 @@ import { Logo } from "@/components/logo/Logo";
 import {
   useAgentSession,
   AgentMessage,
-  ToolCallInfo,
 } from "./AgentSessionContext";
+import { AgentMessageList } from "./AgentMessageList";
 import { MemoryUpdateDialog } from "./MemoryUpdateDialog";
 import { InlineToolApproval } from "./InlineToolApproval";
 import { UserQuestionsPanel } from "./UserQuestionsPanel";
@@ -22,14 +22,21 @@ import {
   updateToolCallWithResult,
   updateToolCallApprovalRequired,
   useChatInteractionState,
+  useSubSessions,
   type PendingMemoryUpdate,
 } from "@/lib/desktop";
+import {
+  SubSessionStatusBar,
+  SubSessionThreadPanel,
+  SubSessionChip,
+  SubSessionSpinOffDialog,
+  SubSessionListDropdown,
+} from "./sub-sessions";
 import type { UserQuestionItem } from "@/app/chat/services/streamingModels";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
 import { setToolPermission } from "@/lib/agent/connector-utils";
 import { setUserDefaultModel } from "@/lib/users/UserSettings";
 import { structureValue } from "@/lib/llm/utils";
-import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
 import {
   Mail,
   Table,
@@ -38,12 +45,7 @@ import {
   FileText,
   ArrowRight,
 } from "lucide-react";
-import { useMarkdownRenderer } from "@/app/chat/message/messageComponents/markdownUtils";
-import { copyAll } from "@/app/chat/message/copyingUtils";
-import AgentIcon from "@/refresh-components/AgentIcon";
 import IconButton from "@/refresh-components/buttons/IconButton";
-import SvgCopy from "@/icons/copy";
-import SvgCheck from "@/icons/check";
 import SvgArrowWallRight from "@/icons/arrow-wall-right";
 import SvgSearchMenu from "@/icons/search-menu";
 import SvgRefreshCw from "@/icons/refresh-cw";
@@ -51,9 +53,7 @@ import Text from "@/refresh-components/texts/Text";
 import { ChatDocumentDisplay } from "@/app/chat/components/documentSidebar/ChatDocumentDisplay";
 import { removeDuplicateDocs } from "@/lib/documentUtils";
 import { Separator } from "@radix-ui/react-separator";
-import { BlinkingDot } from "@/app/chat/message/BlinkingDot";
 import { BudAgentSkeleton } from "./BudAgentSkeleton";
-import CitedSourcesToggle from "@/app/chat/message/messageComponents/CitedSourcesToggle";
 import { ArtifactPanel } from "@/app/chat/components/artifactPanel/ArtifactPanel";
 import type { ActiveArtifact } from "@/app/chat/stores/useChatSessionStore";
 
@@ -67,17 +67,8 @@ import type {
   ArtifactGeneration,
   CustomToolDelta,
 } from "@/app/chat/services/streamingModels";
-import type { OnyxDocument, MinimalOnyxDocument } from "@/lib/search/interfaces";
-import type { FullChatState } from "@/app/chat/message/messageComponents/interfaces";
-import type { MinimalPersonaSnapshot } from "@/app/admin/assistants/interfaces";
-import {
-  buildInterleavedSegments,
-  getTextContent,
-  groupPacketsByInd,
-  isToolPacket,
-} from "@/app/chat/services/packetUtils";
+import type { OnyxDocument } from "@/lib/search/interfaces";
 import { PacketType } from "@/app/chat/services/streamingModels";
-import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
 
 /**
  * Sentinel gateway ID for local tools (bash, write_file, edit_file).
@@ -191,39 +182,6 @@ function extractCitationData(packets: Packet[]): {
 }
 
 /**
- * Renders agent message content with full markdown support (code blocks, GFM tables, math, etc.)
- * When docs are provided, citation popovers are enabled (e.g., [1] shows tooltip on hover).
- */
-function AgentMessageContent({
-  content,
-  docs,
-  setPresentingDocument,
-  assistant,
-}: {
-  content: string;
-  docs?: OnyxDocument[] | null;
-  setPresentingDocument?: (doc: MinimalOnyxDocument) => void;
-  assistant?: MinimalPersonaSnapshot | null;
-}) {
-  const state = useMemo<FullChatState | undefined>(() => {
-    if (!docs || docs.length === 0 || !assistant) return undefined;
-    return {
-      handleFeedback: () => {},
-      assistant: assistant,
-      docs,
-      setPresentingDocument: setPresentingDocument || (() => {}),
-    };
-  }, [docs, assistant, setPresentingDocument]);
-
-  const { renderedContent } = useMarkdownRenderer(content, state, "text-base");
-  return (
-    <div className="overflow-x-visible max-w-content-max break-words">
-      {renderedContent}
-    </div>
-  );
-}
-
-/**
  * Detect the artifact component type from the openui_lang string for icon rendering.
  */
 function detectArtifactIcon(openuiLang: string) {
@@ -318,12 +276,23 @@ export function BudAgentScreen() {
     questions: UserQuestionItem[];
   } | null>(null);
 
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  // ── Panel management: only one right-side panel open at a time ──
+  type RightPanel = "none" | "artifact" | "thread" | "sources";
+  const [activeRightPanel, setActiveRightPanel] = useState<RightPanel>("none");
+
+  // ── Sub-session spin-off dialog state ──
+  const [spinOffDialogOpen, setSpinOffDialogOpen] = useState(false);
+  const [spinOffSourceContent, setSpinOffSourceContent] = useState("");
+
+  // ── Sub-session list dropdown state ──
+  const [subSessionListOpen, setSubSessionListOpen] = useState(false);
+
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
-  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previousMessageCountRef = useRef<number>(0);
+  const messagesRef = useRef<AgentMessage[]>([]);
 
   const {
     currentSession,
@@ -345,11 +314,83 @@ export function BudAgentScreen() {
     reloadSessionMessages,
   } = useAgentSession();
 
+  // ── Sub-session hooks ──
+  const {
+    subSessions,
+    activeCount: subSessionActiveCount,
+    completedCount: subSessionCompletedCount,
+    spawnedByMessage: subSessionSpawnedByMessage,
+    handleSpawned: handleSubSessionSpawned,
+    handleProgress: handleSubSessionProgress,
+    handleComplete: handleSubSessionComplete,
+    handleFailed: handleSubSessionFailed,
+    spawnSubSession: _spawnSubSession,
+    cancelSubSession: _cancelSubSession,
+    refetch: refetchSubSessions,
+  } = useSubSessions(currentSessionId);
+
+  // The thread panel's session ID — drives the thread panel visibility.
+  // SubSessionThreadPanel internally manages its own useSubSessionThread() state.
+  const [threadPanelSessionId, setThreadPanelSessionId] = useState<string | null>(null);
+
+  // ── Panel helpers (ensure only one right panel at a time) ──
+  const openArtifactPanel = useCallback(() => {
+    setThreadPanelSessionId(null);
+    setSidebarSourcesMsgId(null);
+    setActiveRightPanel("artifact");
+    setArtifactPanelVisible(true);
+  }, []);
+
+  const openThreadPanel = useCallback((sessionId: string) => {
+    setArtifactPanelVisible(false);
+    setSidebarSourcesMsgId(null);
+    setActiveRightPanel("thread");
+    setThreadPanelSessionId(sessionId);
+  }, []);
+
+  const closeThreadPanel = useCallback(() => {
+    setActiveRightPanel("none");
+    setThreadPanelSessionId(null);
+  }, []);
+
+  const openSourcesPanel = useCallback((msgId: string | null) => {
+    if (msgId) {
+      setArtifactPanelVisible(false);
+      setThreadPanelSessionId(null);
+      setActiveRightPanel("sources");
+    } else {
+      setActiveRightPanel("none");
+    }
+    setSidebarSourcesMsgId(msgId);
+  }, []);
+
+  // ── Visibility change: re-fetch sub-sessions when tab is foregrounded ──
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refetchSubSessions();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refetchSubSessions]);
+
   // Socket.IO streaming hook
   // TODO: Replace empty authToken with actual JWT/session token once auth
   // is wired through the Socket.IO gateway. The gateway currently also
   // supports cookie-based auth from the browser, so this may work as-is.
-  const { execute, abort, stop, approve, sendToolResult } = useAgentSocket(BACKEND_URL, "");
+  const { execute, rejoinRoom, abort, stop, approve, sendToolResult } = useAgentSocket(BACKEND_URL, "");
+
+  // Always join the current session's Socket.IO room so we receive
+  // sub-session completion events even when not mid-execution.
+  // Uses rejoinRoom (not joinSession) to avoid overwriting execute callbacks.
+  useEffect(() => {
+    if (currentSessionId) {
+      rejoinRoom(currentSessionId);
+    }
+  }, [currentSessionId, rejoinRoom]);
 
   // Get data from chat context (same providers wrap BudAgentScreen)
   const { llmProviders } = useChatContext();
@@ -382,16 +423,9 @@ export function BudAgentScreen() {
   // The ChatInputBar requires a non-null assistant, so we'll render a placeholder if none available
   const selectedAssistant = currentAgent || availableAssistants[0] || null;
 
-  // Minimal FullChatState for MultiToolRenderer (only needs handleFeedback + assistant)
-  const minimalChatState = useMemo<FullChatState | null>(() => {
-    if (!selectedAssistant) return null;
-    return {
-      handleFeedback: () => {},
-      assistant: selectedAssistant,
-    };
-  }, [selectedAssistant]);
-
   const messages = currentSession?.messages || [];
+  // Keep messagesRef in sync so callbacks can read latest messages without stale closures
+  messagesRef.current = messages;
 
   // Compute citation data for the sidebar-selected message
   const sidebarData = useMemo(() => {
@@ -404,8 +438,8 @@ export function BudAgentScreen() {
   }, [sidebarSourcesMsgId, messages]);
 
   const closeSidebar = useCallback(() => {
-    setSidebarSourcesMsgId(null);
-  }, []);
+    openSourcesPanel(null);
+  }, [openSourcesPanel]);
 
   // Auto-scroll to bottom only when new messages are added
   useEffect(() => {
@@ -695,7 +729,7 @@ export function BudAgentScreen() {
             isStreaming: false,
           };
           setActiveArtifact(artifact);
-          setArtifactPanelVisible(true);
+          openArtifactPanel();
         },
 
         onUserQuestions: (questions, toolCallId) => {
@@ -705,6 +739,8 @@ export function BudAgentScreen() {
         onSessionCompacted: (newSessionId) => {
           // Seamlessly switch to the new compacted session (task 4.7)
           switchToSession(newSessionId);
+          // Re-fetch sub-sessions since parent references may have changed
+          refetchSubSessions();
         },
 
         onSessionUpdated: (_sessionId, source, _messageCount) => {
@@ -717,7 +753,56 @@ export function BudAgentScreen() {
           );
         },
 
+        // ── Sub-session lifecycle callbacks ──
+        onSubSessionSpawned: (data) => {
+          // Find the last agent message ID to anchor the sub-session card
+          const currentMsgs = messagesRef.current;
+          const lastAgentMsg = [...currentMsgs].reverse().find((m) => m.role === "agent");
+          handleSubSessionSpawned(data, lastAgentMsg?.id);
+        },
+        onSubSessionProgress: (data) => {
+          handleSubSessionProgress(data);
+        },
+        onSubSessionComplete: (data) => {
+          handleSubSessionComplete(data);
+          // Add the result message directly if present.
+          // Don't use reloadSessionMessages — it replaces all messages
+          // and can race with streaming state from execute().
+          if (data.message && currentSessionId) {
+            const existing = messagesRef.current;
+            const alreadyExists = existing.some(
+              (m) => m.role === "agent" && m.content === data.message
+            );
+            if (!alreadyExists) {
+              addMessage(currentSessionId, {
+                role: "agent",
+                content: data.message,
+                status: "complete",
+              });
+            }
+          }
+        },
+        onSubSessionFailed: (data) => {
+          handleSubSessionFailed(data);
+          if (data.message && currentSessionId) {
+            const existing = messagesRef.current;
+            const alreadyExists = existing.some(
+              (m) => m.role === "agent" && m.content === data.message
+            );
+            if (!alreadyExists) {
+              addMessage(currentSessionId, {
+                role: "agent",
+                content: data.message,
+                status: "complete",
+              });
+            }
+          }
+        },
+
         onReconnected: async (sessionId: string) => {
+          // Re-fetch sub-session list after reconnect (task 10.1)
+          refetchSubSessions();
+
           // Socket.IO reconnected while an execution was in flight.
           // The backend now emits to session rooms, so events should
           // resume.  Poll execution status to handle the case where
@@ -812,6 +897,12 @@ export function BudAgentScreen() {
     createOperationHash,
     isOperationAllowed,
     reloadSessionMessages,
+    openArtifactPanel,
+    refetchSubSessions,
+    handleSubSessionSpawned,
+    handleSubSessionProgress,
+    handleSubSessionComplete,
+    handleSubSessionFailed,
   ]);
 
   const stopProcessing = useCallback(() => {
@@ -959,6 +1050,7 @@ export function BudAgentScreen() {
 
   const handleArtifactClose = useCallback(() => {
     setArtifactPanelVisible(false);
+    setActiveRightPanel("none");
   }, []);
 
   const handleArtifactSendMessage = useCallback(
@@ -1104,297 +1196,137 @@ export function BudAgentScreen() {
           </div>
         ) : (
           <div className="mx-auto py-4 px-4 lg:px-5 w-[90%] max-w-message-max" data-testid="agent-messages-list">
-            {messages.map((msg: AgentMessage) =>
-              msg.role === "user" ? (
-                <div
-                  key={msg.id}
-                  className="pt-5 pb-1 w-full flex"
-                  data-testid="agent-message-user"
-                >
-                  <div
-                    className="ml-auto max-w-[25rem] whitespace-break-spaces rounded-t-16 rounded-bl-16 py-2 px-3"
-                    style={{
-                      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.06)',
-                    }}
-                  >
-                    <Text mainContentBody>{msg.content}</Text>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  key={msg.id}
-                  className="py-5 relative flex"
-                  data-testid="agent-message-agent"
-                >
-                  <div className="w-full max-w-message-max mx-auto">
-                    <div className="flex items-start">
-                      {selectedAssistant && (
-                        <AgentIcon agent={selectedAssistant} />
-                      )}
-                      <div className="w-full ml-4">
-                        <div className="max-w-content-max break-words">
-                          {/* Initial loading dot before any packets arrive */}
-                          {msg.status === "thinking" && !msg.content && (!msg.packets || msg.packets.length === 0) && (
-                            <div className="py-1"><BlinkingDot /></div>
-                          )}
-
-                          {/* Status indicator - only for error/stopped states */}
-                          {msg.status && msg.status !== "complete" && msg.status !== "thinking" && msg.status !== "streaming" && (
-                            <span
-                              data-testid="agent-message-status"
-                              className={cn(
-                                "text-xs mb-1 block",
-                                msg.status === "error"
-                                  ? "text-red-500"
-                                  : msg.status === "stopped"
-                                    ? "text-yellow-500"
-                                    : "text-text-subtle"
-                              )}
-                            >
-                              {msg.status === "error" && "error"}
-                              {msg.status === "stopped" && "stopped"}
-                            </span>
-                          )}
-
-                          {/* Interleaved tool calls + content rendering */}
-                          {msg.packets && msg.packets.length > 0 && minimalChatState && msg.packets.some((p) => p.obj && isToolPacket(p, false)) ? (() => {
-                            const grouped = groupPacketsByInd(msg.packets);
-                            const segments = buildInterleavedSegments(grouped);
-                            const isMessageDone = msg.status === "complete" || msg.status === "error" || msg.status === "stopped";
-                            const hasStop = msg.packets.some((p) => p.obj?.type === "stop");
-                            const citationData = extractCitationData(msg.packets);
-                            const hasCitations = citationData.citations.length > 0;
-                            const isSourcesExpanded = sidebarSourcesMsgId === msg.id;
-                            const lastToolSegIdx = segments.reduce((acc, seg, idx) => seg.type === "tools" ? idx : acc, -1);
-                            const lastDisplaySegIdx = segments.reduce((acc, seg, idx) => seg.type === "display" ? idx : acc, -1);
-
-                            return (
-                              <>
-                                {segments.map((segment, segIdx) => {
-                                  if (segment.type === "tools") {
-                                    const isLastToolSeg = segIdx === lastToolSegIdx;
-                                    // Complete if: not the last tool segment, OR message is done,
-                                    // OR there's a display segment after this tool segment
-                                    const hasFollowingDisplay = lastDisplaySegIdx > segIdx;
-                                    const segComplete = !isLastToolSeg || isMessageDone || hasFollowingDisplay;
-                                    return (
-                                      <div key={`tools-${segment.groups[0]?.ind ?? segIdx}`} className="mb-3" data-testid="agent-tool-calls">
-                                        <MultiToolRenderer
-                                          packetGroups={segment.groups}
-                                          chatState={minimalChatState}
-                                          isComplete={segComplete}
-                                          isFinalAnswerComing={segComplete}
-                                          stopPacketSeen={hasStop}
-                                        />
-                                      </div>
-                                    );
-                                  }
-
-                                  // Display segment — extract text from packets
-                                  const segmentText = getTextContent(segment.group.packets);
-                                  if (!segmentText) return null;
-                                  const isLastDisplay = segIdx === lastDisplaySegIdx;
-
-                                  return (
-                                    <div key={`display-${segment.group.ind}`}>
-                                      <AgentMessageContent
-                                        content={segmentText}
-                                        docs={citationData.docs}
-                                        assistant={selectedAssistant}
-                                      />
-                                      {isLastDisplay && isMessageDone && (
-                                        <div className="flex items-center gap-x-0.5 mt-1">
-                                          <IconButton
-                                            icon={copiedMessageId === msg.id ? SvgCheck : SvgCopy}
-                                            onClick={() => {
-                                              copyAll(msg.content);
-                                              setCopiedMessageId(msg.id);
-                                              if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-                                              copyTimeoutRef.current = setTimeout(() => setCopiedMessageId(null), 2000);
-                                            }}
-                                            tertiary
-                                            tooltip={copiedMessageId === msg.id ? "Copied!" : "Copy"}
-                                          />
-                                          {hasCitations && (
-                                            <CitedSourcesToggle
-                                              citations={citationData.citations}
-                                              documentMap={citationData.documentMap}
-                                              nodeId={0}
-                                              onToggle={() => setSidebarSourcesMsgId(isSourcesExpanded ? null : msg.id)}
-                                            />
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-
-                                {/* Fallback: tools exist but no display segments yet — show msg.content if available */}
-                                {lastDisplaySegIdx === -1 && msg.content && (
-                                  <>
-                                    <AgentMessageContent
-                                      content={msg.content}
-                                      docs={citationData.docs}
-                                      assistant={selectedAssistant}
-                                    />
-                                    {isMessageDone && (
-                                      <div className="flex items-center gap-x-0.5 mt-1">
-                                        <IconButton
-                                          icon={copiedMessageId === msg.id ? SvgCheck : SvgCopy}
-                                          onClick={() => {
-                                            copyAll(msg.content);
-                                            setCopiedMessageId(msg.id);
-                                            if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-                                            copyTimeoutRef.current = setTimeout(() => setCopiedMessageId(null), 2000);
-                                          }}
-                                          tertiary
-                                          tooltip={copiedMessageId === msg.id ? "Copied!" : "Copy"}
-                                        />
-                                        {hasCitations && (
-                                          <CitedSourcesToggle
-                                            citations={citationData.citations}
-                                            documentMap={citationData.documentMap}
-                                            nodeId={0}
-                                            onToggle={() => setSidebarSourcesMsgId(isSourcesExpanded ? null : msg.id)}
-                                          />
-                                        )}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </>
-                            );
-                          })() : msg.toolCalls && msg.toolCalls.length > 0 ? (
-                            /* Fallback for legacy sessions without packets */
-                            <div
-                              className="mb-3 space-y-2"
-                              data-testid="agent-tool-calls"
-                            >
-                              {msg.toolCalls.map((toolCall) => (
-                                <ToolCallDisplay
-                                  key={toolCall.id}
-                                  toolCall={toolCall}
-                                />
-                              ))}
-                            </div>
-                          ) : null}
-
-                          {/* Markdown content — only when NOT using interleaved rendering */}
-                          {!(msg.packets && msg.packets.length > 0 && msg.packets.some((p) => p.obj && isToolPacket(p, false))) && msg.content && (() => {
-                            const citationData = msg.packets && msg.packets.length > 0
-                              ? extractCitationData(msg.packets)
-                              : null;
-                            const hasCitations = citationData && citationData.citations.length > 0;
-                            const isSourcesExpanded = sidebarSourcesMsgId === msg.id;
-                            return (
-                              <>
-                                <AgentMessageContent
-                                  content={msg.content}
-                                  docs={citationData?.docs}
-                                  assistant={selectedAssistant}
-                                />
-
-                                {/* Copy button + Sources toggle on the same row */}
-                                {msg.status === "complete" && (
-                                  <div className="flex items-center gap-x-0.5 mt-1">
-                                    <IconButton
-                                      icon={
-                                        copiedMessageId === msg.id
-                                          ? SvgCheck
-                                          : SvgCopy
-                                      }
-                                      onClick={() => {
-                                        copyAll(msg.content);
-                                        setCopiedMessageId(msg.id);
-                                        if (copyTimeoutRef.current) {
-                                          clearTimeout(copyTimeoutRef.current);
-                                        }
-                                        copyTimeoutRef.current = setTimeout(() => {
-                                          setCopiedMessageId(null);
-                                        }, 2000);
-                                      }}
-                                      tertiary
-                                      tooltip={
-                                        copiedMessageId === msg.id
-                                          ? "Copied!"
-                                          : "Copy"
-                                      }
-                                    />
-                                    {hasCitations && (
-                                      <CitedSourcesToggle
-                                        citations={citationData.citations}
-                                        documentMap={citationData.documentMap}
-                                        nodeId={0}
-                                        onToggle={() => {
-                                          setSidebarSourcesMsgId(
-                                            isSourcesExpanded ? null : msg.id
-                                          );
-                                        }}
-                                      />
-                                    )}
-                                  </div>
-                                )}
-
-                              </>
-                            );
-                          })()}
-
-                          {/* Artifact card — render from artifact_generation OR custom_tool_delta with openui_response */}
-                          {msg.packets?.map((p, pIdx) => {
-                            if (p.obj?.type === PacketType.ARTIFACT_GENERATION) {
-                              const artifactObj = p.obj as ArtifactGeneration;
-                              return (
-                                <AgentArtifactCard
-                                  key={`artifact-${pIdx}`}
-                                  openuiLang={artifactObj.openui_lang}
-                                  title={artifactObj.title || "Artifact"}
-                                  onClick={() => {
-                                    setActiveArtifact({
-                                      openui_lang: artifactObj.openui_lang,
-                                      title: artifactObj.title || "Artifact",
-                                      isStreaming: false,
-                                    });
-                                    setArtifactPanelVisible(true);
-                                  }}
-                                />
-                              );
-                            }
-                            if (p.obj?.type === PacketType.CUSTOM_TOOL_DELTA) {
-                              const delta = p.obj as CustomToolDelta;
-                              if (delta.openui_response) {
-                                const rawTitle =
-                                  typeof delta.data === "object" && delta.data !== null
-                                    ? (delta.data as Record<string, unknown>).title
-                                    : undefined;
-                                const artifactTitle =
-                                  (typeof rawTitle === "string" ? rawTitle : null)
-                                  || detectArtifactIcon(delta.openui_response).label;
-                                return (
-                                  <AgentArtifactCard
-                                    key={`artifact-${pIdx}`}
-                                    openuiLang={delta.openui_response}
-                                    title={artifactTitle}
-                                    onClick={() => {
-                                      setActiveArtifact({
-                                        openui_lang: delta.openui_response!,
-                                        title: artifactTitle,
-                                        isStreaming: false,
-                                      });
-                                      setArtifactPanelVisible(true);
-                                    }}
-                                  />
-                                );
-                              }
-                            }
-                            return null;
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
+            {/* Sub-session status bar (task 10.6: hidden when no sub-sessions active/completed) */}
+            {(subSessionActiveCount > 0 || subSessionCompletedCount > 0) && (
+              <div className="mb-4 relative">
+                <SubSessionStatusBar
+                  activeCount={subSessionActiveCount}
+                  completedCount={subSessionCompletedCount}
+                  onViewAll={() => setSubSessionListOpen((prev) => !prev)}
+                />
+                <SubSessionListDropdown
+                  subSessions={subSessions}
+                  isOpen={subSessionListOpen}
+                  onClose={() => setSubSessionListOpen(false)}
+                  onSelect={(sessionId) => {
+                    setSubSessionListOpen(false);
+                    openThreadPanel(sessionId);
+                  }}
+                />
+              </div>
             )}
+
+            <AgentMessageList
+              messages={messages}
+              selectedAssistant={selectedAssistant}
+              isDark={isDark}
+              renderMessageExtra={(msg) => {
+                return (
+                  <>
+                    {/* Artifact card — render from artifact_generation OR custom_tool_delta with openui_response */}
+                    {msg.packets?.map((p, pIdx) => {
+                      if (p.obj?.type === PacketType.ARTIFACT_GENERATION) {
+                        const artifactObj = p.obj as ArtifactGeneration;
+                        return (
+                          <AgentArtifactCard
+                            key={`artifact-${pIdx}`}
+                            openuiLang={artifactObj.openui_lang}
+                            title={artifactObj.title || "Artifact"}
+                            onClick={() => {
+                              setActiveArtifact({
+                                openui_lang: artifactObj.openui_lang,
+                                title: artifactObj.title || "Artifact",
+                                isStreaming: false,
+                              });
+                              openArtifactPanel();
+                            }}
+                          />
+                        );
+                      }
+                      if (p.obj?.type === PacketType.CUSTOM_TOOL_DELTA) {
+                        const delta = p.obj as CustomToolDelta;
+                        if (delta.openui_response) {
+                          const rawTitle =
+                            typeof delta.data === "object" && delta.data !== null
+                              ? (delta.data as Record<string, unknown>).title
+                              : undefined;
+                          const artifactTitle =
+                            (typeof rawTitle === "string" ? rawTitle : null)
+                            || detectArtifactIcon(delta.openui_response).label;
+                          return (
+                            <AgentArtifactCard
+                              key={`artifact-${pIdx}`}
+                              openuiLang={delta.openui_response}
+                              title={artifactTitle}
+                              onClick={() => {
+                                setActiveArtifact({
+                                  openui_lang: delta.openui_response!,
+                                  title: artifactTitle,
+                                  isStreaming: false,
+                                });
+                                openArtifactPanel();
+                              }}
+                            />
+                          );
+                        }
+                      }
+                      return null;
+                    })}
+                  </>
+                );
+              }}
+              renderInlineActions={(msg) => {
+                // Find sub-sessions anchored to this message.
+                const spawnedSessionIds = new Set<string>();
+
+                // Check toolCalls for spawn_sub_session results
+                if (msg.toolCalls) {
+                  for (const tc of msg.toolCalls) {
+                    if (tc.name === "spawn_sub_session" && tc.output) {
+                      try {
+                        const parsed = typeof tc.output === "string" ? JSON.parse(tc.output) : tc.output;
+                        if (parsed?.session_id) spawnedSessionIds.add(parsed.session_id);
+                      } catch { /* ignore */ }
+                    }
+                  }
+                }
+
+                // Check packets for spawn_sub_session tool results
+                if (msg.packets) {
+                  for (const p of msg.packets) {
+                    const obj = p.obj as Record<string, unknown> | undefined;
+                    if (obj?.tool_name === "spawn_sub_session" && obj?.data) {
+                      try {
+                        const data = typeof obj.data === "string" ? JSON.parse(obj.data) : obj.data;
+                        if (data?.session_id) spawnedSessionIds.add(data.session_id as string);
+                      } catch { /* ignore */ }
+                    }
+                  }
+                }
+
+                // In-memory map for live spawns
+                for (const s of subSessions) {
+                  if (subSessionSpawnedByMessage.get(s.session_id) === msg.id) {
+                    spawnedSessionIds.add(s.session_id);
+                  }
+                }
+
+                const anchored = subSessions.filter((s) => spawnedSessionIds.has(s.session_id));
+                if (anchored.length === 0) return null;
+
+                return (
+                  <>
+                    {anchored.map((session) => (
+                      <SubSessionChip
+                        key={session.session_id}
+                        session={session}
+                        onClick={openThreadPanel}
+                      />
+                    ))}
+                  </>
+                );
+              }}
+            />
 
             <div ref={messagesEndRef} />
           </div>
@@ -1508,6 +1440,34 @@ export function BudAgentScreen() {
           )}
         </div>
       </div>
+
+      {/* Sub-Session Thread Panel Drawer (task 10.5: survives compaction since it views sub-session independently) */}
+      <div
+        className={cn(
+          "flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
+          activeRightPanel === "thread" && threadPanelSessionId ? "w-[400px]" : "w-[0px]"
+        )}
+      >
+        <div className="h-full w-[400px]">
+          <SubSessionThreadPanel
+            sessionId={threadPanelSessionId}
+            onClose={closeThreadPanel}
+          />
+        </div>
+      </div>
+
+      {/* Sub-Session Spin Off Dialog */}
+      {currentSessionId && (
+        <SubSessionSpinOffDialog
+          isOpen={spinOffDialogOpen}
+          onClose={() => setSpinOffDialogOpen(false)}
+          sourceContent={spinOffSourceContent}
+          parentSessionId={currentSessionId}
+          onSpawned={(sessionId) => {
+            openThreadPanel(sessionId);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1635,91 +1595,3 @@ function AgentSourcesSidebar({
   );
 }
 
-/**
- * Display component for a single tool call.
- */
-function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const getStatusIcon = () => {
-    switch (toolCall.status) {
-      case "running":
-        return (
-          <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-        );
-      case "complete":
-        return <FiCheck className="w-4 h-4 text-green-500" />;
-      case "error":
-        return <FiX className="w-4 h-4 text-red-500" />;
-      case "approval_required":
-        return <FiAlertCircle className="w-4 h-4 text-yellow-500" />;
-      default:
-        return <FiTool className="w-4 h-4 text-text-subtle" />;
-    }
-  };
-
-  const getStatusText = () => {
-    switch (toolCall.status) {
-      case "running":
-        return "Running...";
-      case "complete":
-        return "Complete";
-      case "error":
-        return "Error";
-      case "approval_required":
-        return "Approval Required";
-      default:
-        return "";
-    }
-  };
-
-  return (
-    <div className="border border-border rounded-lg overflow-hidden" data-testid={`tool-call-${toolCall.name}`}>
-      {/* Header */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        data-testid={`tool-call-header-${toolCall.name}`}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-background hover:bg-background-emphasis transition-colors text-left"
-      >
-        {getStatusIcon()}
-        <span className="flex-1 text-xs font-medium truncate" data-testid="tool-call-name">
-          {toolCall.name}
-        </span>
-        <span className="text-xs text-text-subtle" data-testid={`tool-call-status-${toolCall.status}`}>{getStatusText()}</span>
-      </button>
-
-      {/* Expanded content */}
-      {isExpanded && (
-        <div className="border-t border-border p-3 space-y-2 text-xs">
-          {/* Input */}
-          <div>
-            <div className="font-medium text-text-subtle mb-1">Input:</div>
-            <pre className="bg-background p-2 rounded overflow-auto max-h-32">
-              {JSON.stringify(toolCall.input, null, 2)}
-            </pre>
-          </div>
-
-          {/* Output */}
-          {toolCall.output && (
-            <div>
-              <div className="font-medium text-text-subtle mb-1">Output:</div>
-              <pre className="bg-background p-2 rounded overflow-auto max-h-32 whitespace-pre-wrap">
-                {toolCall.output}
-              </pre>
-            </div>
-          )}
-
-          {/* Error */}
-          {toolCall.error && (
-            <div>
-              <div className="font-medium text-red-500 mb-1">Error:</div>
-              <pre className="bg-red-500/10 text-red-500 p-2 rounded overflow-auto max-h-32 whitespace-pre-wrap">
-                {toolCall.error}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}

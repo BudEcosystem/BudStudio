@@ -13,10 +13,19 @@ Emit routing uses Socket.IO **rooms** keyed by ``session:{session_id}``
 so that when a client disconnects and reconnects (e.g. OAuth token
 refresh), the in-flight LLM coroutine's emits reach the new sid
 automatically once the client re-joins the room via ``agent:rejoin``.
+
+Sub-session events originate from Celery workers (which do not hold
+Socket.IO connections) and are bridged into Socket.IO via Redis
+Pub/Sub.  Celery tasks publish to channel ``sub_session_events:{parent_id}``
+and the ``_sub_session_event_bridge`` background coroutine subscribes
+to the pattern ``sub_session_events:*`` and re-emits to the correct
+room.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 from http.cookies import SimpleCookie
 from typing import Any
 
@@ -62,6 +71,250 @@ sio = socketio.AsyncServer(
     logger=False,
     engineio_logger=False,
 )
+
+
+# ---------------------------------------------------------------------------
+# Sub-session event mapping & helpers
+# ---------------------------------------------------------------------------
+
+# Maps Redis ``type`` field values published by Celery tasks to the
+# Socket.IO event name emitted to the client.
+_SUB_SESSION_EVENT_MAP: dict[str, str] = {
+    "SUB_SESSION_SPAWNED": "agent:sub_session_spawned",
+    "SUB_SESSION_PROGRESS": "agent:sub_session_progress",
+    "SUB_SESSION_COMPLETE": "agent:sub_session_complete",
+    "SUB_SESSION_FAILED": "agent:sub_session_failed",
+    "SUB_SESSION_TIMEOUT": "agent:sub_session_failed",
+}
+
+
+async def emit_sub_session_event(
+    parent_session_id: str,
+    event_name: str,
+    data: dict[str, Any],
+) -> None:
+    """Emit a sub-session event to the Socket.IO room for *parent_session_id*.
+
+    This is the single entry point used both by the Redis bridge (for
+    events originating in Celery workers) and by in-process code (e.g.
+    the ``spawn_sub_session`` tool running in the API server).
+    """
+    room = f"session:{parent_session_id}"
+    try:
+        await sio.emit(event_name, data, room=room)
+    except Exception:
+        logger.warning(
+            "Failed to emit %s to room %s",
+            event_name,
+            room,
+            exc_info=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Redis Pub/Sub → Socket.IO bridge for sub-session events
+# ---------------------------------------------------------------------------
+
+_BRIDGE_CHANNEL_PATTERN = "sub_session_events:*"
+_BRIDGE_STREAM_PATTERN = "sub_session_stream:*"
+_BRIDGE_RECONNECT_DELAY_S = 3
+
+
+async def _sub_session_event_bridge() -> None:
+    """Long-running coroutine that subscribes to the Redis patterns
+    ``sub_session_events:*`` and ``sub_session_stream:*`` and re-emits
+    incoming messages to the appropriate Socket.IO room.
+
+    - ``sub_session_events:*`` carries lifecycle events (spawned, progress,
+      complete, failed) and is mapped through ``_SUB_SESSION_EVENT_MAP``.
+    - ``sub_session_stream:*`` carries real-time streaming deltas (text,
+      reasoning, tool activity) and is forwarded as-is with event name
+      ``agent:sub_session_stream``.
+
+    The coroutine reconnects automatically if the Redis connection drops.
+    """
+    from onyx.redis.redis_pool import get_async_redis_connection
+
+    while True:
+        pubsub = None
+        try:
+            redis = await get_async_redis_connection()
+            pubsub = redis.pubsub()
+            await pubsub.psubscribe(
+                _BRIDGE_CHANNEL_PATTERN,
+                _BRIDGE_STREAM_PATTERN,
+            )
+            logger.info(
+                "Sub-session event bridge: subscribed to %s and %s",
+                _BRIDGE_CHANNEL_PATTERN,
+                _BRIDGE_STREAM_PATTERN,
+            )
+
+            while True:
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=30.0,
+                )
+
+                if msg is None:
+                    # Timeout — no message, loop and poll again
+                    continue
+
+                if msg["type"] not in ("pmessage",):
+                    continue
+
+                # Extract channel name and parent_session_id.
+                # Channel formats:
+                #   ``sub_session_events:{parent_session_id}``
+                #   ``sub_session_stream:{parent_session_id}``
+                raw_channel: str | bytes = msg.get("channel", b"")
+                if isinstance(raw_channel, bytes):
+                    raw_channel = raw_channel.decode("utf-8")
+                parts = raw_channel.split(":", 1)
+                if len(parts) < 2:
+                    continue
+                channel_prefix = parts[0]
+                parent_session_id = parts[1]
+
+                # Parse the JSON payload
+                raw_data: str | bytes = msg.get("data", b"")
+                if isinstance(raw_data, bytes):
+                    raw_data = raw_data.decode("utf-8")
+                try:
+                    payload: dict[str, Any] = json.loads(raw_data)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(
+                        "Sub-session event bridge: invalid JSON on channel %s",
+                        raw_channel,
+                    )
+                    continue
+
+                if channel_prefix == "sub_session_stream":
+                    # Streaming delta from a Celery sub-session worker.
+                    # Re-emit as standard agent events to the sub-session's
+                    # own room so the thread panel's useAgentSocket receives
+                    # them like any normal Socket.IO streaming session.
+                    sub_session_id = payload.get("sub_session_id", "")
+                    sub_room = f"session:{sub_session_id}"
+                    stream_type = payload.get("type", "")
+
+                    # Map SubSessionEmitter types → standard Socket.IO events
+                    _STREAM_TYPE_MAP: dict[str, tuple[str, dict[str, Any]]] = {}
+                    step = payload.get("step", 0)
+
+                    if stream_type == "text_delta":
+                        event_name = "agent:message_delta"
+                        event_data = {
+                            "session_id": sub_session_id,
+                            "ind": step,
+                            "content": payload.get("delta", ""),
+                        }
+                    elif stream_type == "reasoning_delta":
+                        event_name = "agent:reasoning_delta"
+                        event_data = {
+                            "session_id": sub_session_id,
+                            "ind": step,
+                            "reasoning": payload.get("delta", ""),
+                        }
+                    elif stream_type == "tool_start":
+                        event_name = "tool:start"
+                        event_data = {
+                            "session_id": sub_session_id,
+                            "ind": step,
+                            "tool_name": payload.get("tool_name", ""),
+                        }
+                    elif stream_type == "tool_result":
+                        event_name = "tool:delta"
+                        event_data = {
+                            "session_id": sub_session_id,
+                            "ind": step,
+                            "tool_name": payload.get("tool_name", ""),
+                            "tool_call_id": payload.get("tool_call_id", ""),
+                            "response_type": "success",
+                            "data": payload.get("result", ""),
+                        }
+                    elif stream_type == "section_end":
+                        event_name = "agent:section_end"
+                        event_data = {
+                            "session_id": sub_session_id,
+                            "ind": step,
+                        }
+                    else:
+                        # Unknown stream type — skip
+                        continue
+
+                    try:
+                        await sio.emit(event_name, event_data, room=sub_room)
+                    except Exception:
+                        logger.debug(
+                            "Failed to emit %s to room %s",
+                            event_name,
+                            sub_room,
+                            exc_info=True,
+                        )
+                    continue
+
+                # Lifecycle event — map through _SUB_SESSION_EVENT_MAP
+                event_type: str = payload.get("type", "")
+                event_name = _SUB_SESSION_EVENT_MAP.get(event_type)
+                if event_name is None:
+                    logger.debug(
+                        "Sub-session event bridge: unknown event type %s",
+                        event_type,
+                    )
+                    continue
+
+                # Inject parent_session_id into the payload for the client
+                payload["parent_session_id"] = parent_session_id
+
+                await emit_sub_session_event(
+                    parent_session_id=parent_session_id,
+                    event_name=event_name,
+                    data=payload,
+                )
+
+        except asyncio.CancelledError:
+            logger.info("Sub-session event bridge: shutting down")
+            break
+        except Exception:
+            logger.warning(
+                "Sub-session event bridge: error, reconnecting in %ds",
+                _BRIDGE_RECONNECT_DELAY_S,
+                exc_info=True,
+            )
+            await asyncio.sleep(_BRIDGE_RECONNECT_DELAY_S)
+        finally:
+            if pubsub is not None:
+                try:
+                    await pubsub.punsubscribe(
+                        _BRIDGE_CHANNEL_PATTERN,
+                        _BRIDGE_STREAM_PATTERN,
+                    )
+                    await pubsub.close()
+                except Exception:
+                    pass
+
+
+_bridge_task: asyncio.Task[None] | None = None
+
+
+def start_sub_session_event_bridge() -> None:
+    """Launch the Redis→Socket.IO bridge as a background asyncio task.
+
+    Safe to call multiple times; only the first call starts the task.
+    Must be called from within a running asyncio event loop (e.g. from
+    the FastAPI lifespan handler).
+    """
+    global _bridge_task
+    if _bridge_task is not None and not _bridge_task.done():
+        return
+
+    loop = asyncio.get_running_loop()
+    _bridge_task = loop.create_task(
+        _sub_session_event_bridge(),
+        name="sub_session_event_bridge",
+    )
+    logger.info("Sub-session event bridge task started")
 
 
 # ---------------------------------------------------------------------------

@@ -301,8 +301,19 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
     packets: list[Packet] = []
     step_counter = 0
 
-    # Sort by step_number if available, otherwise by created_at
-    non_user = [m for m in turn_messages if m.role != AgentMessageRole.USER]
+    # Sort by step_number if available, otherwise by created_at.
+    # Exclude injected messages (step_number=None with content) — these are
+    # sub-session results or notifications that get their own agent message
+    # via convertBackendMessages. Including them here would render them twice.
+    non_user = [
+        m for m in turn_messages
+        if m.role != AgentMessageRole.USER
+        and not (
+            m.role == AgentMessageRole.ASSISTANT
+            and m.step_number is None
+            and m.content
+        )
+    ]
     non_user.sort(
         key=lambda m: (
             m.step_number if m.step_number is not None else 999999,
@@ -388,32 +399,25 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
             )
     else:
         # ── Original path: no intermediate texts ──
+        # Always use step_counter for packet ind values to ensure each
+        # element gets a unique step. DB step_number values can collide
+        # (e.g. sub-sessions store multiple messages with step_number=0).
         for msg in non_user:
             if msg.role == AgentMessageRole.ASSISTANT:
                 # Emit reasoning packets for thinking_content
                 if msg.thinking_content:
-                    step = (
-                        msg.step_number
-                        if msg.step_number is not None
-                        else step_counter
-                    )
                     packets.extend(
                         _emit_reasoning_packets(
-                            msg.thinking_content, step
+                            msg.thinking_content, step_counter
                         )
                     )
-                    step_counter = step + 1
+                    step_counter += 1
 
                 # Emit message packets for content
                 if msg.content:
-                    step = (
-                        msg.step_number
-                        if msg.step_number is not None
-                        else step_counter
-                    )
                     packets.append(
                         Packet(
-                            ind=step,
+                            ind=step_counter,
                             obj=MessageStart(
                                 content=msg.content,
                                 final_documents=None,
@@ -422,7 +426,7 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
                     )
                     packets.append(
                         Packet(
-                            ind=step,
+                            ind=step_counter,
                             obj=MessageDelta(content=msg.content),
                         )
                     )
@@ -430,22 +434,21 @@ def _turn_to_packets(turn_messages: list[AgentMessage]) -> list[Packet]:
                     # Emit citation packets if ui_spec has citation data
                     if msg.ui_spec and "citations" in msg.ui_spec:
                         packets.extend(
-                            _emit_citation_packets(msg.ui_spec, step)
+                            _emit_citation_packets(
+                                msg.ui_spec, step_counter
+                            )
                         )
 
                     packets.append(
-                        Packet(ind=step, obj=SectionEnd())
+                        Packet(ind=step_counter, obj=SectionEnd())
                     )
-                    step_counter = step + 1
+                    step_counter += 1
 
             elif msg.role == AgentMessageRole.TOOL:
-                step = (
-                    msg.step_number
-                    if msg.step_number is not None
-                    else step_counter
+                packets.extend(
+                    _emit_tool_packets(msg, step_counter)
                 )
-                packets.extend(_emit_tool_packets(msg, step))
-                step_counter = step + 1
+                step_counter += 1
 
     # Emit artifact packet from the original path if present
     if not (intermediate_texts and tool_msgs):

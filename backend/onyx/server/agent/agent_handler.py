@@ -56,16 +56,20 @@ from onyx.db.agent import (
     set_session_execution_status,
     set_session_stop_flag,
     tool_result_exists,
+    update_session_status,
     update_tool_message_result,
     upsert_workspace_file,
 )
+from onyx.db.agent_events import consume_pending_events
 from onyx.db.agent_connector import get_tool_permissions
 from onyx.db.engine.sql_engine import get_session_with_tenant
 from onyx.db.enums import (
     AgentMessageRole,
     AgentSessionExecutionStatus,
+    AgentSessionStatus,
     AgentToolPermissionLevel,
 )
+from onyx.db.models import AgentSessionEvent
 from onyx.db.models import User
 from onyx.redis.redis_pool import get_redis_client
 from onyx.server.agent.socketio_emitter import SocketIOEmitter
@@ -78,6 +82,45 @@ logger = setup_logger()
 COMPACTION_THRESHOLD_CHARS = 300_000
 # Maximum tool calls before forcing a stop
 MAX_TOOL_CALLS = 500
+
+
+def format_event_as_system_message(event: AgentSessionEvent) -> str:
+    """Format an ``AgentSessionEvent`` into a human-readable system message.
+
+    The returned string is injected as a system-role message so the LLM
+    can react to asynchronous events (sub-session completions, cron
+    results, escalations, etc.) on the next turn.
+    """
+    payload: dict[str, object] = event.payload or {}
+    match event.event_type:
+        case "SUB_SESSION_COMPLETE":
+            return (
+                f"[Sub-session completed] Task: {payload.get('task', 'unknown')}. "
+                f"Summary: {payload.get('summary', 'No summary available')}"
+            )
+        case "SUB_SESSION_FAILED":
+            return (
+                f"[Sub-session failed] Task: {payload.get('task', 'unknown')}. "
+                f"Error: {payload.get('error', 'unknown')}. "
+                f"Partial result: {payload.get('partial_result', 'none')}"
+            )
+        case "SUB_SESSION_TIMEOUT":
+            return (
+                f"[Sub-session timed out] Task: {payload.get('task', 'unknown')}. "
+                f"Partial result: {payload.get('partial_result', 'none')}"
+            )
+        case "CRON_RESULT":
+            return (
+                f"[Cron job completed] Job: {payload.get('job_name', 'unknown')}. "
+                f"Result: {payload.get('summary', 'No summary')}"
+            )
+        case "INBOX_ESCALATION":
+            return (
+                f"[Inbox escalation] From: {payload.get('sender', 'unknown')}. "
+                f"Reason: {payload.get('reason', 'No reason given')}"
+            )
+        case _:
+            return f"[Event: {event.event_type}] {payload}"
 
 
 class AgentHandler:
@@ -206,6 +249,63 @@ class AgentHandler:
             )
         return stubs
 
+    # Sub-session event types that carry a pre-formatted message
+    _SUB_SESSION_RESULT_TYPES = {
+        "SUB_SESSION_COMPLETE",
+        "SUB_SESSION_FAILED",
+        "SUB_SESSION_TIMEOUT",
+    }
+
+    def _drain_pending_events(
+        self, db_session: Session, session_id: UUID
+    ) -> int:
+        """Consume pending events and inject each as a message.
+
+        Sub-session result events (complete/failed/timeout) are persisted
+        as ASSISTANT messages using the pre-formatted ``message`` field
+        from the payload. Other events are injected as SYSTEM messages.
+
+        Returns the number of events drained.
+        """
+        events = consume_pending_events(db_session, session_id)
+        for event in events:
+            if event.event_type in self._SUB_SESSION_RESULT_TYPES:
+                # Sub-session result — use the message from the payload
+                payload = event.payload or {}
+                msg_content = payload.get("message")
+                if isinstance(msg_content, str) and msg_content:
+                    add_session_message(
+                        db_session=db_session,
+                        session_id=session_id,
+                        role=AgentMessageRole.ASSISTANT,
+                        content=msg_content,
+                    )
+                else:
+                    # Fallback: format as system message
+                    formatted = format_event_as_system_message(event)
+                    add_session_message(
+                        db_session=db_session,
+                        session_id=session_id,
+                        role=AgentMessageRole.SYSTEM,
+                        content=formatted,
+                    )
+            else:
+                # Other events (follow-ups, cron, inbox, etc.)
+                formatted = format_event_as_system_message(event)
+                add_session_message(
+                    db_session=db_session,
+                    session_id=session_id,
+                    role=AgentMessageRole.SYSTEM,
+                    content=formatted,
+                )
+        if events:
+            logger.info(
+                "Drained %d pending events for session=%s",
+                len(events),
+                session_id,
+            )
+        return len(events)
+
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
@@ -239,7 +339,13 @@ class AgentHandler:
                 return {"error": "Session not found", "code": "INVALID_SESSION"}
 
             if session.status.is_terminal():
-                return {"error": "Session is terminated", "code": "SESSION_TERMINATED"}
+                # Allow re-activation of completed/failed sub-sessions
+                if session.session_type in ("SUB_ONE_SHOT", "SUB_PERSISTENT"):
+                    update_session_status(
+                        db_session, session_id, AgentSessionStatus.ACTIVE
+                    )
+                else:
+                    return {"error": "Session is terminated", "code": "SESSION_TERMINATED"}
 
             # Check execution_status -- reject if not IDLE
             exec_status = session.execution_status
@@ -262,6 +368,11 @@ class AgentHandler:
                 role=AgentMessageRole.USER,
                 content=message,
             )
+
+            # Drain any pending async events (sub-session completions,
+            # cron results, escalations, etc.) before the LLM turn so
+            # the model can react to them.
+            self._drain_pending_events(db_session, session_id)
 
         logger.info(
             "agent:execute session=%s user=%s message_len=%d",
@@ -459,6 +570,8 @@ class AgentHandler:
             set_session_execution_status(
                 db_session, session_id, AgentSessionExecutionStatus.RUNNING
             )
+            # Drain async events before the next LLM turn
+            self._drain_pending_events(db_session, session_id)
 
         await self._run_llm_turn(
             session_id=session_id,
