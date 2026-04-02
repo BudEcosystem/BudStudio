@@ -16,7 +16,7 @@ describe("CliAgentTool", () => {
   describe("initialization", () => {
     it("should have correct name and description", () => {
       expect(tool.name).toBe("cli_agent");
-      expect(tool.description).toContain("Codex agent");
+      expect(tool.description).toContain("BudCode agent");
       expect(tool.description).toContain("autonomous");
     });
 

@@ -136,14 +136,14 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "cli_agent",
     description:
-      "Spawn Codex CLI as an autonomous sub-agent for long-running coding tasks. Returns immediately with session ID. Codex runs in the background and automatically resumes the agent when complete.",
+      "Spawn BudCode CLI as an autonomous sub-agent for long-running coding tasks. Returns immediately with session ID. BudCode runs in the background and automatically resumes the agent when complete.",
     category: "local",
     requiresApproval: true,
     parameters: [
       {
         name: "prompt",
         type: "string",
-        description: "The task/instruction to give to Codex.",
+        description: "The task/instruction to give to BudCode.",
         required: true,
       },
       {

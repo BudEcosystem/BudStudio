@@ -25,6 +25,12 @@ interface ToolRequestPayload {
   tool_name: string;
   tool_input: Record<string, unknown>;
   tool_call_id: string;
+  /** Backend-provided LLM credentials for tools that need them (e.g. cli_agent). */
+  llm_config?: {
+    api_key: string;
+    api_base: string | null;
+    model: string;
+  };
 }
 
 interface ToolResultPayload {
@@ -129,7 +135,7 @@ export class LocalGateway {
   }
 
   private async handleToolRequest(data: ToolRequestPayload): Promise<void> {
-    const { tool_name, tool_input, tool_call_id, session_id } = data;
+    const { tool_name, tool_input, tool_call_id, session_id, llm_config } = data;
     this.onEvent("tool:request", data);
 
     if (!this.registry) {
@@ -150,6 +156,12 @@ export class LocalGateway {
 
     debugLog(`handleToolRequest: tool=${tool_name}, toolCallId=${tool_call_id}, socketConnected=${this.socket?.connected}`);
 
+    // Inject backend-provided LLM credentials into tool_input for tools
+    // that need them (e.g. cli_agent spawns budcode which needs API keys).
+    const enrichedInput = llm_config
+      ? { ...tool_input, _llm_config: llm_config }
+      : tool_input;
+
     // Keepalive: emit a lightweight heartbeat every 25s so Socket.IO's
     // transport stays active during long-running tool execution.
     const keepalive = setInterval(() => {
@@ -162,7 +174,7 @@ export class LocalGateway {
       // pending Socket.IO ping/pong frames are processed first.
       const output = await new Promise<string>((resolve, reject) => {
         setImmediate(async () => {
-          try { resolve(await tool.execute(tool_input)); }
+          try { resolve(await tool.execute(enrichedInput)); }
           catch (err) { reject(err); }
         });
       });
