@@ -45,6 +45,16 @@ _MAX_CONTEXT_CHARS = 16_000
 PERSISTENT_SUB_SESSION_EXPIRY_SECONDS: int = 3600  # 1 hour
 
 
+def _short_label(text: str, max_words: int = 5) -> str:
+    """Truncate text to first N words for display as a short label."""
+    if not text:
+        return ""
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]) + "..."
+
+
 # ---------------------------------------------------------------------------
 # Service functions
 # ---------------------------------------------------------------------------
@@ -92,13 +102,9 @@ def spawn_sub_session(
     # 4. Create the sub-session
     # Use task_name as the short title; auto-derive from first few words if not provided
     if task_name:
-        title = task_name
+        title = _short_label(task_name)
     else:
-        # Take first 5 words of the task as a short label
-        words = task.split()[:5]
-        title = " ".join(words)
-        if len(words) < len(task.split()):
-            title += "..."
+        title = _short_label(task)
     session = create_sub_session(
         db_session=db_session,
         user_id=user_id,
@@ -189,16 +195,20 @@ def list_sub_sessions(
 
     results: list[dict[str, object]] = []
     for s in sessions:
+        # Count actual turns (USER messages) instead of max_turns limit
+        user_msg_count = sum(
+            1 for m in (s.messages or []) if m.role.value == "USER"
+        )
         results.append({
             "session_id": str(s.id),
             "task": s.task_description or "",
-            "task_name": s.title or s.task_description or "",
+            "task_name": _short_label(s.title or s.task_description or ""),
             "status": s.status.value,
             "session_type": s.session_type or "",
             "created_at": s.created_at.isoformat() if s.created_at else "",
             "tokens_used": s.total_tokens_used,
             "tool_calls": s.total_tool_calls,
-            "turns": s.max_turns,
+            "turns": user_msg_count,
         })
     return results
 
@@ -226,7 +236,7 @@ def inspect_sub_session(
         "updated_at": session.updated_at.isoformat() if session.updated_at else "",
         "tokens_used": session.total_tokens_used,
         "tool_calls": session.total_tool_calls,
-        "turns": session.max_turns,
+        "turns": sum(1 for m in (session.messages or []) if m.role.value == "USER"),
         "parent_session_id": str(session.parent_session_id) if session.parent_session_id else None,
     }
 

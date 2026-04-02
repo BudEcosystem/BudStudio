@@ -28,7 +28,6 @@ import {
 import {
   SubSessionStatusBar,
   SubSessionThreadPanel,
-  SubSessionChip,
   SubSessionSpinOffDialog,
   SubSessionListDropdown,
 } from "./sub-sessions";
@@ -364,18 +363,160 @@ export function BudAgentScreen() {
     setSidebarSourcesMsgId(msgId);
   }, []);
 
+  // ── Thread map: anchor_message_id -> { session_id, reply_count } ──
+  const [threadMap, setThreadMap] = useState<Map<string, { sessionId: string; replyCount: number; label?: string; lastReplyAt?: string }>>(
+    () => new Map()
+  );
+
+  const fetchThreadMap = useCallback(async () => {
+    if (!currentSessionId) return;
+    try {
+      const res = await fetch(`/api/agent/sessions/${currentSessionId}/threads`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const map = new Map<string, { sessionId: string; replyCount: number; label?: string; lastReplyAt?: string }>();
+      for (const [msgId, info] of Object.entries(data.threads || {})) {
+        const t = info as { session_id: string; reply_count: number; title?: string; last_reply_at?: string };
+        map.set(msgId, {
+          sessionId: t.session_id,
+          replyCount: t.reply_count,
+          label: t.title && t.title !== "Thread" ? t.title : undefined,
+          lastReplyAt: t.last_reply_at || undefined,
+        });
+      }
+      setThreadMap(map);
+    } catch { /* ignore */ }
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    fetchThreadMap();
+  }, [fetchThreadMap]);
+
+  // Helper: find spawned sub-session IDs from a message's toolCalls/packets
+  const getSpawnedSessionIds = useCallback(
+    (msg: AgentMessage) => {
+      const ids = new Set<string>();
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          if (tc.name === "spawn_sub_session" && tc.output) {
+            try {
+              const parsed = typeof tc.output === "string" ? JSON.parse(tc.output) : tc.output;
+              if (parsed?.session_id) ids.add(parsed.session_id);
+            } catch { /* ignore */ }
+          }
+        }
+      }
+      if (msg.packets) {
+        for (const p of msg.packets) {
+          const obj = p.obj as unknown as Record<string, unknown> | undefined;
+          if (obj?.tool_name === "spawn_sub_session" && obj?.data) {
+            try {
+              const data = typeof obj.data === "string" ? JSON.parse(obj.data) : obj.data;
+              if (data?.session_id) ids.add(data.session_id as string);
+            } catch { /* ignore */ }
+          }
+        }
+      }
+      for (const s of subSessions) {
+        if (subSessionSpawnedByMessage.get(s.session_id) === msg.id) {
+          ids.add(s.session_id);
+        }
+      }
+      // Fallback: check if any sub-session ID appears in the message content
+      // (covers cases where tool output isn't in packets after reload)
+      if (ids.size === 0 && msg.content) {
+        for (const s of subSessions) {
+          if (msg.content.includes(s.session_id)) {
+            ids.add(s.session_id);
+          }
+        }
+      }
+      return ids;
+    },
+    [subSessions, subSessionSpawnedByMessage]
+  );
+
+  // Derived: message ID -> thread info for AgentMessageList
+  // Merges DB threads (anchor_message_id) and spawned sub-sessions (from tool calls)
+  const threadReplyCountMap = useMemo(() => {
+    const map = new Map<string, { count: number; label?: string; lastReplyAt?: string }>();
+    // DB threads
+    Array.from(threadMap.entries()).forEach(([msgId, info]) => {
+      map.set(msgId, { count: info.replyCount, label: info.label, lastReplyAt: info.lastReplyAt });
+    });
+    // Spawned sub-sessions: scan all messages for spawn_sub_session tool results
+    for (const msg of messagesRef.current) {
+      if (msg.role !== "agent") continue;
+      const spawnedIds = getSpawnedSessionIds(msg);
+      if (spawnedIds.size > 0 && !map.has(msg.id)) {
+        const anchored = subSessions.filter((s) => spawnedIds.has(s.session_id));
+        const label = anchored[0]?.task_name || undefined;
+        const totalTurns = anchored.reduce((sum, s) => sum + s.turns_completed, 0);
+        // Use completed_at or created_at as last reply time for sub-sessions
+        const lastReply = anchored[0]?.completed_at || anchored[0]?.created_at || undefined;
+        map.set(msg.id, { count: totalTurns, label, lastReplyAt: lastReply });
+      }
+    }
+    return map;
+  }, [threadMap, subSessions, getSpawnedSessionIds]);
+
+  const handleThreadClick = useCallback(
+    async (msg: AgentMessage) => {
+      if (!currentSessionId) return;
+
+      // Check if a DB thread already exists for this message
+      const existing = threadMap.get(msg.id);
+      if (existing) {
+        openThreadPanel(existing.sessionId);
+        return;
+      }
+
+      // Check if a spawned sub-session exists for this message
+      const spawnedIds = getSpawnedSessionIds(msg);
+      if (spawnedIds.size > 0) {
+        // Open the first spawned sub-session
+        const firstId = Array.from(spawnedIds)[0]!;
+        openThreadPanel(firstId);
+        return;
+      }
+
+      // Create new thread
+      try {
+        const res = await fetch(
+          `/api/agent/sessions/${currentSessionId}/messages/${msg.id}/thread`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }
+        );
+        if (!res.ok) {
+          console.error("Failed to create thread:", res.status);
+          return;
+        }
+        const data = await res.json();
+        setThreadMap((prev) => {
+          const next = new Map(prev);
+          next.set(msg.id, { sessionId: data.session_id, replyCount: 0 });
+          return next;
+        });
+        openThreadPanel(data.session_id);
+      } catch (err) {
+        console.error("Error creating thread:", err);
+      }
+    },
+    [currentSessionId, threadMap, openThreadPanel, getSpawnedSessionIds]
+  );
+
   // ── Visibility change: re-fetch sub-sessions when tab is foregrounded ──
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         refetchSubSessions();
+        fetchThreadMap();
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refetchSubSessions]);
+  }, [refetchSubSessions, fetchThreadMap]);
 
   // Socket.IO streaming hook
   // TODO: Replace empty authToken with actual JWT/session token once auth
@@ -1220,6 +1361,8 @@ export function BudAgentScreen() {
               messages={messages}
               selectedAssistant={selectedAssistant}
               isDark={isDark}
+              onThreadClick={handleThreadClick}
+              threadMap={threadReplyCountMap}
               renderMessageExtra={(msg) => {
                 return (
                   <>
@@ -1272,57 +1415,6 @@ export function BudAgentScreen() {
                       }
                       return null;
                     })}
-                  </>
-                );
-              }}
-              renderInlineActions={(msg) => {
-                // Find sub-sessions anchored to this message.
-                const spawnedSessionIds = new Set<string>();
-
-                // Check toolCalls for spawn_sub_session results
-                if (msg.toolCalls) {
-                  for (const tc of msg.toolCalls) {
-                    if (tc.name === "spawn_sub_session" && tc.output) {
-                      try {
-                        const parsed = typeof tc.output === "string" ? JSON.parse(tc.output) : tc.output;
-                        if (parsed?.session_id) spawnedSessionIds.add(parsed.session_id);
-                      } catch { /* ignore */ }
-                    }
-                  }
-                }
-
-                // Check packets for spawn_sub_session tool results
-                if (msg.packets) {
-                  for (const p of msg.packets) {
-                    const obj = p.obj as Record<string, unknown> | undefined;
-                    if (obj?.tool_name === "spawn_sub_session" && obj?.data) {
-                      try {
-                        const data = typeof obj.data === "string" ? JSON.parse(obj.data) : obj.data;
-                        if (data?.session_id) spawnedSessionIds.add(data.session_id as string);
-                      } catch { /* ignore */ }
-                    }
-                  }
-                }
-
-                // In-memory map for live spawns
-                for (const s of subSessions) {
-                  if (subSessionSpawnedByMessage.get(s.session_id) === msg.id) {
-                    spawnedSessionIds.add(s.session_id);
-                  }
-                }
-
-                const anchored = subSessions.filter((s) => spawnedSessionIds.has(s.session_id));
-                if (anchored.length === 0) return null;
-
-                return (
-                  <>
-                    {anchored.map((session) => (
-                      <SubSessionChip
-                        key={session.session_id}
-                        session={session}
-                        onClick={openThreadPanel}
-                      />
-                    ))}
                   </>
                 );
               }}

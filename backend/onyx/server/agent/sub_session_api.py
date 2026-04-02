@@ -17,9 +17,15 @@ from onyx.agents.bud_agent.sub_session_tools import list_sub_sessions
 from onyx.agents.bud_agent.sub_session_tools import send_to_sub_session
 from onyx.agents.bud_agent.sub_session_tools import spawn_sub_session
 from onyx.auth.users import current_user
+from onyx.db.agent import add_session_message
+from onyx.db.agent import create_sub_session
 from onyx.db.agent import get_session_for_user
 from onyx.db.agent import get_session_messages
+from onyx.db.agent import get_thread_for_message
+from onyx.db.agent import get_threads_for_session
 from onyx.db.engine.sql_engine import get_session
+from onyx.db.enums import AgentMessageRole
+from onyx.db.models import AgentMessage as AgentMessageModel
 from onyx.db.models import User
 from onyx.utils.logger import setup_logger
 from shared_configs.contextvars import get_current_tenant_id
@@ -48,6 +54,26 @@ class FollowUpRequest(BaseModel):
 
 class CancelRequest(BaseModel):
     reason: str | None = None
+
+
+class CreateThreadRequest(BaseModel):
+    """Request to create a thread from a message."""
+    title: str | None = None
+
+
+class ThreadInfo(BaseModel):
+    session_id: str
+    anchor_message_id: str
+    title: str
+    status: str
+    created_at: str
+    reply_count: int
+    last_reply_at: str | None = None
+
+
+class ThreadsMapResponse(BaseModel):
+    """Map of anchor_message_id -> thread info for a session."""
+    threads: dict[str, ThreadInfo]
 
 
 class SubSessionSnapshot(BaseModel):
@@ -220,7 +246,7 @@ def get_sub_session_thread(
             session_type=session.session_type or "SUB_ONE_SHOT",
             created_at=session.created_at.isoformat() if session.created_at else "",
             completed_at=session.completed_at.isoformat() if session.completed_at else None,
-            turns_completed=session.max_turns or 0,
+            turns_completed=sum(1 for m in messages if m.role.value == "USER"),
             tokens_used=session.total_tokens_used,
             tool_calls=session.total_tool_calls,
         ),
@@ -333,3 +359,173 @@ def send_followup(
         raise HTTPException(status_code=410, detail=str(result.get("message", "Session expired")))
 
     return result
+
+
+# ==============================================================================
+# Thread Endpoints (Slack-style threads anchored to messages)
+# ==============================================================================
+
+
+@router.get("/sessions/{session_id}/threads")
+def get_session_threads(
+    session_id: UUID,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> ThreadsMapResponse:
+    """Get all threads for a session, mapped by anchor_message_id."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    parent = get_session_for_user(
+        db_session=db_session, session_id=session_id, user_id=user.id
+    )
+    if parent is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    thread_map = get_threads_for_session(db_session, session_id)
+    threads: dict[str, ThreadInfo] = {}
+
+    for msg_id, thread_session_id in thread_map.items():
+        thread_session = get_session_for_user(
+            db_session=db_session,
+            session_id=UUID(thread_session_id),
+            user_id=user.id,
+        )
+        if thread_session:
+            reply_count = sum(
+                1 for m in (thread_session.messages or [])
+                if m.role.value == "ASSISTANT"
+            )
+            # Find last reply timestamp
+            reply_msgs = [
+                m for m in (thread_session.messages or [])
+                if m.role.value == "ASSISTANT" and m.created_at
+            ]
+            last_reply_at = (
+                max(m.created_at for m in reply_msgs).isoformat()
+                if reply_msgs
+                else None
+            )
+            threads[msg_id] = ThreadInfo(
+                session_id=thread_session_id,
+                anchor_message_id=msg_id,
+                title=thread_session.title or "Thread",
+                status=thread_session.status.value,
+                created_at=thread_session.created_at.isoformat()
+                if thread_session.created_at
+                else "",
+                reply_count=reply_count,
+                last_reply_at=last_reply_at,
+            )
+
+    return ThreadsMapResponse(threads=threads)
+
+
+@router.post("/sessions/{session_id}/messages/{message_id}/thread")
+def create_or_get_thread(
+    session_id: UUID,
+    message_id: UUID,
+    request: CreateThreadRequest | None = None,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> ThreadInfo:
+    """Find or create a thread for a specific message."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    parent = get_session_for_user(
+        db_session=db_session, session_id=session_id, user_id=user.id
+    )
+    if parent is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Check if thread already exists for this message
+    existing = get_thread_for_message(db_session, message_id)
+    if existing:
+        reply_count = sum(
+            1 for m in (existing.messages or [])
+            if m.role.value == "ASSISTANT"
+        )
+        reply_msgs = [
+            m for m in (existing.messages or [])
+            if m.role.value == "ASSISTANT" and m.created_at
+        ]
+        last_reply_at = (
+            max(m.created_at for m in reply_msgs).isoformat()
+            if reply_msgs
+            else None
+        )
+        return ThreadInfo(
+            session_id=str(existing.id),
+            anchor_message_id=str(message_id),
+            title=existing.title or "Thread",
+            status=existing.status.value,
+            created_at=existing.created_at.isoformat()
+            if existing.created_at
+            else "",
+            reply_count=reply_count,
+            last_reply_at=last_reply_at,
+        )
+
+    # Get the anchor message content for context
+    msg = db_session.get(AgentMessageModel, message_id)
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    # Find the actual content: the anchor message may be an intermediate
+    # thinking-only row (empty content). Look for the nearest ASSISTANT
+    # message with content in the same session turn.
+    seed_content = msg.content or ""
+    if not seed_content:
+        from sqlalchemy import select
+        from onyx.db.models import AgentMessage as AM
+        from onyx.db.enums import AgentMessageRole as AMR
+        turn_msgs = db_session.execute(
+            select(AM.content)
+            .where(
+                AM.session_id == msg.session_id,
+                AM.role == AMR.ASSISTANT,
+                AM.content.isnot(None),
+                AM.content != "",
+                AM.created_at >= msg.created_at,
+            )
+            .order_by(AM.created_at)
+            .limit(3)
+        ).scalars().all()
+        for c in turn_msgs:
+            if c and c.strip():
+                seed_content = c
+                break
+
+    title = (request.title if request and request.title else None) or "Thread"
+    context = seed_content[:2000] if seed_content else ""
+
+    thread = create_sub_session(
+        db_session=db_session,
+        user_id=user.id,
+        parent_session_id=session_id,
+        task_description=context,
+        session_type="SUB_PERSISTENT",
+        title=title,
+        anchor_message_id=message_id,
+    )
+
+    # Seed thread with the original message content as context
+    if seed_content:
+        add_session_message(
+            db_session=db_session,
+            session_id=thread.id,
+            role=AgentMessageRole.ASSISTANT,
+            content=seed_content,
+            step_number=0,
+        )
+
+    return ThreadInfo(
+        session_id=str(thread.id),
+        anchor_message_id=str(message_id),
+        title=title,
+        status=thread.status.value,
+        created_at=thread.created_at.isoformat() if thread.created_at else "",
+        reply_count=0,
+        last_reply_at=None,
+    )

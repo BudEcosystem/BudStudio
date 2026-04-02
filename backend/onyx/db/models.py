@@ -4028,6 +4028,13 @@ class AgentSession(Base):
     task_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     max_context_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Thread support: links a thread session to the parent message it was created from
+    anchor_message_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("agent_message.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User")
@@ -4035,7 +4042,10 @@ class AgentSession(Base):
         "ModelConfiguration"
     )
     messages: Mapped[list["AgentMessage"]] = relationship(
-        "AgentMessage", back_populates="session", cascade="all, delete-orphan"
+        "AgentMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        foreign_keys="[AgentMessage.session_id]",
     )
 
     __table_args__ = (
@@ -4099,7 +4109,9 @@ class AgentMessage(Base):
 
     # Relationships
     session: Mapped["AgentSession"] = relationship(
-        "AgentSession", back_populates="messages"
+        "AgentSession",
+        back_populates="messages",
+        foreign_keys=[session_id],
     )
 
     __table_args__ = (Index("ix_agent_message_session_created", "session_id", "created_at"),)

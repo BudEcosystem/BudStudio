@@ -40,9 +40,11 @@ class SocketIOEmitter:
         if search_context is not None:
             from onyx.agents.bud_agent.citation_processor import CitationProcessor
 
-            cp = CitationProcessor(search_context)
-            if cp.active:
-                self._citation_processor = cp
+            # Always create the processor — documents may be added later
+            # by web_search / open_url tools during the turn.  The processor
+            # checks ``active`` dynamically, so it's safe to keep even when
+            # no documents exist yet.
+            self._citation_processor = CitationProcessor(search_context)
 
     # ------------------------------------------------------------------
     # Reasoning events
@@ -83,7 +85,7 @@ class SocketIOEmitter:
         )
 
     async def text_delta(self, delta: str, step: int) -> None:
-        if self._citation_processor is not None:
+        if self._citation_processor is not None and self._citation_processor.active:
             processed, new_citations = self._citation_processor.process_token(
                 delta
             )
@@ -129,7 +131,7 @@ class SocketIOEmitter:
     # ------------------------------------------------------------------
 
     async def section_end(self, step: int) -> None:
-        if self._citation_processor is not None:
+        if self._citation_processor is not None and self._citation_processor.active:
             flushed, _ = self._citation_processor.flush()
             if flushed:
                 await self._sio.emit(

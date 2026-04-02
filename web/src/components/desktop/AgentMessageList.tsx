@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
-import { FiTool, FiCheck, FiX, FiAlertCircle } from "react-icons/fi";
+import { FiTool, FiCheck, FiX, FiAlertCircle, FiMessageSquare } from "react-icons/fi";
 import { useMarkdownRenderer } from "@/app/chat/message/messageComponents/markdownUtils";
 import { copyAll } from "@/app/chat/message/copyingUtils";
 import MultiToolRenderer from "@/app/chat/message/messageComponents/MultiToolRenderer";
@@ -31,6 +31,20 @@ import type {
   CitationDelta,
   StreamingCitation,
 } from "@/app/chat/services/streamingModels";
+
+/** Format a date as relative time (e.g. "2m ago", "1h ago", "3d ago"). */
+function timeAgo(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const seconds = Math.floor((now - then) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 /**
  * Extract citation data and document map from an array of packets.
@@ -224,6 +238,14 @@ export interface AgentMessageListProps {
    * (e.g., sub-session chips). Called only for completed agent messages.
    */
   renderInlineActions?: (msg: AgentMessage) => React.ReactNode;
+  /**
+   * Callback when user clicks the thread button on a message.
+   * If provided, a thread icon appears next to the copy button.
+   * The threadMap provides existing thread reply counts keyed by message ID.
+   */
+  onThreadClick?: (msg: AgentMessage) => void;
+  /** Map of message ID -> thread info for existing threads. */
+  threadMap?: Map<string, { count: number; label?: string; lastReplyAt?: string }>;
 }
 
 /**
@@ -246,6 +268,8 @@ export function AgentMessageList({
   compact = false,
   renderMessageExtra,
   renderInlineActions,
+  onThreadClick,
+  threadMap,
 }: AgentMessageListProps) {
   const { resolvedTheme } = useTheme();
   const isDark = isDarkProp ?? resolvedTheme === "dark";
@@ -421,6 +445,50 @@ export function AgentMessageList({
                                               : "Copy"
                                           }
                                         />
+                                        {onThreadClick && (() => {
+                                            const thread = threadMap?.get(msg.id);
+                                            if (thread && (thread.count > 0 || thread.label)) {
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => onThreadClick(msg)}
+                                                  className="group/thread inline-flex items-center gap-2 px-2 py-1 rounded-lg text-text-03 hover:bg-background-tint-02 transition-colors cursor-pointer"
+                                                >
+                                                  {selectedAssistant && (
+                                                    <div className="w-5 h-5 rounded-[3px] overflow-hidden flex-shrink-0">
+                                                      <AgentIcon agent={selectedAssistant} size={20} />
+                                                    </div>
+                                                  )}
+                                                  <span className="text-xs font-medium text-text-05 max-w-[200px] truncate">
+                                                    {thread.label
+                                                      ? (thread.label.length > 40 ? thread.label.slice(0, 40) + "..." : thread.label)
+                                                      : `${thread.count} ${thread.count === 1 ? "reply" : "replies"}`}
+                                                  </span>
+                                                  {thread.lastReplyAt && (
+                                                    <>
+                                                      <span className="text-xs text-text-02 group-hover/thread:hidden">
+                                                        Last reply {timeAgo(thread.lastReplyAt)}
+                                                      </span>
+                                                      <span className="text-xs text-text-02 hidden group-hover/thread:inline">
+                                                        View thread
+                                                      </span>
+                                                    </>
+                                                  )}
+                                                </button>
+                                              );
+                                            }
+                                            return (
+                                              <button
+                                                type="button"
+                                                onClick={() => onThreadClick(msg)}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-text-03 hover:text-text-04 hover:bg-background-tint-02 transition-colors"
+                                                title="Continue in thread"
+                                              >
+                                                <FiMessageSquare className="w-4 h-4" />
+                                                <span className="text-xs">Continue in thread</span>
+                                              </button>
+                                            );
+                                          })()}
                                         {renderInlineActions?.(msg)}
                                       </div>
                                     )}
@@ -463,6 +531,46 @@ export function AgentMessageList({
                                             : "Copy"
                                         }
                                       />
+                                      {onThreadClick && (() => {
+                                        const thread = threadMap?.get(msg.id);
+                                        if (thread && (thread.count > 0 || thread.label)) {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => onThreadClick(msg)}
+                                              className="group/thread inline-flex items-center gap-2 px-2 py-2 rounded-lg border border-border/40 text-text-03 hover:bg-background-tint-02 transition-colors cursor-pointer"
+                                            >
+                                              {selectedAssistant && (
+                                                <div className="w-5 h-5 rounded-[3px] overflow-hidden flex-shrink-0">
+                                                  <AgentIcon agent={selectedAssistant} size={20} />
+                                                </div>
+                                              )}
+                                              <span className="text-xs font-medium text-text-05 max-w-[200px] truncate">
+                                                {thread.label
+                                                  ? (thread.label.length > 40 ? thread.label.slice(0, 40) + "..." : thread.label)
+                                                  : `${thread.count} ${thread.count === 1 ? "reply" : "replies"}`}
+                                              </span>
+                                              {thread.lastReplyAt && (
+                                                <>
+                                                  <span className="text-xs text-text-02 group-hover/thread:hidden">Last reply {timeAgo(thread.lastReplyAt)}</span>
+                                                  <span className="text-xs text-text-02 hidden group-hover/thread:inline">View thread</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          );
+                                        }
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => onThreadClick(msg)}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-text-03 hover:text-text-04 hover:bg-background-tint-02 transition-colors"
+                                            title="Continue in thread"
+                                          >
+                                            <FiMessageSquare className="w-4 h-4" />
+                                            <span className="text-xs">Continue in thread</span>
+                                          </button>
+                                        );
+                                      })()}
                                       {renderInlineActions?.(msg)}
                                     </div>
                                   )}
@@ -534,6 +642,44 @@ export function AgentMessageList({
                                       : "Copy"
                                   }
                                 />
+                                {onThreadClick && (() => {
+                                  const thread = threadMap?.get(msg.id);
+                                  if (thread && (thread.count > 0 || thread.label)) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => onThreadClick(msg)}
+                                        className="group/thread inline-flex items-center gap-2 px-2 py-1 rounded-lg border border-border/40 text-text-03 hover:bg-background-tint-02 transition-colors cursor-pointer"
+                                      >
+                                        {selectedAssistant && (
+                                          <div className="w-5 h-5 rounded-[3px] overflow-hidden flex-shrink-0">
+                                            <AgentIcon agent={selectedAssistant} size={20} />
+                                          </div>
+                                        )}
+                                        <span className="text-xs font-medium text-text-05 max-w-[200px] truncate">
+                                          {thread.label || `${thread.count} ${thread.count === 1 ? "reply" : "replies"}`}
+                                        </span>
+                                        {thread.lastReplyAt && (
+                                          <>
+                                            <span className="text-xs text-text-02 group-hover/thread:hidden">Last reply {timeAgo(thread.lastReplyAt)}</span>
+                                            <span className="text-xs text-text-02 hidden group-hover/thread:inline">View thread</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    );
+                                  }
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => onThreadClick(msg)}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-text-03 hover:text-text-04 hover:bg-background-tint-02 transition-colors"
+                                      title="Continue in thread"
+                                    >
+                                      <FiMessageSquare className="w-4 h-4" />
+                                      <span className="text-xs">Continue in thread</span>
+                                    </button>
+                                  );
+                                })()}
                                 {renderInlineActions?.(msg)}
                               </div>
                             )}

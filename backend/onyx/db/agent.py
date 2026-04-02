@@ -665,6 +665,7 @@ def create_sub_session(
     max_context_tokens: int | None = None,
     max_turns: int | None = None,
     title: str | None = None,
+    anchor_message_id: UUID | None = None,
 ) -> AgentSession:
     """Create a sub-session linked to a parent session.
 
@@ -681,12 +682,43 @@ def create_sub_session(
         session_type=session_type,
         max_context_tokens=max_context_tokens,
         max_turns=max_turns,
+        anchor_message_id=anchor_message_id,
         status=AgentSessionStatus.ACTIVE,
     )
     db_session.add(session)
     db_session.commit()
     db_session.refresh(session)
     return session
+
+
+def get_thread_for_message(
+    db_session: Session,
+    anchor_message_id: UUID,
+) -> AgentSession | None:
+    """Find an existing thread session anchored to a specific message."""
+    stmt = (
+        select(AgentSession)
+        .where(AgentSession.anchor_message_id == anchor_message_id)
+        .order_by(desc(AgentSession.created_at))
+        .limit(1)
+    )
+    return db_session.execute(stmt).scalar_one_or_none()
+
+
+def get_threads_for_session(
+    db_session: Session,
+    parent_session_id: UUID,
+) -> dict[str, str]:
+    """Return a map of anchor_message_id -> thread session_id for all threads in a parent session."""
+    stmt = (
+        select(AgentSession.anchor_message_id, AgentSession.id)
+        .where(
+            AgentSession.parent_session_id == parent_session_id,
+            AgentSession.anchor_message_id.isnot(None),
+        )
+    )
+    rows = db_session.execute(stmt).all()
+    return {str(row[0]): str(row[1]) for row in rows}
 
 
 def count_active_sub_sessions(

@@ -65,8 +65,14 @@ export function useSubSessions(
           console.error("Failed to fetch sub-sessions:", res.status);
           return;
         }
-        const data = (await res.json()) as SubSessionsResponse;
-        setSubSessions(data.sub_sessions || []);
+        const data = await res.json();
+        const mapped: SubSessionSummary[] = (data.sub_sessions || []).map(
+          (s: SubSessionSummary & { turns?: number }) => ({
+            ...s,
+            turns_completed: s.turns_completed ?? s.turns ?? 0,
+          })
+        );
+        setSubSessions(mapped);
       } catch (err) {
         console.error("Error fetching sub-sessions:", err);
       }

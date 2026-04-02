@@ -4,12 +4,6 @@ export {
   type SubSessionCardGroupProps,
 } from "./SubSessionCardGroup";
 export {
-  SubSessionChip,
-  SubSessionChipGroup,
-  type SubSessionChipProps,
-  type SubSessionChipGroupProps,
-} from "./SubSessionChip";
-export {
   SubSessionThreadPanel,
   type SubSessionThreadPanelProps,
 } from "./SubSessionThreadPanel";

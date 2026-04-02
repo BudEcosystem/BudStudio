@@ -582,8 +582,7 @@ export function SubSessionThreadPanel({
           </div>
         ) : agentMessages.length === 0 ? (
           <div className="flex items-center justify-center py-8">
-            <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className="ml-2 text-sm text-text-03">Working...</span>
+            <span className="text-sm text-text-03">Start a conversation in this thread.</span>
           </div>
         ) : (
           <AgentMessageList messages={agentMessages} compact />

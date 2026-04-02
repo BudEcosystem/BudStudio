@@ -529,11 +529,37 @@ function dispatchEvent(
       // Map tool_name to correct packet type for the renderer
       if (toolName === "web_search" && rawData && typeof rawData === "object") {
         const results = rawData as Record<string, unknown>;
+        // Extract documents from search_docs (packet drainer) or
+        // reconstructed tool output.  Fall back to null if absent.
+        const searchDocs = (results.search_docs as unknown[] | undefined) ?? null;
+        const queries = (results.queries as string[] | undefined)
+          ?? (results.results as unknown[] | undefined)?.map(
+            (r: unknown) => (r as Record<string, string>).title
+          )
+          ?? [];
         emitPacket({
           type: "internal_search_tool_delta",
-          queries: (results.results as unknown[])?.map((r: unknown) => (r as Record<string, string>).title) ?? [],
-          documents: null,
+          queries,
+          documents: searchDocs,
         });
+      } else if (toolName === "open_url" && rawData && typeof rawData === "object") {
+        const results = rawData as Record<string, unknown>;
+        const fetchDocs = (results.fetch_docs as unknown[] | undefined) ?? null;
+        if (fetchDocs) {
+          emitPacket({
+            type: "fetch_tool_start",
+            documents: fetchDocs,
+          });
+        } else {
+          emitPacket({
+            type: "custom_tool_delta",
+            tool_name: toolName,
+            response_type: responseType,
+            data: rawData,
+            openui_response: data.openui_response ?? null,
+            file_ids: data.file_ids ?? null,
+          });
+        }
       } else {
         emitPacket({
           type: "custom_tool_delta",

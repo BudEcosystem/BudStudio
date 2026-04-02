@@ -90,9 +90,9 @@ class TestSocketIOEmitterConstructor:
         "onyx.agents.bud_agent.citation_processor.CitationProcessor",
         autospec=False,
     )
-    def test_inactive_search_context(self, mock_cp_cls: MagicMock) -> None:
-        """When search_context is provided but processor is NOT active, it is
-        left as None."""
+    def test_inactive_search_context_still_stored(self, mock_cp_cls: MagicMock) -> None:
+        """When search_context is provided, processor is always stored — even
+        if not yet active — so it can activate later when documents arrive."""
         mock_cp = MagicMock()
         mock_cp.active = False
         mock_cp_cls.return_value = mock_cp
@@ -101,7 +101,7 @@ class TestSocketIOEmitterConstructor:
         ctx = MagicMock()
         emitter = SocketIOEmitter(sio=sio, session_id=SESSION_ID, search_context=ctx)
 
-        assert emitter._citation_processor is None
+        assert emitter._citation_processor is mock_cp
 
 
 class TestSocketIOEmitterReasoningEvents:

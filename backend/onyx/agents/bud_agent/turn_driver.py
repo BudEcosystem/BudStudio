@@ -266,11 +266,21 @@ class TurnDriver:
             self._ctx.connector_approval_tools,
         )
 
-        # --- remote-only: persist tool results, emit UI events, recurse ---
+        # --- remote-only: persist + emit, then recurse ---
         if not local:
-            # Extract tool outputs from final_messages so we can persist
-            # them.  final_messages uses the Responses API format where
-            # each tool result is a {"type": "function_call_output", ...}.
+            # FunctionTools (web_search, open_url, render_artifact, etc.)
+            # self-persist their TOOL rows with rich structured output
+            # during on_invoke_tool.  Other tools (workspace_read,
+            # memory_search, etc.) do NOT self-persist.
+            #
+            # Strategy (matching main branch):
+            #  1. Load existing tool DB rows to find self-persisted ones.
+            #  2. Only create new DB rows for tools that didn't self-persist.
+            #  3. Emit tool:start + tool:delta using the tool's own DB
+            #     record (which has structured data like search_docs,
+            #     openui_lang, etc.).
+
+            # Extract outputs from SDK final_messages (raw string results).
             tool_outputs: dict[str, str] = {}
             if turn.final_messages:
                 for item in turn.final_messages:
@@ -282,12 +292,42 @@ class TurnDriver:
                             "output", ""
                         )
 
-            # Persist remote tool calls + results to DB so they survive
-            # across turns (build_message_history reconstructs from DB).
+            # Load self-persisted tool rows from DB.
+            from onyx.db.agent import get_session_messages
+            from onyx.db.models import AgentMessageRole
+
+            db_tool_rows: list[Any] = []
+            with self._get_session(db_session) as sess:
+                existing_tool_names: set[str] = set()
+                try:
+                    all_msgs = get_session_messages(sess, session_id)
+                    db_tool_rows = [
+                        m for m in reversed(all_msgs)
+                        if m.role == AgentMessageRole.TOOL
+                    ]
+                    for m in db_tool_rows:
+                        if m.tool_name:
+                            existing_tool_names.add(m.tool_name)
+                except Exception:
+                    logger.debug(
+                        "Could not load tool results for session %s",
+                        session_id,
+                    )
+
+            # Persist only tools that didn't self-persist.
             remote_step = step_number + 1
             with self._get_session(db_session) as sess:
+                seen_names: set[str] = set()
                 for tc in remote:
+                    if tc.name in existing_tool_names and tc.name not in seen_names:
+                        seen_names.add(tc.name)
+                        continue  # self-persisted
                     output_str = tool_outputs.get(tc.call_id, "")
+                    try:
+                        import json as _json
+                        output_val = _json.loads(output_str) if output_str else None
+                    except (ValueError, TypeError):
+                        output_val = {"output": output_str} if output_str else None
                     add_tool_message(
                         db_session=sess,
                         session_id=session_id,
@@ -295,21 +335,32 @@ class TurnDriver:
                         tool_input=tc.input,
                         tool_call_id=tc.call_id,
                         step_number=remote_step,
-                        tool_output={"output": output_str} if output_str else None,
+                        tool_output=output_val,
                     )
                     remote_step += 1
 
-            # Emit remote tool result events for UI
+            # Emit UI events using the tool's own DB records (rich data).
             if self._config.emitter is not None:
+                consumed: set[int] = set()
                 remote_step = step_number + 1
                 for tc in remote:
-                    result_data = await self._load_tool_result(
-                        db_session, session_id, tc.call_id
-                    )
+                    # Find the most recent unconsumed DB row for this tool
+                    tool_data: Any = None
+                    openui_resp: str | None = None
+                    for idx, tm in enumerate(db_tool_rows):
+                        if idx in consumed:
+                            continue
+                        if tm.tool_name == tc.name:
+                            tool_data = tm.tool_output
+                            if isinstance(tool_data, dict):
+                                openui_resp = tool_data.get("openui_lang")
+                            consumed.add(idx)
+                            break
+
                     await self._config.emitter.tool_result_event(
                         tool_name=tc.name,
                         tool_call_id=tc.call_id,
-                        result=result_data,
+                        result=tool_data,
                         step=remote_step,
                     )
                     remote_step += 1
@@ -342,7 +393,7 @@ class TurnDriver:
         # Also persist + emit remote tool events before pausing (if any
         # remote tools were in the same turn alongside local tools)
         if remote:
-            # Extract outputs (same pattern as remote-only path above)
+            # Same self-persist-aware pattern as remote-only path above.
             tool_outputs_mixed: dict[str, str] = {}
             if turn.final_messages:
                 for item in turn.final_messages:
@@ -354,10 +405,35 @@ class TurnDriver:
                             "output", ""
                         )
 
+            from onyx.db.agent import get_session_messages
+            from onyx.db.models import AgentMessageRole
+
+            db_tool_rows_mixed: list[Any] = []
+            with self._get_session(db_session) as sess:
+                existing_mixed: set[str] = set()
+                try:
+                    for m in reversed(get_session_messages(sess, session_id)):
+                        if m.role == AgentMessageRole.TOOL and m.tool_name:
+                            existing_mixed.add(m.tool_name)
+                            db_tool_rows_mixed.append(m)
+                except Exception:
+                    pass
+
             remote_step = step_number + 1
             with self._get_session(db_session) as sess:
+                seen_mixed: set[str] = set()
                 for tc in remote:
+                    if tc.name in existing_mixed and tc.name not in seen_mixed:
+                        seen_mixed.add(tc.name)
+                        continue
                     output_str = tool_outputs_mixed.get(tc.call_id, "")
+                    try:
+                        import json as _json
+                        output_val = _json.loads(output_str) if output_str else None
+                    except (ValueError, TypeError):
+                        output_val = (
+                            {"output": output_str} if output_str else None
+                        )
                     add_tool_message(
                         db_session=sess,
                         session_id=session_id,
@@ -365,20 +441,26 @@ class TurnDriver:
                         tool_input=tc.input,
                         tool_call_id=tc.call_id,
                         step_number=remote_step,
-                        tool_output={"output": output_str} if output_str else None,
+                        tool_output=output_val,
                     )
                     remote_step += 1
 
             if self._config.emitter is not None:
+                consumed_mixed: set[int] = set()
                 remote_step = step_number + 1
                 for tc in remote:
-                    result_data = await self._load_tool_result(
-                        db_session, session_id, tc.call_id
-                    )
+                    tool_data: Any = None
+                    for idx, tm in enumerate(db_tool_rows_mixed):
+                        if idx in consumed_mixed:
+                            continue
+                        if tm.tool_name == tc.name:
+                            tool_data = tm.tool_output
+                            consumed_mixed.add(idx)
+                            break
                     await self._config.emitter.tool_result_event(
                         tool_name=tc.name,
                         tool_call_id=tc.call_id,
-                        result=result_data,
+                        result=tool_data,
                         step=remote_step,
                     )
                     remote_step += 1
