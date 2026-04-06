@@ -539,28 +539,38 @@ async fn main() {
                     }
 
                     // Check if Next.js server is running, if not start it
+                    // But only if setup is already complete
                     if let Some(state) = app_handle.try_state::<AppState>() {
-                        let next_server = state.next_server.clone();
-                        let handle_clone = app_handle.clone();
-                        let backend_url = {
+                        let setup_complete = {
                             let config = state.config.lock().unwrap();
-                            config.backend_url.clone()
+                            !config.needs_setup()
                         };
 
-                        // Spawn async task to check and start server if needed
-                        tauri::async_runtime::spawn(async move {
-                            let is_running = {
-                                let server = next_server.lock().await;
-                                server.is_running()
+                        if !setup_complete {
+                            log::info!("Setup not complete, skipping Next.js server start on reopen");
+                        } else {
+                            let next_server = state.next_server.clone();
+                            let handle_clone = app_handle.clone();
+                            let backend_url = {
+                                let config = state.config.lock().unwrap();
+                                config.backend_url.clone()
                             };
 
-                            if !is_running {
-                                log::info!("Next.js server not running, starting it...");
-                                start_next_server(handle_clone, next_server, backend_url).await;
-                            } else {
-                                log::info!("Next.js server already running");
-                            }
-                        });
+                            // Spawn async task to check and start server if needed
+                            tauri::async_runtime::spawn(async move {
+                                let is_running = {
+                                    let server = next_server.lock().await;
+                                    server.is_running()
+                                };
+
+                                if !is_running {
+                                    log::info!("Next.js server not running, starting it...");
+                                    start_next_server(handle_clone, next_server, backend_url).await;
+                                } else {
+                                    log::info!("Next.js server already running");
+                                }
+                            });
+                        }
                     }
                 }
                 tauri::RunEvent::ExitRequested { code, .. } => {

@@ -126,8 +126,21 @@ impl NextServer {
             // Set WEB_DOMAIN to match the local server URL
             let web_domain = format!("http://127.0.0.1:{}", self.preferred_port);
 
-            Command::new(&node_path)
-                .arg(&server_js)
+            // Resolve the bundled budcode sidecar path so the Next.js
+            // cli-agent-tool can locate it via the BUDCODE_BINARY env var.
+            let budcode_binary = {
+                let exe = std::env::current_exe().unwrap_or_default();
+                let macos_dir = exe.parent().unwrap_or(Path::new(""));
+                let candidate = macos_dir.join("budcode");
+                if candidate.exists() {
+                    candidate.to_string_lossy().to_string()
+                } else {
+                    String::new()
+                }
+            };
+
+            let mut cmd = Command::new(&node_path);
+            cmd.arg(&server_js)
                 .env("PORT", self.preferred_port.to_string())
                 .env("HOSTNAME", "127.0.0.1")
                 .env("INTERNAL_URL", &internal_url)
@@ -136,7 +149,14 @@ impl NextServer {
                 .env("BUD_BROWSER_ALLOW_PRIVATE_IPS", "true")
                 .env("GATEWAY_PORT", &gateway_port_str)
                 .env("NEXT_PUBLIC_GATEWAY_PORT", &gateway_port_str)
-                .current_dir(&server_dir)
+                .current_dir(&server_dir);
+
+            if !budcode_binary.is_empty() {
+                log::info!("Setting BUDCODE_BINARY={}", budcode_binary);
+                cmd.env("BUDCODE_BINARY", &budcode_binary);
+            }
+
+            cmd
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .group_spawn()

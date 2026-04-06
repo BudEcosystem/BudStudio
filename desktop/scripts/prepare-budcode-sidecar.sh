@@ -64,7 +64,7 @@ echo "Target: $TARGET"
 echo "Output: $BINARIES_DIR/$SIDECAR_NAME"
 
 cd "$BUDCODE_RS_DIR"
-cargo build --release --target "$TARGET" -p budcode_cli
+cargo build --release --target "$TARGET" -p budcode-cli
 
 # Copy built binary to Tauri sidecar location
 mkdir -p "$BINARIES_DIR"

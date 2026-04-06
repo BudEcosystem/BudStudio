@@ -50,6 +50,18 @@ async function debugLog(message: string): Promise<void> {
  * environments.
  */
 async function resolveBudcodeBinary(): Promise<string> {
+  // Fastest path: the Tauri Rust side passes the exact sidecar location.
+  const envBinary = process.env.BUDCODE_BINARY;
+  if (envBinary) {
+    try {
+      await fsp.access(envBinary, fsp.constants.X_OK);
+      await debugLog(`Using BUDCODE_BINARY env: ${envBinary}`);
+      return envBinary;
+    } catch {
+      await debugLog(`BUDCODE_BINARY set but not accessible: ${envBinary}`);
+    }
+  }
+
   // Tauri sidecar: the binary sits next to the main app binary.
   // process.resourcesPath is set by Tauri's Node sidecar env; in a
   // standalone Next.js server spawned by Tauri we can detect the
@@ -112,15 +124,23 @@ async function resolveBudcodeBinary(): Promise<string> {
     candidateDirs.push(path.dirname(process.execPath));
   }
 
-  // Try each candidate
+  // Try each candidate — check both the triple-suffixed name (used during
+  // development / pre-bundle) and the plain name (Tauri strips the suffix
+  // when copying the sidecar into Contents/MacOS/).
+  const namesToTry = [sidecarName, `budcode${ext}`];
+  // Deduplicate in case they are already the same
+  const uniqueNames = [...new Set(namesToTry)];
+
   for (const dir of candidateDirs) {
-    const candidate = path.join(dir, sidecarName);
-    try {
-      await fsp.access(candidate, fsp.constants.X_OK);
-      await debugLog(`Found bundled budcode sidecar at: ${candidate}`);
-      return candidate;
-    } catch {
-      // not found here, continue
+    for (const name of uniqueNames) {
+      const candidate = path.join(dir, name);
+      try {
+        await fsp.access(candidate, fsp.constants.X_OK);
+        await debugLog(`Found bundled budcode sidecar at: ${candidate}`);
+        return candidate;
+      } catch {
+        // not found here, continue
+      }
     }
   }
 
@@ -133,21 +153,20 @@ async function resolveBudcodeBinary(): Promise<string> {
  * Write ~/.budcode/config.toml with the provider config from the BudAgent
  * session so that the budcode sidecar uses the same LLM credentials.
  *
- * Also returns env overrides (OPENAI_API_KEY) to inject into the process.
+ * Also returns env overrides (BUD_API_KEY) to inject into the process.
  */
 async function prepareBudcodeConfig(
   llmConfig: LlmConfig
 ): Promise<Record<string, string>> {
   const envOverrides: Record<string, string> = {};
 
-  // Set the API key via env var — budcode reads OPENAI_API_KEY (and
-  // BUDCODE_API_KEY as an alias).
+  // Set the API key via env var — budcode reads BUD_API_KEY.
   if (llmConfig.api_key) {
-    envOverrides.OPENAI_API_KEY = llmConfig.api_key;
+    envOverrides.BUD_API_KEY = llmConfig.api_key;
   }
 
   // Write a minimal config.toml so budcode knows the model + base URL.
-  const budcodeDir = path.join(os.homedir(), ".budcode");
+  const budcodeDir = path.join(os.homedir(), ".bud", "budcode");
   const configPath = path.join(budcodeDir, "config.toml");
 
   try {
@@ -166,7 +185,7 @@ async function prepareBudcodeConfig(
       lines.push(`[model_providers.bud-studio]`);
       lines.push(`name = "Bud Studio"`);
       lines.push(`base_url = "${llmConfig.api_base}"`);
-      lines.push(`env_key = "OPENAI_API_KEY"`);
+      lines.push(`env_key = "BUD_API_KEY"`);
     }
 
     if (lines.length > 0) {
@@ -383,7 +402,7 @@ export class CliAgentTool implements Tool {
     await debugLog(`SHELL: ${env.SHELL}`);
     await debugLog(`HOME: ${env.HOME}`);
     await debugLog(`budcode binary: ${budcodeBin}`);
-    await debugLog(`OPENAI_API_KEY set: ${!!env.OPENAI_API_KEY}`);
+    await debugLog(`BUD_API_KEY set: ${!!env.BUD_API_KEY}`);
     // --- END DEBUG ---
 
     await debugLog(`Spawning process with cwd: ${cwd}, pty: true`);
