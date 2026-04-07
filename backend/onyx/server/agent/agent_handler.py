@@ -22,54 +22,47 @@ from __future__ import annotations
 
 import json
 import re
-from contextlib import contextmanager
 from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 from uuid import UUID
 
 import redis
 import socketio  # type: ignore[import-untyped]
-from agents import RawResponsesStreamEvent, ToolCallItem
+from agents import RawResponsesStreamEvent
+from agents import ToolCallItem
 from agents.run import Runner
 from sqlalchemy.orm import Session
 
-from onyx.agents.bud_agent.agent_context import (
-    AgentExecutionMode,
-    build_agent_run_context,
-    build_message_history,
-    compact_session,
-    AgentRunContext,
-)
-from onyx.agents.bud_agent.tool_definitions import (
-    LOCAL_GATEWAY_ID,
-    is_local_tool,
-    requires_approval,
-)
-from onyx.db.agent import (
-    add_session_message,
-    add_tool_message,
-    clear_session_stop_flag,
-    get_next_step_number,
-    get_session_execution_status,
-    get_session_for_user,
-    get_tool_message,
-    is_session_stopped,
-    load_pending_local_tools,
-    persist_pending_local_tools,
-    set_session_execution_status,
-    set_session_stop_flag,
-    tool_result_exists,
-    update_session_stats,
-    update_tool_message_result,
-    upsert_workspace_file,
-)
+from onyx.agents.bud_agent.agent_context import AgentExecutionMode
+from onyx.agents.bud_agent.agent_context import AgentRunContext
+from onyx.agents.bud_agent.agent_context import build_agent_run_context
+from onyx.agents.bud_agent.agent_context import build_message_history
+from onyx.agents.bud_agent.agent_context import compact_session
+from onyx.agents.bud_agent.tool_definitions import is_local_tool
+from onyx.agents.bud_agent.tool_definitions import LOCAL_GATEWAY_ID
+from onyx.agents.bud_agent.tool_definitions import requires_approval
+from onyx.db.agent import add_session_message
+from onyx.db.agent import add_tool_message
+from onyx.db.agent import clear_session_stop_flag
+from onyx.db.agent import get_next_step_number
+from onyx.db.agent import get_session_execution_status
+from onyx.db.agent import get_session_for_user
+from onyx.db.agent import get_tool_message
+from onyx.db.agent import is_session_stopped
+from onyx.db.agent import load_pending_local_tools
+from onyx.db.agent import persist_pending_local_tools
+from onyx.db.agent import set_session_execution_status
+from onyx.db.agent import set_session_stop_flag
+from onyx.db.agent import tool_result_exists
+from onyx.db.agent import update_session_stats
+from onyx.db.agent import update_tool_message_result
+from onyx.db.agent import upsert_workspace_file
 from onyx.db.agent_connector import get_tool_permissions
 from onyx.db.engine.sql_engine import get_session_with_tenant
-from onyx.db.enums import (
-    AgentMessageRole,
-    AgentSessionExecutionStatus,
-    AgentToolPermissionLevel,
-)
+from onyx.db.enums import AgentMessageRole
+from onyx.db.enums import AgentSessionExecutionStatus
+from onyx.db.enums import AgentToolPermissionLevel
 from onyx.db.models import User
 from onyx.redis.redis_pool import get_redis_client
 from onyx.utils.logger import setup_logger
