@@ -9,7 +9,7 @@ modes:
 enabled: true
 ---
 
-When the user's request is complex enough to benefit from autonomous exploration, delegate it to `cli_agent` rather than attempting it manually with bash/grep/read_file. The sub-agent is a general-purpose CLI agent — anything you can do from a terminal, it can do autonomously.
+When the user's request involves exploration, code work, or multi-step tasks, delegate it to `cli_agent`. The sub-agent is a general-purpose CLI agent — anything you can do from a terminal, it can do autonomously.
 
 ## When to use cli_agent
 
