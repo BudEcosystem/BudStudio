@@ -88,7 +88,7 @@ cli_agent(
 
 ## Resume vs Exec — choosing the right action
 
-**Always prefer `action: "resume"` when the user's message is a follow-up to a previous cli_agent task.** Resume continues the most recent Codex session, which already has the full context of what was done — files explored, commands run, results found. Starting a fresh `exec` loses all of that context and wastes time re-exploring.
+**Always prefer `action: "resume"` when the user's message is a follow-up to a previous cli_agent task.** Resume continues the most recent BudCode session, which already has the full context of what was done — files explored, commands run, results found. Starting a fresh `exec` loses all of that context and wastes time re-exploring.
 
 **Use `resume` when:**
 - The user asks a follow-up question about the previous result (e.g., "what's in /Applications?" after a disk usage scan)

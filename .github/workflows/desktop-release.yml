@@ -50,10 +50,40 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Rust cache
+      - name: Rust cache (Tauri)
         uses: swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri -> target
+          cache-on-failure: true
+
+      - name: Rust cache (budcode)
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: budcode-rs -> target
+          cache-on-failure: true
+          prefix-key: budcode
+
+      - name: Checkout budcode-rs
+        uses: actions/checkout@v4
+        with:
+          repository: BudEcosystem/codex
+          path: budcode-rs-src
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build budcode sidecar binary
+        run: |
+          cd budcode-rs-src/budcode-rs
+          cargo build --release --target ${{ matrix.target }} -p budcode_cli
+          # Copy the binary to the Tauri sidecar location with target-triple suffix
+          BINARY_NAME="budcode-${{ matrix.target }}"
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+            cp "target/${{ matrix.target }}/release/budcode.exe" "$GITHUB_WORKSPACE/desktop/src-tauri/binaries/${BINARY_NAME}"
+          else
+            cp "target/${{ matrix.target }}/release/budcode" "$GITHUB_WORKSPACE/desktop/src-tauri/binaries/${BINARY_NAME}"
+          fi
+          echo "Sidecar binary placed at: desktop/src-tauri/binaries/${BINARY_NAME}"
+          ls -la "$GITHUB_WORKSPACE/desktop/src-tauri/binaries/"
 
       - name: Install web dependencies
         run: npm ci

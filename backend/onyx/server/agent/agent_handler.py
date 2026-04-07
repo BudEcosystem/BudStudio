@@ -22,54 +22,47 @@ from __future__ import annotations
 
 import json
 import re
-from contextlib import contextmanager
 from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 from uuid import UUID
 
 import redis
 import socketio  # type: ignore[import-untyped]
-from agents import RawResponsesStreamEvent, ToolCallItem
+from agents import RawResponsesStreamEvent
+from agents import ToolCallItem
 from agents.run import Runner
 from sqlalchemy.orm import Session
 
-from onyx.agents.bud_agent.agent_context import (
-    AgentExecutionMode,
-    build_agent_run_context,
-    build_message_history,
-    compact_session,
-    AgentRunContext,
-)
-from onyx.agents.bud_agent.tool_definitions import (
-    LOCAL_GATEWAY_ID,
-    is_local_tool,
-    requires_approval,
-)
-from onyx.db.agent import (
-    add_session_message,
-    add_tool_message,
-    clear_session_stop_flag,
-    get_next_step_number,
-    get_session_execution_status,
-    get_session_for_user,
-    get_tool_message,
-    is_session_stopped,
-    load_pending_local_tools,
-    persist_pending_local_tools,
-    set_session_execution_status,
-    set_session_stop_flag,
-    tool_result_exists,
-    update_session_stats,
-    update_tool_message_result,
-    upsert_workspace_file,
-)
+from onyx.agents.bud_agent.agent_context import AgentExecutionMode
+from onyx.agents.bud_agent.agent_context import AgentRunContext
+from onyx.agents.bud_agent.agent_context import build_agent_run_context
+from onyx.agents.bud_agent.agent_context import build_message_history
+from onyx.agents.bud_agent.agent_context import compact_session
+from onyx.agents.bud_agent.tool_definitions import is_local_tool
+from onyx.agents.bud_agent.tool_definitions import LOCAL_GATEWAY_ID
+from onyx.agents.bud_agent.tool_definitions import requires_approval
+from onyx.db.agent import add_session_message
+from onyx.db.agent import add_tool_message
+from onyx.db.agent import clear_session_stop_flag
+from onyx.db.agent import get_next_step_number
+from onyx.db.agent import get_session_execution_status
+from onyx.db.agent import get_session_for_user
+from onyx.db.agent import get_tool_message
+from onyx.db.agent import is_session_stopped
+from onyx.db.agent import load_pending_local_tools
+from onyx.db.agent import persist_pending_local_tools
+from onyx.db.agent import set_session_execution_status
+from onyx.db.agent import set_session_stop_flag
+from onyx.db.agent import tool_result_exists
+from onyx.db.agent import update_session_stats
+from onyx.db.agent import update_tool_message_result
+from onyx.db.agent import upsert_workspace_file
 from onyx.db.agent_connector import get_tool_permissions
 from onyx.db.engine.sql_engine import get_session_with_tenant
-from onyx.db.enums import (
-    AgentMessageRole,
-    AgentSessionExecutionStatus,
-    AgentToolPermissionLevel,
-)
+from onyx.db.enums import AgentMessageRole
+from onyx.db.enums import AgentSessionExecutionStatus
+from onyx.db.enums import AgentToolPermissionLevel
 from onyx.db.models import User
 from onyx.redis.redis_pool import get_redis_client
 from onyx.utils.logger import setup_logger
@@ -82,6 +75,10 @@ COMPACTION_THRESHOLD_CHARS = 300_000
 MAX_TOOL_CALLS = 500
 # Check stop flag every N stream events (not every token -- too expensive)
 STOP_CHECK_INTERVAL = 10
+# TTL for cached LLM credentials in Redis. Long enough to outlive a typical
+# session of LLM turns + tool follow-ups, short enough that stale credentials
+# don't linger indefinitely.
+_LLM_CONFIG_TTL_SECONDS = 6 * 60 * 60
 
 
 class AgentHandler:
@@ -126,6 +123,58 @@ class AgentHandler:
     def _get_redis(self) -> redis.Redis:  # type: ignore[type-arg]
         return get_redis_client(tenant_id=self._tenant_id)
 
+    @staticmethod
+    def _llm_config_redis_key(session_id: str) -> str:
+        return f"agent:llm_config:{session_id}"
+
+    def _save_llm_config(self, session_id: str, llm_config: dict[str, Any]) -> None:
+        """Persist LLM credentials to Redis so subsequent events (which create
+        a fresh handler) can attach them to cli_agent tool:request payloads."""
+        try:
+            redis_client = self._get_redis()
+            redis_client.set(
+                self._llm_config_redis_key(session_id),
+                json.dumps(llm_config),
+                ex=_LLM_CONFIG_TTL_SECONDS,
+            )
+        except Exception:
+            logger.exception("Failed to persist LLM config for session %s", session_id)
+
+    def _load_llm_config(self, session_id: str) -> dict[str, Any] | None:
+        try:
+            redis_client = self._get_redis()
+            raw = redis_client.get(self._llm_config_redis_key(session_id))
+            if raw is None:
+                return None
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            return json.loads(raw)
+        except Exception:
+            logger.exception("Failed to load LLM config for session %s", session_id)
+            return None
+
+    def _build_tool_request_payload(
+        self,
+        session_id_str: str,
+        step: int,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        tool_call_id: str,
+    ) -> dict[str, Any]:
+        """Build a tool:request payload, attaching llm_config for cli_agent."""
+        payload: dict[str, Any] = {
+            "session_id": session_id_str,
+            "ind": step,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_call_id": tool_call_id,
+        }
+        if tool_name == "cli_agent":
+            llm_config = self._load_llm_config(session_id_str)
+            if llm_config:
+                payload["llm_config"] = llm_config
+        return payload
+
     async def _emit(self, event: str, data: dict[str, Any]) -> None:
         """Emit a Socket.IO event to the session room (preferred) or sid.
 
@@ -136,9 +185,7 @@ class AgentHandler:
         """
         session_id = data.get("session_id", "")
         if session_id:
-            await self._sio.emit(
-                event, data, room=f"session:{session_id}"
-            )
+            await self._sio.emit(event, data, room=f"session:{session_id}")
         else:
             await self._sio.emit(event, data, to=self._sid)
 
@@ -193,7 +240,10 @@ class AgentHandler:
         timezone: str | None = data.get("timezone")
 
         if not session_id_str or not message:
-            return {"error": "session_id and message are required", "code": "INVALID_REQUEST"}
+            return {
+                "error": "session_id and message are required",
+                "code": "INVALID_REQUEST",
+            }
 
         try:
             session_id = UUID(session_id_str)
@@ -276,6 +326,7 @@ class AgentHandler:
                 # Debug: log what exists
                 from sqlalchemy import select as sa_select
                 from onyx.db.models import AgentMessage as AM
+
                 existing = db_session.execute(
                     sa_select(AM.tool_call_id, AM.tool_output, AM.tool_name).where(
                         AM.session_id == session_id,
@@ -286,7 +337,10 @@ class AgentHandler:
                     "tool:result duplicate ignored session=%s tool_call_id=%s existing=%s",
                     session_id,
                     tool_call_id,
-                    [(r.tool_call_id, r.tool_output is not None, r.tool_name) for r in existing],
+                    [
+                        (r.tool_call_id, r.tool_output is not None, r.tool_name)
+                        for r in existing
+                    ],
                 )
                 return
 
@@ -331,14 +385,17 @@ class AgentHandler:
         step = 0
         if tool_msg and tool_msg.step_number is not None:
             step = tool_msg.step_number
-        await self._emit("tool:delta", {
-            "session_id": session_id_str,
-            "ind": step,
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-            "response_type": "error" if error else "success",
-            "data": error if error else output,
-        })
+        await self._emit(
+            "tool:delta",
+            {
+                "session_id": session_id_str,
+                "ind": step,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "response_type": "error" if error else "success",
+                "data": error if error else output,
+            },
+        )
 
         # If there are more pending local tools, dispatch the next one
         if remaining:
@@ -359,6 +416,7 @@ class AgentHandler:
             # their permission to ALWAYS_ALLOW, so they never appear
             # in the pending queue as connector-pause tools).
             from onyx.agents.bud_agent.tool_definitions import is_connector_tool
+
             always_allowed = set()
             with self._get_db_session() as db_session:
                 user_id = self._parse_user_id()
@@ -366,9 +424,8 @@ class AgentHandler:
 
             is_connector = is_connector_tool(next_tool_name)
             needs_approval = (
-                (requires_approval(next_tool_name) or is_connector)
-                and next_tool_name not in always_allowed
-            )
+                requires_approval(next_tool_name) or is_connector
+            ) and next_tool_name not in always_allowed
 
             if needs_approval:
                 with self._get_db_session() as db_session:
@@ -377,14 +434,17 @@ class AgentHandler:
                         session_id,
                         AgentSessionExecutionStatus.AWAITING_APPROVAL,
                     )
-                await self._emit("tool:approval_required", {
-                    "session_id": session_id_str,
-                    "ind": next_step,
-                    "tool_name": next_tool_name,
-                    "tool_input": next_tool_input,
-                    "tool_call_id": next_tool_call_id,
-                    "gateway_id": next_tool.get("gateway_id", "__local__"),
-                })
+                await self._emit(
+                    "tool:approval_required",
+                    {
+                        "session_id": session_id_str,
+                        "ind": next_step,
+                        "tool_name": next_tool_name,
+                        "tool_input": next_tool_input,
+                        "tool_call_id": next_tool_call_id,
+                        "gateway_id": next_tool.get("gateway_id", "__local__"),
+                    },
+                )
             elif is_connector:
                 # Connector tool already always-allowed — execute server-side
                 # immediately, then feed the result back through
@@ -392,18 +452,22 @@ class AgentHandler:
                 from onyx.agents.bud_agent.connector_service import (
                     execute_connector_tool,
                 )
+
                 user = None
                 if self._user_email:
                     from onyx.db.users import get_user_by_email
+
                     with self._get_db_session() as db_session:
                         user = get_user_by_email(self._user_email, db_session)
 
                 if user is None:
-                    await self.handle_tool_result({
-                        "session_id": session_id_str,
-                        "tool_call_id": next_tool_call_id,
-                        "error": "Could not resolve user for connector tool execution",
-                    })
+                    await self.handle_tool_result(
+                        {
+                            "session_id": session_id_str,
+                            "tool_call_id": next_tool_call_id,
+                            "error": "Could not resolve user for connector tool execution",
+                        }
+                    )
                 else:
                     result, err = await execute_connector_tool(
                         user=user,
@@ -412,20 +476,25 @@ class AgentHandler:
                         tool_input=next_tool_input,
                         tool_call_id=next_tool_call_id,
                     )
-                    await self.handle_tool_result({
-                        "session_id": session_id_str,
-                        "tool_call_id": next_tool_call_id,
-                        **({"output": result} if result else {}),
-                        **({"error": err} if err else {}),
-                    })
+                    await self.handle_tool_result(
+                        {
+                            "session_id": session_id_str,
+                            "tool_call_id": next_tool_call_id,
+                            **({"output": result} if result else {}),
+                            **({"error": err} if err else {}),
+                        }
+                    )
             else:
-                await self._emit("tool:request", {
-                    "session_id": session_id_str,
-                    "ind": next_step,
-                    "tool_name": next_tool_name,
-                    "tool_input": next_tool_input,
-                    "tool_call_id": next_tool_call_id,
-                })
+                await self._emit(
+                    "tool:request",
+                    self._build_tool_request_payload(
+                        session_id_str,
+                        next_step,
+                        next_tool_name,
+                        next_tool_input,
+                        next_tool_call_id,
+                    ),
+                )
                 # Status stays AWAITING_TOOL
             return
 
@@ -511,14 +580,17 @@ class AgentHandler:
                 )
 
             # Emit the denial as tool:delta for the UI
-            await self._emit("tool:delta", {
-                "session_id": session_id_str,
-                "ind": step,
-                "tool_name": tool_name,
-                "tool_call_id": tool_call_id,
-                "response_type": "error",
-                "data": "User denied tool execution",
-            })
+            await self._emit(
+                "tool:delta",
+                {
+                    "session_id": session_id_str,
+                    "ind": step,
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_call_id,
+                    "response_type": "error",
+                    "data": "User denied tool execution",
+                },
+            )
 
             await self._run_llm_turn(
                 session_id=session_id,
@@ -550,13 +622,16 @@ class AgentHandler:
                 db_session, session_id, AgentSessionExecutionStatus.AWAITING_TOOL
             )
 
-        await self._emit("tool:request", {
-            "session_id": session_id_str,
-            "ind": step,
-            "tool_name": tool_name,
-            "tool_input": tool_input,
-            "tool_call_id": tool_call_id,
-        })
+        await self._emit(
+            "tool:request",
+            self._build_tool_request_payload(
+                session_id_str,
+                step,
+                tool_name,
+                tool_input,
+                tool_call_id,
+            ),
+        )
         # STOP -- client will send tool:result later
 
     async def _execute_and_continue_connector_tool(
@@ -580,28 +655,34 @@ class AgentHandler:
 
         with self._get_db_session() as db_session:
             set_session_execution_status(
-                db_session, session_id,
+                db_session,
+                session_id,
                 AgentSessionExecutionStatus.RUNNING,
             )
             user = None
             if self._user_email:
                 from onyx.db.users import get_user_by_email
+
                 user = get_user_by_email(self._user_email, db_session)
 
         if user is None:
             error = "Could not resolve user for connector tool execution"
             logger.warning(
                 "_execute_and_continue_connector_tool: %s (email=%s)",
-                error, self._user_email,
+                error,
+                self._user_email,
             )
-            await self._emit("tool:delta", {
-                "session_id": session_id_str,
-                "ind": step,
-                "tool_name": tool_name,
-                "tool_call_id": tool_call_id,
-                "response_type": "error",
-                "data": error,
-            })
+            await self._emit(
+                "tool:delta",
+                {
+                    "session_id": session_id_str,
+                    "ind": step,
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_call_id,
+                    "response_type": "error",
+                    "data": error,
+                },
+            )
             await self._run_llm_turn(
                 session_id=session_id,
                 workspace_path=self._workspace_path,
@@ -637,14 +718,17 @@ class AgentHandler:
             persist_pending_local_tools(db_session, session_id, [])
 
         # Emit result to UI
-        await self._emit("tool:delta", {
-            "session_id": session_id_str,
-            "ind": step,
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-            "response_type": "error" if error else "success",
-            "data": error or result,
-        })
+        await self._emit(
+            "tool:delta",
+            {
+                "session_id": session_id_str,
+                "ind": step,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "response_type": "error" if error else "success",
+                "data": error or result,
+            },
+        )
 
         # Continue LLM turn
         await self._run_llm_turn(
@@ -759,30 +843,31 @@ class AgentHandler:
                 if user is None:
                     # Auth disabled mode -- we cannot proceed without a user
                     # for tool/context assembly
-                    await self._emit("agent:error", {
-                        "session_id": session_id_str,
-                        "error": "Cannot run agent without authenticated user",
-                    })
+                    await self._emit(
+                        "agent:error",
+                        {
+                            "session_id": session_id_str,
+                            "error": "Cannot run agent without authenticated user",
+                        },
+                    )
                     set_session_execution_status(
                         db_session, session_id, AgentSessionExecutionStatus.IDLE
                     )
                     return
 
                 # Load session to get workspace_path if not provided
-                agent_session = get_session_for_user(
-                    db_session, session_id, user.id
-                )
+                agent_session = get_session_for_user(db_session, session_id, user.id)
                 if agent_session is None:
-                    await self._emit("agent:error", {
-                        "session_id": session_id_str,
-                        "error": "Session not found",
-                    })
+                    await self._emit(
+                        "agent:error",
+                        {
+                            "session_id": session_id_str,
+                            "error": "Session not found",
+                        },
+                    )
                     return
 
-                resolved_workspace_path = (
-                    workspace_path
-                    or agent_session.workspace_path
-                )
+                resolved_workspace_path = workspace_path or agent_session.workspace_path
 
                 # Load always-allowed tools for approval checks
                 always_allowed_tools = self._load_always_allowed_tools(
@@ -811,7 +896,8 @@ class AgentHandler:
                         continue
 
                     async def _stub_handler(
-                        _ctx: Any, _args: str,
+                        _ctx: Any,
+                        _args: str,
                         _name: str = schema["name"],
                     ) -> str:
                         return f"AWAITING_LOCAL_EXECUTION:{_name}"
@@ -910,13 +996,14 @@ class AgentHandler:
             )
 
         except Exception as exc:
-            logger.exception(
-                "AgentHandler._run_llm_turn error session=%s", session_id
+            logger.exception("AgentHandler._run_llm_turn error session=%s", session_id)
+            await self._emit(
+                "agent:error",
+                {
+                    "session_id": session_id_str,
+                    "error": str(exc),
+                },
             )
-            await self._emit("agent:error", {
-                "session_id": session_id_str,
-                "error": str(exc),
-            })
             try:
                 with self._get_db_session() as db_session:
                     set_session_execution_status(
@@ -942,13 +1029,25 @@ class AgentHandler:
         redis_client = self._get_redis()
         search_context = ctx.search_context
 
+        # Persist LLM credentials in Redis so tool:request payloads emitted
+        # by future events (which create a fresh handler) can include them.
+        try:
+            llm_config = {
+                "api_key": ctx.llm.config.api_key or "",
+                "api_base": getattr(ctx.llm.config, "api_base", None),
+                "model": ctx.model_name,
+            }
+            self._save_llm_config(session_id_str, llm_config)
+        except Exception:
+            logger.warning(
+                "Failed to cache LLM config for session %s",
+                session_id_str,
+                exc_info=True,
+            )  # Non-critical: cli_agent will fall back to its own config
+
         # Citation processing state
-        citation_pattern = re.compile(
-            r"(\[\[\d+\]\])|(\[\d+(?:, ?\d+)*\])"
-        )
-        possible_citation_pattern = re.compile(
-            r"(\[+(?:\d+,? ?)*$)"
-        )
+        citation_pattern = re.compile(r"(\[\[\d+\]\])|(\[\d+(?:, ?\d+)*\])")
+        possible_citation_pattern = re.compile(r"(\[+(?:\d+,? ?)*$)")
         citation_buffer = ""
         emitted_citation_doc_ids: set[str] = set()
 
@@ -999,17 +1098,23 @@ class AgentHandler:
                     and len(event.data.delta) > 0
                 ):
                     if not reasoning_started:
-                        await self._emit("agent:reasoning_start", {
-                            "session_id": session_id_str,
-                            "ind": step_number,
-                        })
+                        await self._emit(
+                            "agent:reasoning_start",
+                            {
+                                "session_id": session_id_str,
+                                "ind": step_number,
+                            },
+                        )
                         reasoning_started = True
                     thinking_content += event.data.delta
-                    await self._emit("agent:reasoning_delta", {
-                        "session_id": session_id_str,
-                        "ind": step_number,
-                        "reasoning": event.data.delta,
-                    })
+                    await self._emit(
+                        "agent:reasoning_delta",
+                        {
+                            "session_id": session_id_str,
+                            "ind": step_number,
+                            "reasoning": event.data.delta,
+                        },
+                    )
 
                 # Output text
                 elif (
@@ -1021,17 +1126,23 @@ class AgentHandler:
                     if not message_started:
                         # Close reasoning section if it was started
                         if reasoning_started:
-                            await self._emit("agent:section_end", {
+                            await self._emit(
+                                "agent:section_end",
+                                {
+                                    "session_id": session_id_str,
+                                    "ind": step_number,
+                                },
+                            )
+                        step_number += 1
+                        await self._emit(
+                            "agent:message_start",
+                            {
                                 "session_id": session_id_str,
                                 "ind": step_number,
-                            })
-                        step_number += 1
-                        await self._emit("agent:message_start", {
-                            "session_id": session_id_str,
-                            "ind": step_number,
-                            "content": "",
-                            "final_documents": None,
-                        })
+                                "content": "",
+                                "final_documents": None,
+                            },
+                        )
                         message_started = True
 
                     # Process citations when search context has documents
@@ -1048,39 +1159,49 @@ class AgentHandler:
                         text_out = processed[0]
                         if text_out:
                             processed_response_text += text_out
-                            await self._emit("agent:message_delta", {
-                                "session_id": session_id_str,
-                                "ind": step_number,
-                                "content": text_out,
-                            })
+                            await self._emit(
+                                "agent:message_delta",
+                                {
+                                    "session_id": session_id_str,
+                                    "ind": step_number,
+                                    "content": text_out,
+                                },
+                            )
                         if new_citations:
-                            await self._emit("agent:citation", {
-                                "session_id": session_id_str,
-                                "ind": step_number,
-                                "citations": [
-                                    {
-                                        "citation_num": c["citation_num"],
-                                        "document_id": c["document_id"],
-                                    }
-                                    for c in new_citations
-                                ],
-                            })
+                            await self._emit(
+                                "agent:citation",
+                                {
+                                    "session_id": session_id_str,
+                                    "ind": step_number,
+                                    "citations": [
+                                        {
+                                            "citation_num": c["citation_num"],
+                                            "document_id": c["document_id"],
+                                        }
+                                        for c in new_citations
+                                    ],
+                                },
+                            )
                     else:
                         processed_response_text += event.data.delta
-                        await self._emit("agent:message_delta", {
-                            "session_id": session_id_str,
-                            "ind": step_number,
-                            "content": event.data.delta,
-                        })
+                        await self._emit(
+                            "agent:message_delta",
+                            {
+                                "session_id": session_id_str,
+                                "ind": step_number,
+                                "content": event.data.delta,
+                            },
+                        )
 
             # Detect tool calls
             if isinstance(getattr(event, "item", None), ToolCallItem):
                 tool_call_count += 1
                 raw = getattr(event.item, "raw_item", None)
                 tc_name = (
-                    (getattr(raw, "name", None) or (raw.get("name") if isinstance(raw, dict) else None) or "unknown")
-                    .replace("\n", " ")
-                )
+                    getattr(raw, "name", None)
+                    or (raw.get("name") if isinstance(raw, dict) else None)
+                    or "unknown"
+                ).replace("\n", " ")
                 tc_id = (
                     getattr(raw, "call_id", None)
                     or (raw.get("call_id") if isinstance(raw, dict) else None)
@@ -1092,15 +1213,21 @@ class AgentHandler:
                     or "{}"
                 )
                 try:
-                    tc_input = json.loads(tc_args_str) if isinstance(tc_args_str, str) else tc_args_str
+                    tc_input = (
+                        json.loads(tc_args_str)
+                        if isinstance(tc_args_str, str)
+                        else tc_args_str
+                    )
                 except (json.JSONDecodeError, TypeError):
                     tc_input = {"raw": tc_args_str}
 
-                pending_tool_calls.append({
-                    "name": tc_name,
-                    "input": tc_input,
-                    "id": tc_id,
-                })
+                pending_tool_calls.append(
+                    {
+                        "name": tc_name,
+                        "input": tc_input,
+                        "id": tc_id,
+                    }
+                )
                 logger.info(
                     "Tool call #%d: %s (session %s)",
                     tool_call_count,
@@ -1113,10 +1240,13 @@ class AgentHandler:
         if stopped:
             # Close any open section
             if message_started or reasoning_started:
-                await self._emit("agent:section_end", {
-                    "session_id": session_id_str,
-                    "ind": step_number,
-                })
+                await self._emit(
+                    "agent:section_end",
+                    {
+                        "session_id": session_id_str,
+                        "ind": step_number,
+                    },
+                )
             await self._emit("agent:stopped", {"session_id": session_id_str})
             with self._get_db_session() as db_session:
                 set_session_execution_status(
@@ -1127,10 +1257,13 @@ class AgentHandler:
 
         # Close the text/reasoning section
         if message_started or reasoning_started:
-            await self._emit("agent:section_end", {
-                "session_id": session_id_str,
-                "ind": step_number,
-            })
+            await self._emit(
+                "agent:section_end",
+                {
+                    "session_id": session_id_str,
+                    "ind": step_number,
+                },
+            )
 
         # Final drain of packet queue (tools may have emitted packets
         # Persist assistant message.
@@ -1138,9 +1271,7 @@ class AgentHandler:
         # build_message_history can reconstruct reasoning blocks for
         # providers that require reasoning_content on every assistant turn.
         persist_content = (
-            processed_response_text
-            if processed_response_text
-            else full_response_text
+            processed_response_text if processed_response_text else full_response_text
         ) or None
         if persist_content or thinking_content or pending_tool_calls:
             with self._get_db_session() as db_session:
@@ -1152,9 +1283,7 @@ class AgentHandler:
                     step_number=step_number,
                     thinking_content=thinking_content or None,
                 )
-                update_session_stats(
-                    db_session, session_id, tool_calls=tool_call_count
-                )
+                update_session_stats(db_session, session_id, tool_calls=tool_call_count)
 
         # Handle tool calls
         if not pending_tool_calls:
@@ -1203,13 +1332,13 @@ class AgentHandler:
             try:
                 with self._get_db_session() as db_session:
                     from onyx.db.agent import get_session_messages
+
                     all_msgs = get_session_messages(
                         db_session=db_session,
                         session_id=session_id,
                     )
                     db_tool_rows = [
-                        m for m in reversed(all_msgs)
-                        if m.role == AgentMessageRole.TOOL
+                        m for m in reversed(all_msgs) if m.role == AgentMessageRole.TOOL
                     ]
             except Exception:
                 logger.debug(
@@ -1223,12 +1352,15 @@ class AgentHandler:
             tc_name = tc["name"]
             tc_id = tc["id"]
 
-            await self._emit("tool:start", {
-                "session_id": session_id_str,
-                "ind": step_number,
-                "tool_name": tc_name,
-                "tool_call_id": tc_id,
-            })
+            await self._emit(
+                "tool:start",
+                {
+                    "session_id": session_id_str,
+                    "ind": step_number,
+                    "tool_name": tc_name,
+                    "tool_call_id": tc_id,
+                },
+            )
 
             # Find the most recent unconsumed DB row for this tool_name
             tool_data: Any = None
@@ -1243,15 +1375,18 @@ class AgentHandler:
                     consumed.add(idx)
                     break
 
-            await self._emit("tool:delta", {
-                "session_id": session_id_str,
-                "ind": step_number,
-                "tool_name": tc_name,
-                "tool_call_id": tc_id,
-                "response_type": "success",
-                "data": tool_data,
-                **({"openui_response": openui_resp} if openui_resp else {}),
-            })
+            await self._emit(
+                "tool:delta",
+                {
+                    "session_id": session_id_str,
+                    "ind": step_number,
+                    "tool_name": tc_name,
+                    "tool_call_id": tc_id,
+                    "response_type": "success",
+                    "data": tool_data,
+                    **({"openui_response": openui_resp} if openui_resp else {}),
+                },
+            )
 
             step_number += 1
 
@@ -1298,19 +1433,21 @@ class AgentHandler:
                 else:
                     persist_pending_local_tools(db_session, session_id, [])
 
-            await self._emit("tool:start", {
-                "session_id": session_id_str,
-                "ind": step_number,
-                "tool_name": tc_name,
-                "tool_call_id": tc_id,
-            })
+            await self._emit(
+                "tool:start",
+                {
+                    "session_id": session_id_str,
+                    "ind": step_number,
+                    "tool_name": tc_name,
+                    "tool_call_id": tc_id,
+                },
+            )
 
             # Check if approval is needed (local tools via APPROVAL_REQUIRED_TOOLS,
             # or connector tools that were classified as pause tools).
             needs_approval = (
-                (requires_approval(tc_name) or tc_name in connector_pause)
-                and tc_name not in always_allowed_tools
-            )
+                requires_approval(tc_name) or tc_name in connector_pause
+            ) and tc_name not in always_allowed_tools
 
             if needs_approval:
                 with self._get_db_session() as db_session:
@@ -1319,16 +1456,19 @@ class AgentHandler:
                         session_id,
                         AgentSessionExecutionStatus.AWAITING_APPROVAL,
                     )
-                await self._emit("tool:approval_required", {
-                    "session_id": session_id_str,
-                    "ind": step_number,
-                    "tool_name": tc_name,
-                    "tool_input": tc_input,
-                    "tool_call_id": tc_id,
-                    "gateway_id": ctx.connector_approval_gateway.get(
-                        tc_name, "__local__"
-                    ),
-                })
+                await self._emit(
+                    "tool:approval_required",
+                    {
+                        "session_id": session_id_str,
+                        "ind": step_number,
+                        "tool_name": tc_name,
+                        "tool_input": tc_input,
+                        "tool_call_id": tc_id,
+                        "gateway_id": ctx.connector_approval_gateway.get(
+                            tc_name, "__local__"
+                        ),
+                    },
+                )
             else:
                 with self._get_db_session() as db_session:
                     set_session_execution_status(
@@ -1336,13 +1476,16 @@ class AgentHandler:
                         session_id,
                         AgentSessionExecutionStatus.AWAITING_TOOL,
                     )
-                await self._emit("tool:request", {
-                    "session_id": session_id_str,
-                    "ind": step_number,
-                    "tool_name": tc_name,
-                    "tool_input": tc_input,
-                    "tool_call_id": tc_id,
-                })
+                await self._emit(
+                    "tool:request",
+                    self._build_tool_request_payload(
+                        session_id_str,
+                        step_number,
+                        tc_name,
+                        tc_input,
+                        tc_id,
+                    ),
+                )
             # STOP -- client will send tool:result or tool:approval
             return
 
@@ -1366,6 +1509,7 @@ class AgentHandler:
             with self._get_db_session() as db_session:
                 # Check which tools already have DB rows
                 from onyx.db.agent import get_session_messages
+
                 existing_tool_names: set[str] = set()
                 for m in get_session_messages(db_session, session_id):
                     if m.role == AgentMessageRole.TOOL and m.tool_name:
@@ -1447,11 +1591,14 @@ class AgentHandler:
 
             new_session_id, summary = result
 
-            await self._emit("agent:session_compacted", {
-                "session_id": str(session_id),
-                "new_session_id": str(new_session_id),
-                "summary": summary,
-            })
+            await self._emit(
+                "agent:session_compacted",
+                {
+                    "session_id": str(session_id),
+                    "new_session_id": str(new_session_id),
+                    "summary": summary,
+                },
+            )
 
             logger.info(
                 "Compacted session %s -> new session %s",
@@ -1502,15 +1649,13 @@ class AgentHandler:
         last_end = 0
 
         for match in matches:
-            result += buffer[last_end:match.start()]
+            result += buffer[last_end : match.start()]
             last_end = match.end()
 
             citation_str = match.group()
             is_formatted = match.lastindex == 1  # [[N]] format
 
-            content = (
-                citation_str[2:-2] if is_formatted else citation_str[1:-1]
-            )
+            content = citation_str[2:-2] if is_formatted else citation_str[1:-1]
             for num_str in content.split(","):
                 num = int(num_str.strip())
                 # Look up link and doc_id from search context
@@ -1528,10 +1673,12 @@ class AgentHandler:
 
                 if doc_id and doc_id not in emitted_doc_ids:
                     emitted_doc_ids.add(doc_id)
-                    new_citations.append({
-                        "citation_num": num,
-                        "document_id": doc_id,
-                    })
+                    new_citations.append(
+                        {
+                            "citation_num": num,
+                            "document_id": doc_id,
+                        }
+                    )
 
         remainder = buffer[last_end:]
         if possible and remainder:

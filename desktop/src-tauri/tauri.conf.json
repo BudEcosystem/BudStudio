@@ -33,6 +33,9 @@
     "resources": {
       "../../web/.next/standalone": "web/.next/standalone"
     },
+    "externalBin": [
+      "binaries/budcode"
+    ],
     "macOS": {
       "entitlements": null,
       "minimumSystemVersion": "10.15",
