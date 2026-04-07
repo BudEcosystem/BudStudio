@@ -14,7 +14,9 @@ function debugLog(message: string): void {
   const logLine = `[${timestamp}] [LocalGateway] ${message}\n`;
   try {
     fs.appendFileSync("/tmp/bud-agent-debug.log", logLine);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 import type { ToolRegistry } from "./tools";
 import { createLocalToolRegistry } from "./tools/local-execution";
@@ -56,7 +58,7 @@ export class LocalGateway {
     private backendUrl: string,
     private authToken: string,
     private workspacePath: string,
-    private onEvent: (event: string, payload: unknown) => void,
+    private onEvent: (event: string, payload: unknown) => void
   ) {}
 
   async connect(): Promise<void> {
@@ -65,7 +67,10 @@ export class LocalGateway {
       this.registry = await createLocalToolRegistry(this.workspacePath);
       console.log("[LocalGateway] Tool registry created");
     } catch (err) {
-      console.error("[LocalGateway] Tool registry failed:", err instanceof Error ? err.message : err);
+      console.error(
+        "[LocalGateway] Tool registry failed:",
+        err instanceof Error ? err.message : err
+      );
     }
 
     console.log(`[LocalGateway] Connecting socket to ${this.backendUrl}...`);
@@ -95,12 +100,21 @@ export class LocalGateway {
     });
 
     const forwardEvents = [
-      "agent:message_start", "agent:message_delta",
-      "agent:reasoning_start", "agent:reasoning_delta",
-      "agent:section_end", "agent:citation", "agent:artifact",
-      "agent:session_compacted", "agent:session_updated",
-      "agent:stopped", "agent:done", "agent:error",
-      "tool:approval_required", "tool:start", "tool:delta",
+      "agent:message_start",
+      "agent:message_delta",
+      "agent:reasoning_start",
+      "agent:reasoning_delta",
+      "agent:section_end",
+      "agent:citation",
+      "agent:artifact",
+      "agent:session_compacted",
+      "agent:session_updated",
+      "agent:stopped",
+      "agent:done",
+      "agent:error",
+      "tool:approval_required",
+      "tool:start",
+      "tool:delta",
     ];
     for (const event of forwardEvents) {
       this.socket.on(event, (data: unknown) => this.onEvent(event, data));
@@ -129,17 +143,25 @@ export class LocalGateway {
     });
 
     this.socket.on("disconnect", (reason: string) => {
-      debugLog(`DISCONNECTED: ${reason}, pendingResults=${this.pendingResults.length}`);
+      debugLog(
+        `DISCONNECTED: ${reason}, pendingResults=${this.pendingResults.length}`
+      );
       this.onEvent("gateway:disconnected", { reason });
     });
   }
 
   private async handleToolRequest(data: ToolRequestPayload): Promise<void> {
-    const { tool_name, tool_input, tool_call_id, session_id, llm_config } = data;
+    const { tool_name, tool_input, tool_call_id, session_id, llm_config } =
+      data;
     this.onEvent("tool:request", data);
 
     if (!this.registry) {
-      this.sendToolResult(session_id, tool_call_id, null, "Gateway not initialized");
+      this.sendToolResult(
+        session_id,
+        tool_call_id,
+        null,
+        "Gateway not initialized"
+      );
       return;
     }
 
@@ -154,7 +176,9 @@ export class LocalGateway {
 
     this.activeToolAbort = new AbortController();
 
-    debugLog(`handleToolRequest: tool=${tool_name}, toolCallId=${tool_call_id}, socketConnected=${this.socket?.connected}`);
+    debugLog(
+      `handleToolRequest: tool=${tool_name}, toolCallId=${tool_call_id}, socketConnected=${this.socket?.connected}`
+    );
 
     // Inject backend-provided LLM credentials into tool_input for tools
     // that need them (e.g. cli_agent spawns budcode which needs API keys).
@@ -174,8 +198,11 @@ export class LocalGateway {
       // pending Socket.IO ping/pong frames are processed first.
       const output = await new Promise<string>((resolve, reject) => {
         setImmediate(async () => {
-          try { resolve(await tool.execute(enrichedInput)); }
-          catch (err) { reject(err); }
+          try {
+            resolve(await tool.execute(enrichedInput));
+          } catch (err) {
+            reject(err);
+          }
         });
       });
 
@@ -186,15 +213,22 @@ export class LocalGateway {
       this.sendToolResult(session_id, tool_call_id, output, null);
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      this.sendToolResult(session_id, tool_call_id, null,
-        err instanceof Error ? err.message : "Unknown tool execution error");
+      this.sendToolResult(
+        session_id,
+        tool_call_id,
+        null,
+        err instanceof Error ? err.message : "Unknown tool execution error"
+      );
     } finally {
       clearInterval(keepalive);
       this.activeToolAbort = null;
     }
   }
 
-  private async emitFileChange(sessionId: string, filePath: string): Promise<void> {
+  private async emitFileChange(
+    sessionId: string,
+    filePath: string
+  ): Promise<void> {
     try {
       const resolvedPath = path.resolve(this.workspacePath, filePath);
       await fsp.access(resolvedPath);
@@ -205,17 +239,37 @@ export class LocalGateway {
         file_path: filePath,
         content,
       });
-    } catch { /* ignore sync errors */ }
+    } catch {
+      /* ignore sync errors */
+    }
   }
 
-  private sendToolResult(sessionId: string, toolCallId: string, output: string | null, error: string | null): void {
-    const payload: ToolResultPayload = { session_id: sessionId, tool_call_id: toolCallId, output, error };
+  private sendToolResult(
+    sessionId: string,
+    toolCallId: string,
+    output: string | null,
+    error: string | null
+  ): void {
+    const payload: ToolResultPayload = {
+      session_id: sessionId,
+      tool_call_id: toolCallId,
+      output,
+      error,
+    };
     const connected = this.socket?.connected ?? false;
-    debugLog(`sendToolResult: connected=${connected}, toolCallId=${toolCallId}, hasOutput=${output !== null}, hasError=${error !== null}`);
+    debugLog(
+      `sendToolResult: connected=${connected}, toolCallId=${toolCallId}, hasOutput=${
+        output !== null
+      }, hasError=${error !== null}`
+    );
     if (connected) {
       this.socket!.emit("tool:result", payload);
     } else {
-      debugLog(`Socket disconnected — queuing result (queue size: ${this.pendingResults.length + 1})`);
+      debugLog(
+        `Socket disconnected — queuing result (queue size: ${
+          this.pendingResults.length + 1
+        })`
+      );
       this.pendingResults.push(payload);
     }
   }
@@ -233,27 +287,55 @@ export class LocalGateway {
    * collects user input and sends the result.
    */
   sendToolResultDirect(data: ToolResultPayload): void {
-    this.sendToolResult(data.session_id, data.tool_call_id, data.output, data.error);
+    this.sendToolResult(
+      data.session_id,
+      data.tool_call_id,
+      data.output,
+      data.error
+    );
   }
 
   execute(sessionId: string, message: string, model?: string): void {
-    this.socket?.emit("agent:execute", {
-      session_id: sessionId, message, workspace_path: this.workspacePath, model,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }, (ack: AckResponse) => {
-      if (ack?.error) this.onEvent("agent:error", { session_id: sessionId, error: ack.error });
-    });
+    this.socket?.emit(
+      "agent:execute",
+      {
+        session_id: sessionId,
+        message,
+        workspace_path: this.workspacePath,
+        model,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      (ack: AckResponse) => {
+        if (ack?.error)
+          this.onEvent("agent:error", {
+            session_id: sessionId,
+            error: ack.error,
+          });
+      }
+    );
   }
 
   approve(sessionId: string, toolCallId: string, approved: boolean): void {
-    this.socket?.emit("tool:approval", { session_id: sessionId, tool_call_id: toolCallId, approved });
+    this.socket?.emit("tool:approval", {
+      session_id: sessionId,
+      tool_call_id: toolCallId,
+      approved,
+    });
   }
 
   stop(sessionId: string): void {
     if (this.activeToolAbort) this.activeToolAbort.abort();
-    this.socket?.emit("agent:stop", { session_id: sessionId }, (ack: AckResponse) => {
-      if (ack?.error) this.onEvent("agent:error", { session_id: sessionId, error: ack.error });
-    });
+    this.socket?.emit(
+      "agent:stop",
+      { session_id: sessionId },
+      (ack: AckResponse) => {
+        if (ack?.error)
+          this.onEvent("agent:error", {
+            session_id: sessionId,
+            error: ack.error,
+          });
+      }
+    );
   }
 
   disconnect(): void {
