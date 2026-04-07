@@ -23,3 +23,7 @@ export {
   SubSessionCompletionDivider,
   type SubSessionCompletionDividerProps,
 } from "./SubSessionCompletionDivider";
+export {
+  DynamicIsland,
+  type DynamicIslandProps,
+} from "./DynamicIsland";

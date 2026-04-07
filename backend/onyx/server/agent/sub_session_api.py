@@ -81,8 +81,10 @@ class SubSessionSnapshot(BaseModel):
     task: str
     task_name: str
     status: str
+    execution_status: str
     session_type: str
     created_at: str
+    updated_at: str
     tokens_used: int
     tool_calls: int
     turns: int | None
@@ -188,8 +190,10 @@ def list_session_sub_sessions(
                 task=str(r["task"]),
                 task_name=str(r.get("task_name") or r["task"]),
                 status=str(r["status"]),
+                execution_status=str(r.get("execution_status", "IDLE")),
                 session_type=str(r["session_type"]),
                 created_at=str(r["created_at"]),
+                updated_at=str(r.get("updated_at", r["created_at"])),
                 tokens_used=int(r.get("tokens_used", 0) or 0),
                 tool_calls=int(r.get("tool_calls", 0) or 0),
                 turns=r.get("turns") if r.get("turns") is not None else None,  # type: ignore[arg-type]
@@ -424,7 +428,7 @@ def get_session_threads(
 @router.post("/sessions/{session_id}/messages/{message_id}/thread")
 def create_or_get_thread(
     session_id: UUID,
-    message_id: UUID,
+    message_id: str,
     request: CreateThreadRequest | None = None,
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
@@ -439,8 +443,18 @@ def create_or_get_thread(
     if parent is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Resolve message_id: must be a valid UUID (real DB ID)
+    try:
+        resolved_message_id = UUID(message_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid message_id — must be a UUID. "
+            "Client-generated IDs (msg-xxx) are not accepted.",
+        )
+
     # Check if thread already exists for this message
-    existing = get_thread_for_message(db_session, message_id)
+    existing = get_thread_for_message(db_session, resolved_message_id)
     if existing:
         reply_count = sum(
             1 for m in (existing.messages or [])
@@ -457,7 +471,7 @@ def create_or_get_thread(
         )
         return ThreadInfo(
             session_id=str(existing.id),
-            anchor_message_id=str(message_id),
+            anchor_message_id=str(resolved_message_id),
             title=existing.title or "Thread",
             status=existing.status.value,
             created_at=existing.created_at.isoformat()
@@ -468,7 +482,7 @@ def create_or_get_thread(
         )
 
     # Get the anchor message content for context
-    msg = db_session.get(AgentMessageModel, message_id)
+    msg = db_session.get(AgentMessageModel, resolved_message_id)
     if msg is None:
         raise HTTPException(status_code=404, detail="Message not found")
 
@@ -507,7 +521,7 @@ def create_or_get_thread(
         task_description=context,
         session_type="SUB_PERSISTENT",
         title=title,
-        anchor_message_id=message_id,
+        anchor_message_id=resolved_message_id,
     )
 
     # Seed thread with the original message content as context
@@ -522,7 +536,7 @@ def create_or_get_thread(
 
     return ThreadInfo(
         session_id=str(thread.id),
-        anchor_message_id=str(message_id),
+        anchor_message_id=str(resolved_message_id),
         title=title,
         status=thread.status.value,
         created_at=thread.created_at.isoformat() if thread.created_at else "",

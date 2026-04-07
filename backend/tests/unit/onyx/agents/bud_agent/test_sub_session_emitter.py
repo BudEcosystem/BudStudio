@@ -26,7 +26,10 @@ class TestSubSessionEmitter:
 
     @pytest.fixture()
     def emitter(self) -> SubSessionEmitter:
-        return SubSessionEmitter()
+        return SubSessionEmitter(
+            session_id="test-session-001",
+            parent_session_id="test-parent-001",
+        )
 
     @pytest.mark.asyncio
     async def test_emitter_all_methods_callable(

@@ -32,6 +32,8 @@ export function SubSessionCard({ session, onClick }: SubSessionCardProps) {
   return (
     <button
       type="button"
+      data-testid={`sub-session-card-${session.session_id}`}
+      data-status={session.status}
       onClick={() => onClick(session.session_id)}
       className={cn(
         "w-full text-left rounded-lg border border-border px-3 py-2",

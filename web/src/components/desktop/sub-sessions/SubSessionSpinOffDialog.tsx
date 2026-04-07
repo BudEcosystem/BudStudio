@@ -94,7 +94,7 @@ export function SubSessionSpinOffDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent data-testid="spin-off-dialog" className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Spin Off Sub-Session</DialogTitle>
           <DialogDescription>
@@ -147,7 +147,7 @@ export function SubSessionSpinOffDialog({
 
           {/* Error display */}
           {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20 px-3 py-2">
+            <div data-testid="spin-off-error" className="rounded-md border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20 px-3 py-2">
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             </div>
           )}

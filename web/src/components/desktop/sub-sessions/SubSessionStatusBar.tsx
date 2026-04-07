@@ -22,7 +22,7 @@ export function SubSessionStatusBar({
   }
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg bg-background-tint-01">
+    <div data-testid="sub-session-status-bar" className="flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg bg-background-tint-01">
       {activeCount > 0 && (
         <Badge variant="in_progress" size="xs">
           {activeCount} active
@@ -36,6 +36,7 @@ export function SubSessionStatusBar({
 
       <button
         type="button"
+        data-testid="sub-session-view-all"
         onClick={onViewAll}
         className="ml-auto text-xs text-text-03 hover:text-text-04 underline underline-offset-2 transition-colors"
       >

@@ -20,7 +20,7 @@ export function SubSessionCardGroup({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div data-testid="sub-session-card-group" className="flex flex-col gap-2">
       {subSessions.map((session) => (
         <SubSessionCard
           key={session.session_id}

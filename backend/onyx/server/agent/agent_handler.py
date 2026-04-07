@@ -362,11 +362,22 @@ class AgentHandler:
             clear_session_stop_flag(redis_client, session_id)
 
             # Persist user message
-            add_session_message(
+            user_msg = add_session_message(
                 db_session=db_session,
                 session_id=session_id,
                 role=AgentMessageRole.USER,
                 content=message,
+            )
+
+            # Emit the real DB message ID so the frontend can update
+            # its optimistic client-generated ID.
+            await self._sio.emit(
+                "agent:message_ids",
+                {
+                    "session_id": session_id_str,
+                    "user_message_id": str(user_msg.id),
+                },
+                room=self._sid,
             )
 
             # Drain any pending async events (sub-session completions,
@@ -1041,10 +1052,39 @@ class AgentHandler:
 
             # Handle result status
             if result.status == "complete":
+                # Fetch the latest assistant message ID so the frontend can
+                # update its optimistic ID with the real DB UUID.
+                assistant_message_id: str | None = None
                 with self._get_db_session() as db_session:
                     set_session_execution_status(
                         db_session, session_id, AgentSessionExecutionStatus.IDLE
                     )
+                    from sqlalchemy import select as _select
+                    from onyx.db.models import AgentMessage as _AM
+                    latest_assistant = db_session.execute(
+                        _select(_AM.id)
+                        .where(
+                            _AM.session_id == session_id,
+                            _AM.role == AgentMessageRole.ASSISTANT,
+                            _AM.content.isnot(None),
+                            _AM.content != "",
+                        )
+                        .order_by(_AM.created_at.desc())
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    if latest_assistant is not None:
+                        assistant_message_id = str(latest_assistant)
+
+                if assistant_message_id is not None:
+                    await self._sio.emit(
+                        "agent:message_ids",
+                        {
+                            "session_id": session_id_str,
+                            "assistant_message_id": assistant_message_id,
+                        },
+                        room=self._sid,
+                    )
+
                 await self._emit("agent:done", {"session_id": session_id_str})
 
             elif result.status == "stopped":

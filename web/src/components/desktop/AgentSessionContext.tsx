@@ -81,6 +81,7 @@ interface AgentSessionContextType {
     messageId: string,
     updates: Partial<Omit<AgentMessage, "id" | "timestamp" | "role">>
   ) => void;
+  replaceMessageId: (sessionId: string, oldId: string, newId: string) => void;
   updateSessionTitle: (sessionId: string, title: string) => void;
   setAlwaysAllowTool: (toolName: string) => void;
   setAlwaysAllowMemoryUpdates: (allow: boolean) => void;
@@ -550,6 +551,23 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const replaceMessageId = useCallback(
+    (sessionId: string, oldId: string, newId: string) => {
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== sessionId) return session;
+          return {
+            ...session,
+            messages: session.messages.map((msg) =>
+              msg.id === oldId ? { ...msg, id: newId } : msg
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
   const updateSessionTitle = useCallback((sessionId: string, title: string) => {
     // Update local state
     setSessions((prev) =>
@@ -637,6 +655,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         deleteSession,
         addMessage,
         updateMessage,
+        replaceMessageId,
         updateSessionTitle,
         setAlwaysAllowTool,
         setAlwaysAllowMemoryUpdates,

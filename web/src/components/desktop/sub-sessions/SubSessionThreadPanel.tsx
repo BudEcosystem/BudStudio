@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { X, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useSubSessionThread } from "@/lib/desktop/useSubSessionThread";
 import type { SubSessionStatus } from "@/lib/desktop/subSessionTypes";
@@ -514,7 +514,7 @@ export function SubSessionThreadPanel({
   const isLoading = isThreadMetaLoading || isLoadingHistory;
 
   return (
-    <div className="flex flex-col h-full w-[400px] max-w-[90vw] border-l border-border bg-background">
+    <div data-testid="sub-session-thread-panel" className="flex flex-col h-full w-[400px] max-w-[90vw] border-l border-border bg-background">
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
         <button
@@ -541,34 +541,8 @@ export function SubSessionThreadPanel({
                 {session.status}
               </Badge>
             )}
-            {session?.status === "ACTIVE" && (
-              <span className="flex items-center gap-1 text-xs font-medium text-green-500">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                </span>
-                Live
-              </span>
-            )}
-            {session && (
-              <span className="text-xs text-text-02">
-                {session.turns_completed} turn
-                {session.turns_completed !== 1 ? "s" : ""}
-                {session.tokens_used > 0 &&
-                  ` / ${session.tokens_used.toLocaleString()} tokens`}
-              </span>
-            )}
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1 rounded hover:bg-background-tint-02 text-text-03 transition-colors"
-          aria-label="Close"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
 
       {/* Body: scrollable messages */}

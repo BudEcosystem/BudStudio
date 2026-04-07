@@ -56,7 +56,7 @@ _SUMMARY_MAX_WORDS = 500
 # Persistent sub-session inactivity timeout (seconds).
 # After a SUB_PERSISTENT session has been COMPLETED for this long,
 # it is considered expired and a notification is sent to its parent.
-PERSISTENT_SUB_SESSION_EXPIRY_SECONDS = 3600  # 1 hour
+PERSISTENT_SUB_SESSION_EXPIRY_SECONDS = 86400  # 1 day
 
 # Redis key prefix for tracking sessions that have already been notified
 # about expiry, preventing duplicate notifications.
@@ -654,9 +654,9 @@ def reap_zombie_sub_sessions(
                     zombie.updated_at,
                 )
 
-                # Mark as FAILED
+                # Mark as INACTIVE (not FAILED — the session may just be idle)
                 update_session_status(
-                    db_session, zombie.id, AgentSessionStatus.FAILED
+                    db_session, zombie.id, AgentSessionStatus.INACTIVE
                 )
 
                 # Announce failure to parent
@@ -796,6 +796,11 @@ def expire_persistent_sub_sessions(
                     "sub-session %s (completed_at=%s)",
                     session.id,
                     session.completed_at,
+                )
+
+                # Mark session as INACTIVE
+                update_session_status(
+                    db_session, session.id, AgentSessionStatus.INACTIVE
                 )
 
                 # 1. Enqueue event to parent

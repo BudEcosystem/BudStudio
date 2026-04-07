@@ -26,10 +26,9 @@ import {
   type PendingMemoryUpdate,
 } from "@/lib/desktop";
 import {
-  SubSessionStatusBar,
+  DynamicIsland,
   SubSessionThreadPanel,
   SubSessionSpinOffDialog,
-  SubSessionListDropdown,
 } from "./sub-sessions";
 import type { UserQuestionItem } from "@/app/chat/services/streamingModels";
 import { isMemoryFile } from "@/lib/agent/utils/memory-detector";
@@ -283,8 +282,7 @@ export function BudAgentScreen() {
   const [spinOffDialogOpen, setSpinOffDialogOpen] = useState(false);
   const [spinOffSourceContent, setSpinOffSourceContent] = useState("");
 
-  // ── Sub-session list dropdown state ──
-  const [subSessionListOpen, setSubSessionListOpen] = useState(false);
+  // (Sub-session list state removed — now handled by DynamicIsland)
 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -361,6 +359,15 @@ export function BudAgentScreen() {
       setActiveRightPanel("none");
     }
     setSidebarSourcesMsgId(msgId);
+  }, []);
+
+  // ── Message ID aliases: optimistic client ID → real DB UUID ──
+  // Populated by onMessageIds. Used to resolve API requests that need
+  // a real DB UUID (e.g. "Continue in thread") without mutating msg.id
+  // (which would break the spawn-by-message lookup).
+  const messageIdAliasesRef = useRef<Map<string, string>>(new Map());
+  const resolveMessageId = useCallback((id: string): string => {
+    return messageIdAliasesRef.current.get(id) ?? id;
   }, []);
 
   // ── Thread map: anchor_message_id -> { session_id, reply_count } ──
@@ -480,11 +487,19 @@ export function BudAgentScreen() {
         return;
       }
 
-      // Create new thread
+      // Create new thread — use the message content as the title so the
+      // thread button shows a meaningful label.
+      const titleSnippet = (msg.content || "Thread").trim().slice(0, 80);
+      // Resolve the optimistic client ID to a real DB UUID if we have one
+      const realMessageId = resolveMessageId(msg.id);
       try {
         const res = await fetch(
-          `/api/agent/sessions/${currentSessionId}/messages/${msg.id}/thread`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }
+          `/api/agent/sessions/${currentSessionId}/messages/${realMessageId}/thread`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: titleSnippet }),
+          }
         );
         if (!res.ok) {
           console.error("Failed to create thread:", res.status);
@@ -493,7 +508,12 @@ export function BudAgentScreen() {
         const data = await res.json();
         setThreadMap((prev) => {
           const next = new Map(prev);
-          next.set(msg.id, { sessionId: data.session_id, replyCount: 0 });
+          next.set(msg.id, {
+            sessionId: data.session_id,
+            replyCount: data.reply_count ?? 0,
+            label: data.title || titleSnippet,
+            lastReplyAt: data.last_reply_at ?? undefined,
+          });
           return next;
         });
         openThreadPanel(data.session_id);
@@ -501,7 +521,7 @@ export function BudAgentScreen() {
         console.error("Error creating thread:", err);
       }
     },
-    [currentSessionId, threadMap, openThreadPanel, getSpawnedSessionIds]
+    [currentSessionId, threadMap, openThreadPanel, getSpawnedSessionIds, resolveMessageId]
   );
 
   // ── Visibility change: re-fetch sub-sessions when tab is foregrounded ──
@@ -652,11 +672,12 @@ export function BudAgentScreen() {
 
     const userMessage = effectiveMessage.trim();
 
-    // Add user message
-    addMessage(sessionId, {
+    // Add user message (client-generated ID; will be updated with real DB ID)
+    const userMsg = addMessage(sessionId, {
       role: "user",
       content: userMessage,
     });
+    const optimisticUserMsgId = userMsg.id;
 
     // Clear input and set processing state
     setMessage("");
@@ -692,6 +713,18 @@ export function BudAgentScreen() {
         model: llmManager.currentLlm.modelName || undefined,
       },
       {
+        onMessageIds: ({ userMessageId, assistantMessageId }) => {
+          // Store optimistic → real-UUID mapping in the aliases ref so
+          // that "Continue in thread" can send the real UUID without
+          // mutating msg.id (which would break the spawn-by-message lookup).
+          if (userMessageId) {
+            messageIdAliasesRef.current.set(optimisticUserMsgId, userMessageId);
+          }
+          if (assistantMessageId) {
+            messageIdAliasesRef.current.set(activeMessageId, assistantMessageId);
+          }
+        },
+
         onPacket: (packet) => {
           packetsRef.current = [...packetsRef.current, packet];
           updateAgentMsg({ packets: [...packetsRef.current] });
@@ -1297,6 +1330,15 @@ export function BudAgentScreen() {
         </div>
       )}
 
+      {/* Dynamic Island — floating sub-session status pill */}
+      <DynamicIsland
+        subSessions={subSessions}
+        activeCount={subSessionActiveCount}
+        completedCount={subSessionCompletedCount}
+        onSelectSession={(id) => openThreadPanel(id)}
+        onCancelSession={(id) => _cancelSubSession(id)}
+      />
+
       {/* Messages Area */}
       <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden default-scrollbar relative z-10" data-testid="agent-messages-container">
         {/* Top shadow fadeout */}
@@ -1337,25 +1379,7 @@ export function BudAgentScreen() {
           </div>
         ) : (
           <div className="mx-auto py-4 px-4 lg:px-5 w-[90%] max-w-message-max" data-testid="agent-messages-list">
-            {/* Sub-session status bar (task 10.6: hidden when no sub-sessions active/completed) */}
-            {(subSessionActiveCount > 0 || subSessionCompletedCount > 0) && (
-              <div className="mb-4 relative">
-                <SubSessionStatusBar
-                  activeCount={subSessionActiveCount}
-                  completedCount={subSessionCompletedCount}
-                  onViewAll={() => setSubSessionListOpen((prev) => !prev)}
-                />
-                <SubSessionListDropdown
-                  subSessions={subSessions}
-                  isOpen={subSessionListOpen}
-                  onClose={() => setSubSessionListOpen(false)}
-                  onSelect={(sessionId) => {
-                    setSubSessionListOpen(false);
-                    openThreadPanel(sessionId);
-                  }}
-                />
-              </div>
-            )}
+            {/* Sub-session status is now shown via DynamicIsland (floating above messages) */}
 
             <AgentMessageList
               messages={messages}

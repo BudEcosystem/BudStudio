@@ -30,6 +30,9 @@ export interface UseSubSessionsReturn {
   handleComplete: (data: SubSessionCompleteObj) => void;
   /** Handle a sub_session_failed streaming event. */
   handleFailed: (data: SubSessionFailedObj) => void;
+  /** Update entries in spawnedByMessage when the optimistic message ID is
+   *  replaced with a real DB UUID. */
+  remapSpawnedByMessage: (oldMessageId: string, newMessageId: string) => void;
   /** Spawn a new sub-session via API. */
   spawnSubSession: (task: string, mode?: string) => Promise<SpawnSubSessionResponse>;
   /** Cancel an active sub-session via API. */
@@ -114,6 +117,25 @@ export function useSubSessions(
       });
     }
   }, []);
+
+  const remapSpawnedByMessage = useCallback(
+    (oldMessageId: string, newMessageId: string) => {
+      setSpawnedByMessage((prev) => {
+        let changed = false;
+        const next = new Map<string, string>();
+        for (const [subSessionId, msgId] of prev.entries()) {
+          if (msgId === oldMessageId) {
+            next.set(subSessionId, newMessageId);
+            changed = true;
+          } else {
+            next.set(subSessionId, msgId);
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    []
+  );
 
   const handleProgress = useCallback((data: SubSessionProgressObj) => {
     setSubSessions((prev) =>
@@ -214,6 +236,7 @@ export function useSubSessions(
     handleProgress,
     handleComplete,
     handleFailed,
+    remapSpawnedByMessage,
     spawnSubSession,
     cancelSubSession,
     refetch,

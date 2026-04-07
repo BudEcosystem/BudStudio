@@ -5,7 +5,8 @@
  * can spawn child sessions that run tasks independently and report back.
  */
 
-export type SubSessionStatus = "ACTIVE" | "COMPLETED" | "FAILED";
+export type SubSessionStatus = "ACTIVE" | "COMPLETED" | "FAILED" | "INACTIVE";
+export type SubSessionExecutionStatus = "IDLE" | "RUNNING" | "AWAITING_TOOL" | "AWAITING_APPROVAL";
 export type SubSessionType = "SUB_ONE_SHOT" | "SUB_PERSISTENT";
 
 export interface SubSessionSummary {
@@ -14,8 +15,10 @@ export interface SubSessionSummary {
   task: string;
   task_name: string;
   status: SubSessionStatus;
+  execution_status: SubSessionExecutionStatus;
   session_type: SubSessionType;
   created_at: string;
+  updated_at: string;
   completed_at?: string;
   turns_completed: number;
   tokens_used: number;

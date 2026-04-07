@@ -49,6 +49,10 @@ export interface AgentSocketCallbacks {
   ) => void;
   onArtifact?: (openuiLang: string, title: string) => void;
   onUserQuestions?: (questions: UserQuestionItem[], toolCallId: string) => void;
+  /** Called with real DB message IDs after the backend persists messages.
+   *  Either userMessageId or assistantMessageId will be set (not both).
+   */
+  onMessageIds?: (ids: { userMessageId?: string; assistantMessageId?: string }) => void;
   /** Called after a Socket.IO reconnect when an execution was in flight. */
   onReconnected?: (sessionId: string) => void;
 
@@ -191,6 +195,7 @@ const RELAY_EVENTS: string[] = [
   "tool:start",
   "tool:delta",
   "tool:request",
+  "agent:message_ids",
   "agent:sub_session_spawned",
   "agent:sub_session_progress",
   "agent:sub_session_complete",
@@ -624,6 +629,13 @@ function dispatchEvent(
       );
       break;
 
+    case "agent:message_ids":
+      cbs.onMessageIds?.({
+        userMessageId: data.user_message_id as string | undefined,
+        assistantMessageId: data.assistant_message_id as string | undefined,
+      });
+      break;
+
     case "agent:stopped":
       emitPacket({ type: "stop" });
       cbs.onStopped?.();
@@ -647,6 +659,7 @@ function dispatchEvent(
         parent_session_id: data.parent_session_id as string,
         sub_session_id: data.sub_session_id as string,
         task: data.task as string,
+        task_name: data.task_name as string | undefined,
         mode: data.mode as string,
       });
       break;

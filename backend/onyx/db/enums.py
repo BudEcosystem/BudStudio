@@ -199,6 +199,7 @@ class AgentSessionStatus(str, PyEnum):
     STOPPED = "STOPPED"
     COMPACTED = "COMPACTED"
     SUSPENDED = "SUSPENDED"
+    INACTIVE = "INACTIVE"
 
     def is_terminal(self) -> bool:
         terminal_states = {
