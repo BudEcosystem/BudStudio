@@ -29,9 +29,9 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .context("Failed to get config directory")?
-            .join("bud-studio");
+        let config_dir = dirs::home_dir()
+            .context("Failed to get home directory")?
+            .join(".bud");
 
         fs::create_dir_all(&config_dir)
             .context("Failed to create config directory")?;

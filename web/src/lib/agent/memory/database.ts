@@ -18,7 +18,7 @@ import { MemoryChunk, SearchResult } from "./types";
  */
 function getDatabasePath(): string {
   const homeDir = os.homedir();
-  const dbDir = path.join(homeDir, ".bud-studio");
+  const dbDir = path.join(homeDir, ".bud");
 
   // Create directory if it doesn't exist
   if (!fs.existsSync(dbDir)) {

@@ -1,7 +1,7 @@
 /**
  * CLI Agent tool for BudAgent.
  *
- * Provides the ability to spawn a Codex agent in various sandbox modes
+ * Provides the ability to spawn a BudCode agent in various sandbox modes
  * for autonomous code analysis and modification tasks within a workspace.
  *
  * Supports:
@@ -9,14 +9,24 @@
  * - Custom working directories
  * - Git repository validation (optional)
  * - Awaits process completion and returns the full output as the tool result
+ *
+ * In desktop (Tauri) builds the bundled sidecar binary is used automatically.
+ * In development / non-desktop environments it falls back to `budcode` on PATH.
  */
 
+import * as os from "os";
 import * as path from "path";
 import * as fsp from "fs/promises";
-import { execFile } from "child_process";
 import type { Tool, ToolParameter } from "./base";
 import { ProcessRegistry } from "./process-registry";
 import { createShellEnv } from "./shell-env";
+
+/** Backend-provided LLM credentials injected via _llm_config in tool params. */
+interface LlmConfig {
+  api_key: string;
+  api_base: string | null;
+  model: string;
+}
 
 // Debug logging
 async function debugLog(message: string): Promise<void> {
@@ -30,7 +40,169 @@ async function debugLog(message: string): Promise<void> {
 }
 
 /**
- * Sandbox level options for Codex execution.
+ * Resolve the budcode binary path.
+ *
+ * In a Tauri desktop build the sidecar binary lives next to the main
+ * executable with a target-triple suffix (e.g. `budcode-aarch64-apple-darwin`).
+ * We detect this by looking for the Tauri resource directory layout.
+ *
+ * Falls back to plain `budcode` (resolved via PATH) for dev / non-desktop
+ * environments.
+ */
+async function resolveBudcodeBinary(): Promise<string> {
+  // Fastest path: the Tauri Rust side passes the exact sidecar location.
+  const envBinary = process.env.BUDCODE_BINARY;
+  if (envBinary) {
+    try {
+      await fsp.access(envBinary, fsp.constants.X_OK);
+      await debugLog(`Using BUDCODE_BINARY env: ${envBinary}`);
+      return envBinary;
+    } catch {
+      await debugLog(`BUDCODE_BINARY set but not accessible: ${envBinary}`);
+    }
+  }
+
+  // Tauri sidecar: the binary sits next to the main app binary.
+  // process.resourcesPath is set by Tauri's Node sidecar env; in a
+  // standalone Next.js server spawned by Tauri we can detect the
+  // sidecar by probing well-known paths relative to the running binary.
+  const platform = process.platform;
+  const arch = process.arch;
+
+  // Map Node arch/platform to Rust target triple
+  const tripleMap: Record<string, Record<string, string>> = {
+    darwin: {
+      arm64: "aarch64-apple-darwin",
+      x64: "x86_64-apple-darwin",
+    },
+    win32: {
+      x64: "x86_64-pc-windows-msvc",
+    },
+    linux: {
+      x64: "x86_64-unknown-linux-gnu",
+      arm64: "aarch64-unknown-linux-gnu",
+    },
+  };
+
+  const triple = tripleMap[platform]?.[arch];
+  const ext = platform === "win32" ? ".exe" : "";
+  const sidecarName = triple ? `budcode-${triple}${ext}` : `budcode${ext}`;
+
+  // Check common Tauri sidecar locations
+  const candidateDirs: string[] = [];
+
+  // macOS: inside the .app bundle — Contents/MacOS/
+  if (platform === "darwin") {
+    // When Next.js is spawned by the Tauri app the cwd or known env
+    // vars can hint at the app bundle location.
+    const execPath = process.env.__TAURI_INTERNALS__
+      ? process.execPath
+      : undefined;
+    if (execPath) {
+      candidateDirs.push(path.dirname(execPath));
+    }
+    // Also check relative to the standalone server entrypoint
+    // Typical layout: Bud Studio.app/Contents/Resources/web/.next/standalone/server.js
+    //                 Bud Studio.app/Contents/MacOS/budcode-<triple>
+    const mainModule = require.main?.filename ?? "";
+    if (mainModule.includes(".app/Contents/")) {
+      const contentsIdx = mainModule.indexOf(".app/Contents/");
+      const contentsDir = mainModule.substring(
+        0,
+        contentsIdx + ".app/Contents/".length
+      );
+      candidateDirs.push(path.join(contentsDir, "MacOS"));
+    }
+  }
+
+  // Windows: same directory as the main .exe
+  if (platform === "win32") {
+    const mainModule = require.main?.filename ?? "";
+    if (mainModule) {
+      candidateDirs.push(path.dirname(mainModule));
+    }
+    // Also try next to process.execPath
+    candidateDirs.push(path.dirname(process.execPath));
+  }
+
+  // Try each candidate — check both the triple-suffixed name (used during
+  // development / pre-bundle) and the plain name (Tauri strips the suffix
+  // when copying the sidecar into Contents/MacOS/).
+  const namesToTry = [sidecarName, `budcode${ext}`];
+  // Deduplicate in case they are already the same
+  const uniqueNames = [...new Set(namesToTry)];
+
+  for (const dir of candidateDirs) {
+    for (const name of uniqueNames) {
+      const candidate = path.join(dir, name);
+      try {
+        await fsp.access(candidate, fsp.constants.X_OK);
+        await debugLog(`Found bundled budcode sidecar at: ${candidate}`);
+        return candidate;
+      } catch {
+        // not found here, continue
+      }
+    }
+  }
+
+  // Fallback: use PATH-resolved `budcode`
+  await debugLog("No bundled sidecar found, falling back to budcode on PATH");
+  return "budcode";
+}
+
+/**
+ * Write ~/.budcode/config.toml with the provider config from the BudAgent
+ * session so that the budcode sidecar uses the same LLM credentials.
+ *
+ * Also returns env overrides (BUD_API_KEY) to inject into the process.
+ */
+async function prepareBudcodeConfig(
+  llmConfig: LlmConfig
+): Promise<Record<string, string>> {
+  const envOverrides: Record<string, string> = {};
+
+  // Set the API key via env var — budcode reads BUD_API_KEY.
+  if (llmConfig.api_key) {
+    envOverrides.BUD_API_KEY = llmConfig.api_key;
+  }
+
+  // Write a minimal config.toml so budcode knows the model + base URL.
+  const budcodeDir = path.join(os.homedir(), ".bud", "budcode");
+  const configPath = path.join(budcodeDir, "config.toml");
+
+  try {
+    await fsp.mkdir(budcodeDir, { recursive: true });
+
+    const lines: string[] = [];
+
+    if (llmConfig.model) {
+      lines.push(`model = "${llmConfig.model}"`);
+    }
+
+    // If a custom base URL is set, define a model provider and select it.
+    if (llmConfig.api_base) {
+      lines.push(`model_provider = "bud-studio"`);
+      lines.push("");
+      lines.push(`[model_providers.bud-studio]`);
+      lines.push(`name = "Bud Studio"`);
+      lines.push(`base_url = "${llmConfig.api_base}"`);
+      lines.push(`env_key = "BUD_API_KEY"`);
+    }
+
+    if (lines.length > 0) {
+      await fsp.writeFile(configPath, lines.join("\n") + "\n", "utf-8");
+      await debugLog(`Wrote budcode config to ${configPath}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await debugLog(`Warning: failed to write budcode config: ${msg}`);
+  }
+
+  return envOverrides;
+}
+
+/**
+ * Sandbox level options for BudCode execution.
  */
 export type SandboxLevel =
   | "read-only"
@@ -57,14 +229,14 @@ export function formatCliCompletionMessage(
   }
 
   return (
-    `Codex ${exitDescription}.\n\n` +
+    `BudCode ${exitDescription}.\n\n` +
     `Full output:\n\n${output}\n\n` +
     `Please summarize what was accomplished, including any errors or unexpected outcomes. Be concise.`
   );
 }
 
 /**
- * CLI Agent tool that spawns a Codex agent for code analysis and modifications.
+ * CLI Agent tool that spawns a BudCode agent for code analysis and modifications.
  */
 export class CliAgentTool implements Tool {
   /** Tool identifier */
@@ -72,7 +244,7 @@ export class CliAgentTool implements Tool {
 
   /** Human-readable description */
   description =
-    "Spawn a Codex agent to autonomously analyze and modify code. " +
+    "Spawn a BudCode agent to autonomously analyze and modify code. " +
     "Supports multiple sandbox levels for security control. " +
     "Awaits completion and returns the full output.";
 
@@ -140,7 +312,7 @@ export class CliAgentTool implements Tool {
   }
 
   /**
-   * Executes the CLI agent tool by spawning a Codex process.
+   * Executes the CLI agent tool by spawning a BudCode process.
    *
    * The returned Promise resolves only when the process exits, delivering
    * the full output as the tool result. This lets the gateway's generic
@@ -151,7 +323,11 @@ export class CliAgentTool implements Tool {
    * @returns A promise that resolves to the formatted completion message
    */
   async execute(params: Record<string, unknown>): Promise<string> {
-    await debugLog(`CliAgentTool.execute() called with params: ${JSON.stringify(params).substring(0, 200)}`);
+    await debugLog(
+      `CliAgentTool.execute() called with params: ${JSON.stringify(
+        params
+      ).substring(0, 200)}`
+    );
 
     const prompt = params.prompt as string | undefined;
     const action = (params.action as string | undefined) || "exec";
@@ -159,13 +335,20 @@ export class CliAgentTool implements Tool {
     const sandbox = params.sandbox as SandboxLevel | undefined;
     const skipGitCheck = params.skip_git_check as boolean | undefined;
     const ephemeral = params.ephemeral as boolean | undefined;
+    const llmConfig = params._llm_config as LlmConfig | undefined;
 
     // Validate required parameter
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
-      await debugLog("Error: Prompt parameter is required and must be a non-empty string");
-      throw new Error("Prompt parameter is required and must be a non-empty string");
+      await debugLog(
+        "Error: Prompt parameter is required and must be a non-empty string"
+      );
+      throw new Error(
+        "Prompt parameter is required and must be a non-empty string"
+      );
     }
-    await debugLog(`Prompt validated (action=${action}): ${prompt.substring(0, 100)}...`);
+    await debugLog(
+      `Prompt validated (action=${action}): ${prompt.substring(0, 100)}...`
+    );
 
     // Resolve working directory
     let cwd = this.workspacePath;
@@ -199,52 +382,74 @@ export class CliAgentTool implements Tool {
       }
     }
 
-    // Build the Codex command based on action
+    // Resolve the budcode binary path (bundled sidecar or PATH fallback)
+    const budcodeBin = await resolveBudcodeBinary();
+    await debugLog(`Resolved budcode binary: ${budcodeBin}`);
+
+    // Prepare budcode config and env vars from the session's LLM credentials
+    let llmEnvOverrides: Record<string, string> = {};
+    if (llmConfig) {
+      await debugLog(
+        `LLM config provided: model=${llmConfig.model}, api_base=${
+          llmConfig.api_base ?? "default"
+        }`
+      );
+      llmEnvOverrides = await prepareBudcodeConfig(llmConfig);
+    }
+
+    // Build the command based on action, passing --model from session config
     let command: string;
     if (action === "resume") {
-      command = this.buildResumeCommand(prompt);
+      command = this.buildExecCommand(budcodeBin, "resume", prompt);
     } else {
-      command = this.buildCodexCommand(prompt, sandbox, ephemeral);
+      command = this.buildExecCommand(
+        budcodeBin,
+        "exec",
+        prompt,
+        sandbox,
+        ephemeral,
+        llmConfig?.model
+      );
     }
     await debugLog(`Built command: ${command}`);
 
     // Spawn the process and await its completion
     const registry = ProcessRegistry.getInstance();
-    const env = createShellEnv();
+    const env = { ...createShellEnv(), ...llmEnvOverrides };
 
     // --- DEBUG: log environment details ---
     await debugLog(`PATH: ${env.PATH}`);
     await debugLog(`SHELL: ${env.SHELL}`);
     await debugLog(`HOME: ${env.HOME}`);
-    try {
-      const whichResult = await new Promise<string>((resolve, reject) => {
-        execFile("/usr/bin/which", ["codex"], { env, encoding: "utf-8", timeout: 5000 },
-          (err, stdout) => {
-            if (err) reject(err);
-            else resolve((stdout as string).trim());
-          });
-      });
-      await debugLog(`which codex: ${whichResult}`);
-    } catch (whichErr: unknown) {
-      const msg = whichErr instanceof Error ? whichErr.message : String(whichErr);
-      await debugLog(`which codex FAILED: ${msg}`);
-    }
+    await debugLog(`budcode binary: ${budcodeBin}`);
+    await debugLog(`BUD_API_KEY set: ${!!env.BUD_API_KEY}`);
     // --- END DEBUG ---
 
     await debugLog(`Spawning process with cwd: ${cwd}, pty: true`);
     const sessionId = registry.spawn(command, cwd, { pty: true, env });
-    await debugLog(`Process spawned with sessionId: ${sessionId}, awaiting completion...`);
+    await debugLog(
+      `Process spawned with sessionId: ${sessionId}, awaiting completion...`
+    );
 
     // Check session status immediately to detect race condition
     const sessionInfo = registry.getSession(sessionId);
-    await debugLog(`Session ${sessionId} status right after spawn: ${sessionInfo?.status}, exitCode: ${sessionInfo?.exitCode}, outputLength: ${sessionInfo?.outputLength}`);
+    await debugLog(
+      `Session ${sessionId} status right after spawn: ${sessionInfo?.status}, exitCode: ${sessionInfo?.exitCode}, outputLength: ${sessionInfo?.outputLength}`
+    );
 
     return new Promise<string>((resolve) => {
       registry.registerOnExit(
         sessionId,
         (output: string, exitCode: number | null) => {
-          debugLog(`Process ${sessionId} exited with code ${exitCode}, outputLength: ${output.length}`);
-          debugLog(`Process ${sessionId} output (first 500 chars): ${output.substring(0, 500)}`);
+          debugLog(
+            `Process ${sessionId} exited with code ${exitCode}, outputLength: ${output.length}`
+          );
+          debugLog(
+            `Process ${sessionId} output (first 500 chars): ${output.substring(
+              0,
+              500
+            )}`
+          );
           resolve(formatCliCompletionMessage(output, exitCode));
         }
       );
@@ -252,19 +457,32 @@ export class CliAgentTool implements Tool {
   }
 
   /**
-   * Builds the Codex command with proper escaping and flags.
+   * Builds a budcode command with proper escaping and flags.
    *
-   * @param prompt - The task prompt
-   * @param sandbox - Sandbox level
-   * @param ephemeral - Whether session is ephemeral
+   * @param binary - Resolved path to the budcode binary
+   * @param action - "exec" for a new session, "resume" to continue
+   * @param prompt - The task prompt or follow-up
+   * @param sandbox - Sandbox level (only used for "exec")
+   * @param ephemeral - Whether session is ephemeral (only used for "exec")
+   * @param model - Model name from session LLM config (only used for "exec")
    * @returns The complete command string
    */
-  private buildCodexCommand(
+  private buildExecCommand(
+    binary: string,
+    action: "exec" | "resume",
     prompt: string,
-    sandbox: SandboxLevel | undefined,
-    ephemeral: boolean | undefined
+    sandbox?: SandboxLevel,
+    ephemeral?: boolean,
+    model?: string
   ): string {
-    let command = "codex exec";
+    const escapedBin = this.escapeShellArg(binary);
+    const escapedPrompt = this.escapeShellArg(prompt);
+
+    if (action === "resume") {
+      return `${escapedBin} resume --last ${escapedPrompt}`;
+    }
+
+    let command = `${escapedBin} exec`;
 
     // Skip git repo check since we might be in temp directories
     command += " --skip-git-repo-check";
@@ -272,9 +490,18 @@ export class CliAgentTool implements Tool {
     // Auto-approve all actions — the tool runs non-interactively.
     command += " --dangerously-bypass-approvals-and-sandbox";
 
+    // Pass the model from the session's LLM config
+    if (model) {
+      command += ` --model ${this.escapeShellArg(model)}`;
+    }
+
     // Add sandbox flag (validate it's a known value)
     const sandboxLevel = sandbox || "workspace-write";
-    const validSandboxLevels = ["read-only", "workspace-write", "danger-full-access"];
+    const validSandboxLevels = [
+      "read-only",
+      "workspace-write",
+      "danger-full-access",
+    ];
     if (!validSandboxLevels.includes(sandboxLevel)) {
       throw new Error(`Invalid sandbox level: ${sandboxLevel}`);
     }
@@ -282,21 +509,9 @@ export class CliAgentTool implements Tool {
     command += ` -s ${escapedSandbox}`;
 
     // Add prompt (with proper shell escaping)
-    const escapedPrompt = this.escapeShellArg(prompt);
     command += ` ${escapedPrompt}`;
 
     return command;
-  }
-
-  /**
-   * Builds a Codex resume command to continue the most recent session.
-   *
-   * @param prompt - The follow-up prompt (e.g., user's answer)
-   * @returns The complete command string
-   */
-  private buildResumeCommand(prompt: string): string {
-    const escapedPrompt = this.escapeShellArg(prompt);
-    return `codex resume --last ${escapedPrompt}`;
   }
 
   /**

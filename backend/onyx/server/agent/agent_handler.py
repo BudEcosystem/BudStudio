@@ -155,6 +155,9 @@ class AgentHandler:
         # Original user message — used only for memory search and skill
         # discovery in build_agent_run_context(), not sent to the LLM.
         self._search_query = search_query
+        # LLM credentials cached after first LLM turn so tool:request
+        # payloads for cli_agent can include them.
+        self._llm_config: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -165,6 +168,26 @@ class AgentHandler:
         """Create a short-lived DB session."""
         with get_session_with_tenant(tenant_id=self._tenant_id) as session:
             yield session
+
+    def _build_tool_request_payload(
+        self,
+        session_id_str: str,
+        step: int,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        tool_call_id: str,
+    ) -> dict[str, Any]:
+        """Build a tool:request payload, attaching llm_config for cli_agent."""
+        payload: dict[str, Any] = {
+            "session_id": session_id_str,
+            "ind": step,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_call_id": tool_call_id,
+        }
+        if tool_name == "cli_agent" and self._llm_config:
+            payload["llm_config"] = self._llm_config
+        return payload
 
     def _get_redis(self) -> redis.Redis:  # type: ignore[type-arg]
         return get_redis_client(tenant_id=self._tenant_id)
@@ -566,13 +589,16 @@ class AgentHandler:
                         **({"error": err} if err else {}),
                     })
             else:
-                await self._emit("tool:request", {
-                    "session_id": session_id_str,
-                    "ind": next_step,
-                    "tool_name": next_tool_name,
-                    "tool_input": next_tool_input,
-                    "tool_call_id": next_tool_call_id,
-                })
+                await self._emit(
+                    "tool:request",
+                    self._build_tool_request_payload(
+                        session_id_str,
+                        next_step,
+                        next_tool_name,
+                        next_tool_input,
+                        next_tool_call_id,
+                    ),
+                )
                 # Status stays AWAITING_TOOL
             return
 
@@ -699,13 +725,12 @@ class AgentHandler:
                 db_session, session_id, AgentSessionExecutionStatus.AWAITING_TOOL
             )
 
-        await self._emit("tool:request", {
-            "session_id": session_id_str,
-            "ind": step,
-            "tool_name": tool_name,
-            "tool_input": tool_input,
-            "tool_call_id": tool_call_id,
-        })
+        await self._emit(
+            "tool:request",
+            self._build_tool_request_payload(
+                session_id_str, step, tool_name, tool_input, tool_call_id,
+            ),
+        )
         # STOP -- client will send tool:result later
 
     async def _execute_and_continue_connector_tool(
@@ -953,6 +978,18 @@ class AgentHandler:
                     timezone=timezone,
                     blocking_tools=False,  # Socket.IO: no Redis blocking
                 )
+
+                # Cache LLM credentials so tool:request payloads for
+                # cli_agent can include the API key / base / model the
+                # session is using.
+                try:
+                    self._llm_config = {
+                        "api_key": ctx.llm.config.api_key or "",
+                        "api_base": getattr(ctx.llm.config, "api_base", None),
+                        "model": ctx.model_name,
+                    }
+                except Exception:
+                    pass  # Non-critical: cli_agent will fall back to its own config
 
                 # Release DB connection (tools captured in closures will
                 # check out fresh connections automatically)

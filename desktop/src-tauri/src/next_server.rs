@@ -72,7 +72,12 @@ impl NextServer {
         }
     }
 
-    pub async fn start(&mut self, standalone_path: String, backend_url: String) -> Result<String> {
+    pub async fn start(
+        &mut self,
+        standalone_path: String,
+        backend_url: String,
+        budcode_binary: Option<String>,
+    ) -> Result<String> {
         log::info!("Starting Next.js server (preferred port: {}, backend: {})", self.preferred_port, backend_url);
         self.base_path = standalone_path.clone();
 
@@ -126,8 +131,8 @@ impl NextServer {
             // Set WEB_DOMAIN to match the local server URL
             let web_domain = format!("http://127.0.0.1:{}", self.preferred_port);
 
-            Command::new(&node_path)
-                .arg(&server_js)
+            let mut cmd = Command::new(&node_path);
+            cmd.arg(&server_js)
                 .env("PORT", self.preferred_port.to_string())
                 .env("HOSTNAME", "127.0.0.1")
                 .env("INTERNAL_URL", &internal_url)
@@ -136,7 +141,16 @@ impl NextServer {
                 .env("BUD_BROWSER_ALLOW_PRIVATE_IPS", "true")
                 .env("GATEWAY_PORT", &gateway_port_str)
                 .env("NEXT_PUBLIC_GATEWAY_PORT", &gateway_port_str)
-                .current_dir(&server_dir)
+                .current_dir(&server_dir);
+
+            // Pass the resolved budcode sidecar path so cli-agent-tool can
+            // locate it without falling back to fragile heuristics.
+            if let Some(ref binary_path) = budcode_binary {
+                log::info!("Setting BUDCODE_BINARY={}", binary_path);
+                cmd.env("BUDCODE_BINARY", binary_path);
+            }
+
+            cmd
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .group_spawn()

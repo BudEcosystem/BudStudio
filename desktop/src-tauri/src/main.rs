@@ -170,10 +170,31 @@ async fn start_next_server(handle: tauri::AppHandle, next_server_arc: Arc<TokioM
 
     log::info!("Next.js standalone path: {:?}", standalone_path);
 
+    // Resolve the bundled budcode sidecar path relative to the main app
+    // executable. On macOS the sidecar lives in Bud Studio.app/Contents/MacOS/
+    // alongside bud-studio. We pass the resolved path to the Next.js server
+    // via the BUDCODE_BINARY env var so cli-agent-tool can find it without
+    // relying on heuristics.
+    let budcode_binary_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.join("budcode")))
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string());
+
+    if let Some(ref p) = budcode_binary_path {
+        log::info!("Resolved budcode sidecar at: {}", p);
+    } else {
+        log::warn!("Bundled budcode sidecar not found next to main executable");
+    }
+
     let start_result = {
         let mut server = next_server_arc.lock().await;
         server
-            .start(standalone_path.to_string_lossy().to_string(), backend_url)
+            .start(
+                standalone_path.to_string_lossy().to_string(),
+                backend_url,
+                budcode_binary_path,
+            )
             .await
     };
 
@@ -539,28 +560,38 @@ async fn main() {
                     }
 
                     // Check if Next.js server is running, if not start it
+                    // But only if setup is already complete
                     if let Some(state) = app_handle.try_state::<AppState>() {
-                        let next_server = state.next_server.clone();
-                        let handle_clone = app_handle.clone();
-                        let backend_url = {
+                        let setup_complete = {
                             let config = state.config.lock().unwrap();
-                            config.backend_url.clone()
+                            !config.needs_setup()
                         };
 
-                        // Spawn async task to check and start server if needed
-                        tauri::async_runtime::spawn(async move {
-                            let is_running = {
-                                let server = next_server.lock().await;
-                                server.is_running()
+                        if !setup_complete {
+                            log::info!("Setup not complete, skipping Next.js server start on reopen");
+                        } else {
+                            let next_server = state.next_server.clone();
+                            let handle_clone = app_handle.clone();
+                            let backend_url = {
+                                let config = state.config.lock().unwrap();
+                                config.backend_url.clone()
                             };
 
-                            if !is_running {
-                                log::info!("Next.js server not running, starting it...");
-                                start_next_server(handle_clone, next_server, backend_url).await;
-                            } else {
-                                log::info!("Next.js server already running");
-                            }
-                        });
+                            // Spawn async task to check and start server if needed
+                            tauri::async_runtime::spawn(async move {
+                                let is_running = {
+                                    let server = next_server.lock().await;
+                                    server.is_running()
+                                };
+
+                                if !is_running {
+                                    log::info!("Next.js server not running, starting it...");
+                                    start_next_server(handle_clone, next_server, backend_url).await;
+                                } else {
+                                    log::info!("Next.js server already running");
+                                }
+                            });
+                        }
                     }
                 }
                 tauri::RunEvent::ExitRequested { code, .. } => {
