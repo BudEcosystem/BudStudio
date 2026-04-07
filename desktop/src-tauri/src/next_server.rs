@@ -72,7 +72,12 @@ impl NextServer {
         }
     }
 
-    pub async fn start(&mut self, standalone_path: String, backend_url: String) -> Result<String> {
+    pub async fn start(
+        &mut self,
+        standalone_path: String,
+        backend_url: String,
+        budcode_binary: Option<String>,
+    ) -> Result<String> {
         log::info!("Starting Next.js server (preferred port: {}, backend: {})", self.preferred_port, backend_url);
         self.base_path = standalone_path.clone();
 
@@ -126,19 +131,6 @@ impl NextServer {
             // Set WEB_DOMAIN to match the local server URL
             let web_domain = format!("http://127.0.0.1:{}", self.preferred_port);
 
-            // Resolve the bundled budcode sidecar path so the Next.js
-            // cli-agent-tool can locate it via the BUDCODE_BINARY env var.
-            let budcode_binary = {
-                let exe = std::env::current_exe().unwrap_or_default();
-                let macos_dir = exe.parent().unwrap_or(Path::new(""));
-                let candidate = macos_dir.join("budcode");
-                if candidate.exists() {
-                    candidate.to_string_lossy().to_string()
-                } else {
-                    String::new()
-                }
-            };
-
             let mut cmd = Command::new(&node_path);
             cmd.arg(&server_js)
                 .env("PORT", self.preferred_port.to_string())
@@ -151,9 +143,11 @@ impl NextServer {
                 .env("NEXT_PUBLIC_GATEWAY_PORT", &gateway_port_str)
                 .current_dir(&server_dir);
 
-            if !budcode_binary.is_empty() {
-                log::info!("Setting BUDCODE_BINARY={}", budcode_binary);
-                cmd.env("BUDCODE_BINARY", &budcode_binary);
+            // Pass the resolved budcode sidecar path so cli-agent-tool can
+            // locate it without falling back to fragile heuristics.
+            if let Some(ref binary_path) = budcode_binary {
+                log::info!("Setting BUDCODE_BINARY={}", binary_path);
+                cmd.env("BUDCODE_BINARY", binary_path);
             }
 
             cmd

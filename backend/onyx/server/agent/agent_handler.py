@@ -82,6 +82,10 @@ COMPACTION_THRESHOLD_CHARS = 300_000
 MAX_TOOL_CALLS = 500
 # Check stop flag every N stream events (not every token -- too expensive)
 STOP_CHECK_INTERVAL = 10
+# TTL for cached LLM credentials in Redis. Long enough to outlive a typical
+# session of LLM turns + tool follow-ups, short enough that stale credentials
+# don't linger indefinitely.
+_LLM_CONFIG_TTL_SECONDS = 6 * 60 * 60
 
 
 class AgentHandler:
@@ -112,10 +116,6 @@ class AgentHandler:
         self._model = model
         self._workspace_path = workspace_path
         self._timezone = timezone
-        # LLM credentials cached after first LLM turn so tool:request
-        # payloads for cli_agent can include them.
-        self._llm_config: dict[str, Any] | None = None
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -128,6 +128,36 @@ class AgentHandler:
 
     def _get_redis(self) -> redis.Redis:  # type: ignore[type-arg]
         return get_redis_client(tenant_id=self._tenant_id)
+
+    @staticmethod
+    def _llm_config_redis_key(session_id: str) -> str:
+        return f"agent:llm_config:{session_id}"
+
+    def _save_llm_config(self, session_id: str, llm_config: dict[str, Any]) -> None:
+        """Persist LLM credentials to Redis so subsequent events (which create
+        a fresh handler) can attach them to cli_agent tool:request payloads."""
+        try:
+            redis_client = self._get_redis()
+            redis_client.set(
+                self._llm_config_redis_key(session_id),
+                json.dumps(llm_config),
+                ex=_LLM_CONFIG_TTL_SECONDS,
+            )
+        except Exception:
+            logger.exception("Failed to persist LLM config for session %s", session_id)
+
+    def _load_llm_config(self, session_id: str) -> dict[str, Any] | None:
+        try:
+            redis_client = self._get_redis()
+            raw = redis_client.get(self._llm_config_redis_key(session_id))
+            if raw is None:
+                return None
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            return json.loads(raw)
+        except Exception:
+            logger.exception("Failed to load LLM config for session %s", session_id)
+            return None
 
     def _build_tool_request_payload(
         self,
@@ -145,8 +175,10 @@ class AgentHandler:
             "tool_input": tool_input,
             "tool_call_id": tool_call_id,
         }
-        if tool_name == "cli_agent" and self._llm_config:
-            payload["llm_config"] = self._llm_config
+        if tool_name == "cli_agent":
+            llm_config = self._load_llm_config(session_id_str)
+            if llm_config:
+                payload["llm_config"] = llm_config
         return payload
 
     async def _emit(self, event: str, data: dict[str, Any]) -> None:
@@ -964,16 +996,21 @@ class AgentHandler:
         redis_client = self._get_redis()
         search_context = ctx.search_context
 
-        # Cache LLM credentials so tool:request payloads for cli_agent
-        # can include the API key / base URL / model the session is using.
+        # Persist LLM credentials in Redis so tool:request payloads emitted
+        # by future events (which create a fresh handler) can include them.
         try:
-            self._llm_config = {
+            llm_config = {
                 "api_key": ctx.llm.config.api_key or "",
                 "api_base": getattr(ctx.llm.config, "api_base", None),
                 "model": ctx.model_name,
             }
+            self._save_llm_config(session_id_str, llm_config)
         except Exception:
-            pass  # Non-critical: cli_agent will fall back to its own config
+            logger.warning(
+                "Failed to cache LLM config for session %s",
+                session_id_str,
+                exc_info=True,
+            )  # Non-critical: cli_agent will fall back to its own config
 
         # Citation processing state
         citation_pattern = re.compile(

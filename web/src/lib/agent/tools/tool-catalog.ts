@@ -170,7 +170,8 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       {
         name: "ephemeral",
         type: "boolean",
-        description: "If false, persist the session after completion. Default: true.",
+        description:
+          "If false, persist the session after completion. Default: true.",
         required: false,
       },
     ],
@@ -205,8 +206,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       {
         name: "offset",
         type: "integer",
-        description:
-          "For log action: character offset to start reading from.",
+        description: "For log action: character offset to start reading from.",
         required: false,
       },
       {
@@ -254,8 +254,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   },
   {
     name: "grep",
-    description:
-      "Search for a regex pattern in files within the workspace.",
+    description: "Search for a regex pattern in files within the workspace.",
     category: "local",
     requiresApproval: false,
     parameters: [
@@ -274,8 +273,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       {
         name: "include",
         type: "string",
-        description:
-          "Optional glob pattern to filter files (e.g. '*.py').",
+        description: "Optional glob pattern to filter files (e.g. '*.py').",
         required: false,
       },
     ],
@@ -283,8 +281,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   // Browser automation tools (executed on device)
   {
     name: "browser_navigate",
-    description:
-      "Navigate to a URL, or go back/forward in browser history.",
+    description: "Navigate to a URL, or go back/forward in browser history.",
     category: "local",
     requiresApproval: true,
     parameters: [
@@ -329,8 +326,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   },
   {
     name: "browser_fill",
-    description:
-      "Clear an input field and fill it with the given text.",
+    description: "Clear an input field and fill it with the given text.",
     category: "local",
     requiresApproval: true,
     parameters: [
@@ -381,8 +377,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   },
   {
     name: "browser_scroll",
-    description:
-      "Scroll the page or a specific element up or down.",
+    description: "Scroll the page or a specific element up or down.",
     category: "local",
     requiresApproval: false,
     parameters: [
@@ -408,8 +403,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   },
   {
     name: "browser_select",
-    description:
-      "Select an option from a dropdown or select element.",
+    description: "Select an option from a dropdown or select element.",
     category: "local",
     requiresApproval: true,
     parameters: [

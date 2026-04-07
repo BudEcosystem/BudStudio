@@ -86,9 +86,7 @@ async function resolveBudcodeBinary(): Promise<string> {
 
   const triple = tripleMap[platform]?.[arch];
   const ext = platform === "win32" ? ".exe" : "";
-  const sidecarName = triple
-    ? `budcode-${triple}${ext}`
-    : `budcode${ext}`;
+  const sidecarName = triple ? `budcode-${triple}${ext}` : `budcode${ext}`;
 
   // Check common Tauri sidecar locations
   const candidateDirs: string[] = [];
@@ -109,7 +107,10 @@ async function resolveBudcodeBinary(): Promise<string> {
     const mainModule = require.main?.filename ?? "";
     if (mainModule.includes(".app/Contents/")) {
       const contentsIdx = mainModule.indexOf(".app/Contents/");
-      const contentsDir = mainModule.substring(0, contentsIdx + ".app/Contents/".length);
+      const contentsDir = mainModule.substring(
+        0,
+        contentsIdx + ".app/Contents/".length
+      );
       candidateDirs.push(path.join(contentsDir, "MacOS"));
     }
   }
@@ -322,7 +323,11 @@ export class CliAgentTool implements Tool {
    * @returns A promise that resolves to the formatted completion message
    */
   async execute(params: Record<string, unknown>): Promise<string> {
-    await debugLog(`CliAgentTool.execute() called with params: ${JSON.stringify(params).substring(0, 200)}`);
+    await debugLog(
+      `CliAgentTool.execute() called with params: ${JSON.stringify(
+        params
+      ).substring(0, 200)}`
+    );
 
     const prompt = params.prompt as string | undefined;
     const action = (params.action as string | undefined) || "exec";
@@ -334,10 +339,16 @@ export class CliAgentTool implements Tool {
 
     // Validate required parameter
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
-      await debugLog("Error: Prompt parameter is required and must be a non-empty string");
-      throw new Error("Prompt parameter is required and must be a non-empty string");
+      await debugLog(
+        "Error: Prompt parameter is required and must be a non-empty string"
+      );
+      throw new Error(
+        "Prompt parameter is required and must be a non-empty string"
+      );
     }
-    await debugLog(`Prompt validated (action=${action}): ${prompt.substring(0, 100)}...`);
+    await debugLog(
+      `Prompt validated (action=${action}): ${prompt.substring(0, 100)}...`
+    );
 
     // Resolve working directory
     let cwd = this.workspacePath;
@@ -378,7 +389,11 @@ export class CliAgentTool implements Tool {
     // Prepare budcode config and env vars from the session's LLM credentials
     let llmEnvOverrides: Record<string, string> = {};
     if (llmConfig) {
-      await debugLog(`LLM config provided: model=${llmConfig.model}, api_base=${llmConfig.api_base ?? "default"}`);
+      await debugLog(
+        `LLM config provided: model=${llmConfig.model}, api_base=${
+          llmConfig.api_base ?? "default"
+        }`
+      );
       llmEnvOverrides = await prepareBudcodeConfig(llmConfig);
     }
 
@@ -388,7 +403,12 @@ export class CliAgentTool implements Tool {
       command = this.buildExecCommand(budcodeBin, "resume", prompt);
     } else {
       command = this.buildExecCommand(
-        budcodeBin, "exec", prompt, sandbox, ephemeral, llmConfig?.model
+        budcodeBin,
+        "exec",
+        prompt,
+        sandbox,
+        ephemeral,
+        llmConfig?.model
       );
     }
     await debugLog(`Built command: ${command}`);
@@ -407,18 +427,29 @@ export class CliAgentTool implements Tool {
 
     await debugLog(`Spawning process with cwd: ${cwd}, pty: true`);
     const sessionId = registry.spawn(command, cwd, { pty: true, env });
-    await debugLog(`Process spawned with sessionId: ${sessionId}, awaiting completion...`);
+    await debugLog(
+      `Process spawned with sessionId: ${sessionId}, awaiting completion...`
+    );
 
     // Check session status immediately to detect race condition
     const sessionInfo = registry.getSession(sessionId);
-    await debugLog(`Session ${sessionId} status right after spawn: ${sessionInfo?.status}, exitCode: ${sessionInfo?.exitCode}, outputLength: ${sessionInfo?.outputLength}`);
+    await debugLog(
+      `Session ${sessionId} status right after spawn: ${sessionInfo?.status}, exitCode: ${sessionInfo?.exitCode}, outputLength: ${sessionInfo?.outputLength}`
+    );
 
     return new Promise<string>((resolve) => {
       registry.registerOnExit(
         sessionId,
         (output: string, exitCode: number | null) => {
-          debugLog(`Process ${sessionId} exited with code ${exitCode}, outputLength: ${output.length}`);
-          debugLog(`Process ${sessionId} output (first 500 chars): ${output.substring(0, 500)}`);
+          debugLog(
+            `Process ${sessionId} exited with code ${exitCode}, outputLength: ${output.length}`
+          );
+          debugLog(
+            `Process ${sessionId} output (first 500 chars): ${output.substring(
+              0,
+              500
+            )}`
+          );
           resolve(formatCliCompletionMessage(output, exitCode));
         }
       );
@@ -466,7 +497,11 @@ export class CliAgentTool implements Tool {
 
     // Add sandbox flag (validate it's a known value)
     const sandboxLevel = sandbox || "workspace-write";
-    const validSandboxLevels = ["read-only", "workspace-write", "danger-full-access"];
+    const validSandboxLevels = [
+      "read-only",
+      "workspace-write",
+      "danger-full-access",
+    ];
     if (!validSandboxLevels.includes(sandboxLevel)) {
       throw new Error(`Invalid sandbox level: ${sandboxLevel}`);
     }
