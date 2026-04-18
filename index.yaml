@@ -13,7 +13,7 @@ entries:
       licenses: MIT
     apiVersion: v2
     appVersion: 0.3.1
-    created: "2026-04-07T11:33:31.191012933Z"
+    created: "2026-04-18T05:37:24.276474113Z"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -38,7 +38,7 @@ entries:
       version: 5.4.0
     description: A Helm chart for BudStudio - AI-powered chat and enterprise search
       platform
-    digest: ee9d80b5e4c9d634dc72adb63d9344195a511783a0cefc13077bc61bf70e52f4
+    digest: d408d690ceefa890e902063960a6b0e6c4bc7d8e0c40533beb61f19cd8b756ff
     home: https://bud.studio/
     name: budstudio
     sources:
@@ -47,4 +47,4 @@ entries:
     urls:
     - https://BudEcosystem.github.io/BudStudio/budstudio-0.4.4.tgz
     version: 0.4.4
-generated: "2026-04-07T11:33:31.168827204Z"
+generated: "2026-04-18T05:37:24.254112818Z"
