@@ -199,6 +199,7 @@ class AgentSessionStatus(str, PyEnum):
     STOPPED = "STOPPED"
     COMPACTED = "COMPACTED"
     SUSPENDED = "SUSPENDED"
+    INACTIVE = "INACTIVE"
 
     def is_terminal(self) -> bool:
         terminal_states = {
@@ -294,6 +295,33 @@ class AgentCronExecutionStatus(str, PyEnum):
             AgentCronExecutionStatus.SKIPPED,
         }
         return self in terminal_states
+
+
+class AgentEventType(str, PyEnum):
+    """Types of events that can be enqueued for an agent session."""
+
+    SUB_SESSION_SPAWNED = "SUB_SESSION_SPAWNED"
+    SUB_SESSION_PROGRESS = "SUB_SESSION_PROGRESS"
+    SUB_SESSION_COMPLETE = "SUB_SESSION_COMPLETE"
+    SUB_SESSION_FAILED = "SUB_SESSION_FAILED"
+    SUB_SESSION_TIMEOUT = "SUB_SESSION_TIMEOUT"
+    SUB_SESSION_FOLLOW_UP = "SUB_SESSION_FOLLOW_UP"
+    SUB_SESSION_EXPIRED = "SUB_SESSION_EXPIRED"
+    USER_MESSAGE = "USER_MESSAGE"
+    CRON_RESULT = "CRON_RESULT"
+    INBOX_ESCALATION = "INBOX_ESCALATION"
+    API_TRIGGER = "API_TRIGGER"
+
+
+class AgentSessionType(str, PyEnum):
+    """Classification of agent session types."""
+
+    INTERACTIVE = "INTERACTIVE"
+    COMPACTED = "COMPACTED"
+    CRON = "CRON"
+    INBOX = "INBOX"
+    SUB_ONE_SHOT = "SUB_ONE_SHOT"
+    SUB_PERSISTENT = "SUB_PERSISTENT"
 
 
 class InboxGoalStatus(str, PyEnum):

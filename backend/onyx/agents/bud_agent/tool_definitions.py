@@ -44,6 +44,12 @@ REMOTE_TOOLS: set[str] = {
     "use_skill",
     "render_artifact",
     "ask_user_questions",
+    "spawn_sub_session",
+    "list_sub_sessions",
+    "inspect_sub_session",
+    "get_sub_session_result",
+    "cancel_sub_session",
+    "send_to_sub_session",
 }
 
 APPROVAL_REQUIRED_TOOLS: set[str] = {
@@ -56,6 +62,19 @@ APPROVAL_REQUIRED_TOOLS: set[str] = {
     "browser_fill",
     "browser_type",
     "browser_select",
+}
+
+# Local tools hidden from the LLM. These still exist in LOCAL_TOOL_SCHEMAS
+# for the cli_agent sub-agent to use, but the BudAgent LLM should use
+# cli_agent instead of calling them directly.
+LLM_HIDDEN_LOCAL_TOOLS: set[str] = {
+    "read_file",
+    "write_file",
+    "edit_file",
+    "bash",
+    "glob",
+    "grep",
+    "process",
 }
 
 
@@ -957,6 +976,167 @@ REMOTE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["type", "title", "content"],
+        },
+    },
+    "spawn_sub_session": {
+        "name": "spawn_sub_session",
+        "description": (
+            "Spawn an autonomous sub-session that runs a task in the background. "
+            "Sub-sessions share your tools and context but execute independently. "
+            "Use for tasks that can be delegated: research, data gathering, "
+            "analysis, monitoring, or any work that doesn't need immediate "
+            "user interaction. Returns a session_id to track progress."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "The task description / instruction for the sub-session. "
+                        "Be specific and self-contained."
+                    ),
+                },
+                "task_name": {
+                    "type": "string",
+                    "description": (
+                        "A short label (2-5 words) for the thread, shown in the UI. "
+                        "E.g. 'Email Check', 'Code Review', 'Sales Report'."
+                    ),
+                },
+                "task_context": {
+                    "type": "string",
+                    "description": (
+                        "Optional additional context for the sub-session "
+                        "(e.g. relevant conversation history, data). "
+                        "Truncated to ~4K tokens if too large."
+                    ),
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["one_shot", "persistent"],
+                    "description": (
+                        "Execution mode: 'one_shot' (default) runs to completion "
+                        "then stops. 'persistent' stays alive for follow-up "
+                        "messages via send_to_sub_session."
+                    ),
+                },
+                "max_turns": {
+                    "type": "integer",
+                    "description": (
+                        "Maximum number of agent turns before auto-completing "
+                        "(default: 25)."
+                    ),
+                },
+            },
+            "required": ["task"],
+        },
+    },
+    "list_sub_sessions": {
+        "name": "list_sub_sessions",
+        "description": (
+            "List sub-sessions spawned from the current session. "
+            "Shows status, task, and basic metrics for each."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "status_filter": {
+                    "type": "string",
+                    "enum": ["ACTIVE", "COMPLETED", "FAILED", "STOPPED"],
+                    "description": "Optional filter by session status.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results to return (default: 20, max: 50).",
+                },
+            },
+            "required": [],
+        },
+    },
+    "inspect_sub_session": {
+        "name": "inspect_sub_session",
+        "description": (
+            "Get detailed information about a specific sub-session, "
+            "optionally including its full message history."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The UUID of the sub-session to inspect.",
+                },
+                "include_history": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, include the full message history "
+                        "(default: false)."
+                    ),
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
+    "get_sub_session_result": {
+        "name": "get_sub_session_result",
+        "description": (
+            "Get the final result of a completed or failed sub-session. "
+            "Returns the summary, status, and usage metrics. "
+            "Only works for sessions that have finished executing."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The UUID of the sub-session.",
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
+    "cancel_sub_session": {
+        "name": "cancel_sub_session",
+        "description": (
+            "Cancel a running sub-session. Sets a stop flag that the "
+            "sub-session executor checks periodically."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The UUID of the sub-session to cancel.",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Optional reason for cancellation.",
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
+    "send_to_sub_session": {
+        "name": "send_to_sub_session",
+        "description": (
+            "Send a follow-up message to a persistent sub-session. "
+            "Only works for sub-sessions spawned with mode='persistent'. "
+            "The message is delivered as a new user turn."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The UUID of the persistent sub-session.",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "The follow-up message to send.",
+                },
+            },
+            "required": ["session_id", "message"],
         },
     },
 }

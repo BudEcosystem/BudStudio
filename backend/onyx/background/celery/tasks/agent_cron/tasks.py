@@ -257,14 +257,16 @@ def execute_agent_cron_job(
             )
 
         elif run_result.suspended:
-            # Persist suspension state to DB
+            # Persist suspension state to DB.  TurnDriver saves pending
+            # tools to the session, but we still record the dispatched
+            # tool info on the execution for resume lookup.
             suspend_cron_execution(
                 db_session=db_session,
                 execution_id=execution.id,
                 tool_name=run_result.suspended_tool_name or "",
                 tool_input=run_result.suspended_tool_input or {},
                 tool_call_id=run_result.suspended_tool_call_id or "",
-                messages=run_result.suspended_messages or [],
+                messages=[],  # TurnDriver manages messages in session DB
             )
             _publish_cron_status(tenant_id, execution.user_id, execution.id, "suspended")
             task_logger.info(
@@ -423,8 +425,7 @@ def resume_agent_cron_execution(
             )
             return None
 
-        # Load suspended state
-        messages = execution.suspended_messages or []
+        # Load the dispatched tool info from suspension state
         tool_call_id = execution.suspended_tool_call_id or ""
         tool_name = execution.suspended_tool_name or ""
 
@@ -454,12 +455,13 @@ def resume_agent_cron_execution(
             model=job.model,
         )
 
+        # TurnDriver handles message reconstruction from DB, so we
+        # no longer pass suspended_messages.
         run_result = orchestrator.resume(
-            messages=messages,
-            tool_result_output=tool_result_output,
-            tool_result_error=tool_result_error,
             tool_call_id=tool_call_id,
             tool_name=tool_name,
+            tool_result_output=tool_result_output,
+            tool_result_error=tool_result_error,
         )
 
         # Handle result (same logic as execute)
@@ -479,7 +481,7 @@ def resume_agent_cron_execution(
                 tool_name=run_result.suspended_tool_name or "",
                 tool_input=run_result.suspended_tool_input or {},
                 tool_call_id=run_result.suspended_tool_call_id or "",
-                messages=run_result.suspended_messages or [],
+                messages=[],  # TurnDriver manages messages in session DB
             )
             _publish_cron_status(tenant_id, execution.user_id, execution.id, "suspended")
         elif run_result.skipped:
@@ -551,5 +553,48 @@ def resume_agent_cron_execution(
                     f"Failed to mark cron session {session_id} as completed",
                     exc_info=True,
                 )
+
+    return None
+
+
+@shared_task(
+    name=OnyxCeleryTask.CLEANUP_AGENT_SESSION_EVENTS,
+    soft_time_limit=120,
+    bind=True,
+    ignore_result=True,
+)
+def cleanup_agent_session_events(self: Task, *, tenant_id: str) -> None:
+    """Expire stale events and delete old consumed/expired events.
+
+    Runs hourly via Celery Beat.  Uses a Redis lock to prevent
+    concurrent invocations from overlapping.
+    """
+    from onyx.db.agent_events import cleanup_old_events
+    from onyx.db.agent_events import expire_stale_events
+
+    task_logger.info("cleanup_agent_session_events - Starting")
+
+    redis_client = get_redis_client(tenant_id=tenant_id)
+    lock: RedisLock = redis_client.lock(
+        OnyxRedisLocks.CLEANUP_AGENT_SESSION_EVENTS_LOCK,
+        timeout=CELERY_GENERIC_BEAT_LOCK_TIMEOUT,
+    )
+
+    if not lock.acquire(blocking=False):
+        return None
+
+    try:
+        with get_session_with_current_tenant() as db_session:
+            expired_count = expire_stale_events(db_session)
+            deleted_count = cleanup_old_events(db_session, days=7)
+
+        task_logger.info(
+            "cleanup_agent_session_events - expired=%d deleted=%d",
+            expired_count,
+            deleted_count,
+        )
+    finally:
+        if lock.owned():
+            lock.release()
 
     return None

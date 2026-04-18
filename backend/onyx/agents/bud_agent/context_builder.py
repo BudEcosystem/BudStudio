@@ -148,9 +148,10 @@ class BudAgentContextBuilder:
                 pass
 
         # Inbox messages — pending messages from other users' agents
-        # Skip in inbox mode: the agent is already processing an inbox message
+        # Skip in inbox/external mode: agent is processing a specific
+        # trigger, not an interactive session.
         inbox_messages = ""
-        if self._mode != "inbox":
+        if self._mode not in ("inbox", "external", "sub_session"):
             try:
                 unread = get_unread_messages_for_context(
                     db_session=db_session,
@@ -225,9 +226,9 @@ class BudAgentContextBuilder:
                     pass
 
         # Workspace info (optional — only when a local path is configured)
-        # Skip in inbox mode: the agent doesn't have desktop/local access
+        # Skip in inbox/external mode: no desktop/local access
         workspace_info = ""
-        if self._workspace_path and self._mode != "inbox":
+        if self._workspace_path and self._mode not in ("inbox", "external", "sub_session"):
             os_info = f"{platform.system()} {platform.release()}"
             workspace_info = (
                 "## Workspace\n\n"
@@ -266,6 +267,8 @@ class BudAgentContextBuilder:
                 "interactive": "mode_interactive",
                 "cron": "mode_cron",
                 "inbox": "mode_inbox",
+                "external": "mode_external",
+                "sub_session": "mode_sub_session",
             }
             template_name = _MODE_TEMPLATE_MAP.get(self._mode)
             if template_name:
