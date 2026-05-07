@@ -136,11 +136,11 @@ export async function executeLocalToolCall(
 }
 
 /**
- * Sync a workspace file to the backend database after a local write/edit.
+ * Sync an agent context file to the backend database after a local write/edit.
  * This ensures the backend sees file updates
  * made through the agent's file tools.
  */
-export async function syncWorkspaceFileToBackend(
+export async function syncAgentContextFileToBackend(
   workspacePath: string,
   filePath: string,
   apiBaseUrl: string,
@@ -154,7 +154,7 @@ export async function syncWorkspaceFileToBackend(
 
     const content = fs.readFileSync(resolvedPath, "utf-8");
 
-    const resp = await fetch(`${apiBaseUrl}/api/agent/workspace-files`, {
+    const resp = await fetch(`${apiBaseUrl}/api/agent/context`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -164,7 +164,7 @@ export async function syncWorkspaceFileToBackend(
     });
 
     if (!resp.ok) {
-      console.warn(`Failed to sync workspace file ${filePath}: ${resp.status}`);
+      console.warn(`Failed to sync context file ${filePath}: ${resp.status}`);
     }
   } catch {
     // Non-critical: don't let sync failures affect tool execution

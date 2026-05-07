@@ -11,7 +11,7 @@ import {
   resolveWorkspacePath,
   createLocalToolRegistry,
   executeLocalToolCall,
-  syncWorkspaceFileToBackend,
+  syncAgentContextFileToBackend,
 } from "@/lib/agent/tools/local-execution";
 import { INTERNAL_URL } from "@/lib/constants";
 
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Execute the tool
   const result = await executeLocalToolCall(registry, toolName, toolInput || {});
 
-  // Sync workspace file to backend DB after write/edit operations
+  // Sync agent context file to backend DB after write/edit operations
   if (
     (toolName === "write_file" || toolName === "edit_file") &&
     result.output &&
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   ) {
     const cookieStr = await getCookieString();
     const base = INTERNAL_URL || "http://localhost:8080";
-    syncWorkspaceFileToBackend(
+    syncAgentContextFileToBackend(
       resolvedPath,
       toolInput.path as string,
       base,

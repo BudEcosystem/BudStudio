@@ -501,9 +501,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     ],
   },
   {
-    name: "workspace_read",
+    name: "context_read",
     description:
-      "Read a workspace file by path. Workspace files are persistent documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, and MEMORY.md.",
+      "Read a context file by path. Context files are persistent documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, and MEMORY.md.",
     category: "remote",
     requiresApproval: false,
     parameters: [
@@ -511,15 +511,15 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
         name: "path",
         type: "string",
         description:
-          "The workspace file path to read. Example: 'SOUL.md', 'USER.md'.",
+          "The context file path to read. Example: 'SOUL.md', 'USER.md'.",
         required: true,
       },
     ],
   },
   {
-    name: "workspace_write",
+    name: "context_write",
     description:
-      "Create or update a workspace file. Use this to persist documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, and MEMORY.md.",
+      "Create or update a context file. Use this to persist documents like SOUL.md, USER.md, IDENTITY.md, AGENTS.md, and MEMORY.md.",
     category: "remote",
     requiresApproval: false,
     parameters: [
@@ -527,7 +527,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
         name: "path",
         type: "string",
         description:
-          "The workspace file path to write. Example: 'SOUL.md', 'USER.md'.",
+          "The context file path to write. Example: 'SOUL.md', 'USER.md'.",
         required: true,
       },
       {
@@ -539,9 +539,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     ],
   },
   {
-    name: "workspace_list",
+    name: "context_list",
     description:
-      "List workspace files, optionally filtered by a path prefix. Use this to discover available workspace files.",
+      "List context files, optionally filtered by a path prefix. Use this to discover available context files.",
     category: "remote",
     requiresApproval: false,
     parameters: [
