@@ -5,10 +5,14 @@ Unlike BudAgentOrchestrator, this orchestrator:
 - Does NOT use Redis BLPOP for local tools — suspends to DB instead
 - Supports suspend/resume for local tool requests
 - Implements post-LLM skip checks (NO_ACTION_NEEDED, dedup)
+
+Now uses TurnDriver as the single LLM-turn state machine instead of
+the legacy ``run_sync_agent_loop()`` helper.
 """
 
+import asyncio
+import concurrent.futures
 import hashlib
-import json
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -22,14 +26,14 @@ from onyx.agents.bud_agent.agent_context import AgentExecutionMode
 from onyx.agents.bud_agent.agent_context import build_agent_run_context
 from onyx.agents.bud_agent.agent_context import build_message_history
 from onyx.agents.bud_agent.agent_context import compact_session
-from onyx.agents.bud_agent.agent_context import run_sync_agent_loop
+from onyx.agents.bud_agent.llm_turn import TurnResult
+from onyx.agents.bud_agent.tool_definitions import LLM_HIDDEN_LOCAL_TOOLS
+from onyx.agents.bud_agent.tool_definitions import LOCAL_TOOL_SCHEMAS
+from onyx.agents.bud_agent.turn_driver import TurnDriver
+from onyx.agents.bud_agent.turn_driver import TurnDriverConfig
+from onyx.agents.bud_agent.turn_driver import TurnDriverResult
 from onyx.db.agent import add_session_message
-from onyx.db.agent import update_session_stats
-from onyx.db.agent_cron import suspend_cron_execution
-from onyx.db.agent_cron import update_cron_execution_status
-from onyx.db.enums import AgentCronExecutionStatus
 from onyx.db.enums import AgentMessageRole
-from onyx.db.enums import AgentSessionStatus
 from onyx.db.models import AgentCronExecution
 from onyx.db.models import AgentCronJob
 from onyx.db.models import User
@@ -43,6 +47,71 @@ DEDUP_WINDOW_HOURS = 24
 COMPACTION_THRESHOLD_CHARS = 300_000
 
 
+# ---------------------------------------------------------------------------
+# Async bridge
+# ---------------------------------------------------------------------------
+
+
+def _run_async(coro: Any) -> Any:
+    """Run an async coroutine from synchronous code.
+
+    Handles the case where an event loop may already be running
+    (e.g. inside Celery workers that use gevent/eventlet).
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result()
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------------
+# Local tool stub builder
+# ---------------------------------------------------------------------------
+
+
+def _create_local_tool_stubs() -> list[FunctionTool]:
+    """Create local tool stubs that return a placeholder string.
+
+    These are the same stubs used by the interactive handler.  When the
+    LLM invokes a local tool, the stub returns
+    ``AWAITING_LOCAL_EXECUTION:<name>`` and TurnDriver classifies it as
+    a local tool call, triggering the awaiting_tool path.
+
+    Tools in ``LLM_HIDDEN_LOCAL_TOOLS`` are excluded — the LLM should
+    use ``cli_agent`` instead of calling them directly.
+    """
+    stubs: list[FunctionTool] = []
+    for schema in LOCAL_TOOL_SCHEMAS.values():
+        if schema["name"] in LLM_HIDDEN_LOCAL_TOOLS:
+            continue
+
+        async def _stub_handler(
+            _ctx: Any,
+            _args: str,
+            _name: str = schema["name"],
+        ) -> str:
+            return f"AWAITING_LOCAL_EXECUTION:{_name}"
+
+        stubs.append(
+            FunctionTool(
+                name=schema["name"],
+                description=schema.get("description", ""),
+                params_json_schema=schema.get("parameters", {}),
+                on_invoke_tool=_stub_handler,
+            )
+        )
+    return stubs
+
+
+# ---------------------------------------------------------------------------
+# CronRunResult
+# ---------------------------------------------------------------------------
+
+
 class CronRunResult:
     """Result of a cron agent run."""
 
@@ -51,6 +120,9 @@ class CronRunResult:
         self.tool_call_count: int = 0
         self.tokens_used: int = 0
         self.suspended: bool = False
+        # Kept for backward compatibility with Celery tasks — TurnDriver
+        # now persists pending tools to the DB directly, so these will
+        # remain empty in the new code path.
         self.suspended_tool_name: str | None = None
         self.suspended_tool_input: dict[str, Any] | None = None
         self.suspended_tool_call_id: str | None = None
@@ -61,11 +133,17 @@ class CronRunResult:
         self.new_session_id: UUID | None = None
 
 
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
+
+
 class CronAgentOrchestrator:
     """Orchestrates agent execution for cron jobs.
 
     Accumulates results in memory instead of streaming. When a local tool
-    is needed, suspends the execution state to DB and returns immediately.
+    is needed, TurnDriver persists pending tools to the DB and returns
+    ``awaiting_tool``, which this orchestrator maps to ``suspended=True``.
     """
 
     def __init__(
@@ -91,21 +169,21 @@ class CronAgentOrchestrator:
     def run(self, user_message: str) -> CronRunResult:
         """Run the agent loop synchronously, returning accumulated results.
 
-        If a local tool is requested, the execution is suspended to DB
+        If a local tool is requested, TurnDriver persists it to the DB
         and result.suspended is set to True.
         """
         result = CronRunResult()
 
         try:
-            # 1. Build suspension-aware local tool stubs
-            local_tools = self._create_local_tool_stubs(result)
+            # 1. Build local tool stubs (same pattern as interactive handler)
+            local_tools = _create_local_tool_stubs()
 
             # 2. Build full agent context
             ctx = build_agent_run_context(
                 session_id=self._session_id,
                 user=self._user,
                 db_session=self._db_session,
-                user_message=user_message,
+                search_query=user_message,
                 mode=AgentExecutionMode.CRON,
                 local_tools=local_tools,
                 tenant_id=self._tenant_id,
@@ -151,9 +229,9 @@ class CronAgentOrchestrator:
                             session_id=new_sid,
                             user=self._user,
                             db_session=self._db_session,
-                            user_message=user_message,
+                            search_query=user_message,
                             mode=AgentExecutionMode.CRON,
-                            local_tools=self._create_local_tool_stubs(result),
+                            local_tools=_create_local_tool_stubs(),
                             tenant_id=self._tenant_id,
                             workspace_path=self._workspace_path,
                             model=self._model,
@@ -171,36 +249,23 @@ class CronAgentOrchestrator:
                         exc_info=True,
                     )
 
-            # 4. Run the agent loop
-            loop_result = run_sync_agent_loop(
-                agent=ctx.agent,
-                messages=messages,
-                run_config=ctx.run_config,
-                should_stop=lambda: result.suspended,
+            # 4. Create TurnDriver and run the next turn
+            driver = self._create_turn_driver(ctx)
+            driver_result = _run_async(
+                driver.run_next_turn(
+                    session_id=self._session_id,
+                    db_session=self._db_session,
+                    messages=messages,
+                    step_number=0,
+                )
             )
-            result.response_text = loop_result.response_text
-            result.tool_call_count = loop_result.tool_call_count
-            if result.suspended:
-                result.suspended_messages = loop_result.final_messages
 
-            # 5. Post-LLM skip checks (only if not suspended/errored)
+            # 5. Map TurnDriverResult to CronRunResult
+            self._map_driver_result(driver_result, result)
+
+            # 6. Post-LLM skip checks (only if not suspended/errored)
             if not result.suspended and not result.error:
                 self._apply_post_llm_skip_checks(result)
-
-            # 6. Persist response
-            if result.response_text and not result.suspended:
-                add_session_message(
-                    db_session=self._db_session,
-                    session_id=self._session_id,
-                    role=AgentMessageRole.ASSISTANT,
-                    content=result.response_text,
-                )
-
-            update_session_stats(
-                self._db_session,
-                self._session_id,
-                tool_calls=result.tool_call_count,
-            )
 
         except Exception as e:
             logger.exception(
@@ -213,51 +278,30 @@ class CronAgentOrchestrator:
 
     def resume(
         self,
-        messages: list[dict[str, Any]],
-        tool_result_output: str | None,
-        tool_result_error: str | None,
         tool_call_id: str,
         tool_name: str,
+        tool_result_output: str | None,
+        tool_result_error: str | None,
+        # Kept for backward compatibility with existing callers (Celery task)
+        # that still pass ``messages`` from suspended state.  TurnDriver
+        # rebuilds messages from DB so this parameter is ignored.
+        messages: list[dict[str, Any]] | None = None,
     ) -> CronRunResult:
         """Resume a suspended execution after receiving a local tool result.
 
-        Appends the tool result to the message history and continues
-        the agent loop from where it left off.
+        TurnDriver.handle_tool_result() handles: persisting tool result,
+        loading pending tools, dispatching next or running a new LLM turn.
         """
         result = CronRunResult()
 
         try:
-            # Append tool result to messages
-            if tool_result_error:
-                messages.append({
-                    "role": "tool",
-                    "content": f"Error: {tool_result_error}",
-                    "tool_call_id": tool_call_id,
-                })
-            else:
-                messages.append({
-                    "role": "tool",
-                    "content": tool_result_output or "",
-                    "tool_call_id": tool_call_id,
-                })
-
-            # Persist tool result in session history
-            add_session_message(
-                db_session=self._db_session,
-                session_id=self._session_id,
-                role=AgentMessageRole.TOOL,
-                tool_name=tool_name,
-                tool_output={"output": tool_result_output} if tool_result_output else None,
-                tool_error=tool_result_error,
-            )
-
-            # Rebuild tools + context via shared helper
-            local_tools = self._create_local_tool_stubs(result)
+            # Rebuild context for TurnDriver
+            local_tools = _create_local_tool_stubs()
             ctx = build_agent_run_context(
                 session_id=self._session_id,
                 user=self._user,
                 db_session=self._db_session,
-                user_message="",  # resume does not introduce a new user message
+                search_query=self._cron_job.payload_message,
                 mode=AgentExecutionMode.CRON,
                 local_tools=local_tools,
                 tenant_id=self._tenant_id,
@@ -265,36 +309,24 @@ class CronAgentOrchestrator:
                 model=self._model,
             )
 
-            # Continue the agent loop
-            loop_result = run_sync_agent_loop(
-                agent=ctx.agent,
-                messages=messages,
-                run_config=ctx.run_config,
-                should_stop=lambda: result.suspended,
+            # Create TurnDriver and handle the tool result
+            driver = self._create_turn_driver(ctx)
+            driver_result = _run_async(
+                driver.handle_tool_result(
+                    session_id=self._session_id,
+                    db_session=self._db_session,
+                    tool_call_id=tool_call_id,
+                    output=tool_result_output,
+                    error=tool_result_error,
+                )
             )
-            result.response_text = loop_result.response_text
-            result.tool_call_count = loop_result.tool_call_count
-            if result.suspended:
-                result.suspended_messages = loop_result.final_messages
+
+            # Map TurnDriverResult to CronRunResult
+            self._map_driver_result(driver_result, result)
 
             # Post-LLM skip checks
             if not result.suspended and not result.error:
                 self._apply_post_llm_skip_checks(result)
-
-            # Persist response
-            if result.response_text and not result.suspended:
-                add_session_message(
-                    db_session=self._db_session,
-                    session_id=self._session_id,
-                    role=AgentMessageRole.ASSISTANT,
-                    content=result.response_text,
-                )
-
-            update_session_stats(
-                self._db_session,
-                self._session_id,
-                tool_calls=result.tool_call_count,
-            )
 
         except Exception as e:
             logger.exception(
@@ -305,67 +337,66 @@ class CronAgentOrchestrator:
 
         return result
 
-    def _create_local_tool_stubs(
-        self,
-        result: CronRunResult,
-    ) -> list[FunctionTool]:
-        """Create local tool stubs that trigger suspension instead of executing.
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
-        When the LLM calls a local tool, the stub records the suspension
-        details in the result object. The agent loop will then break and
-        the execution will be persisted to DB in SUSPENDED state.
+    def _create_turn_driver(self, ctx: Any) -> TurnDriver:
+        """Build a TurnDriver configured for cron execution.
+
+        - No emitter (no streaming UI).
+        - No tool_requester (no Socket.IO dispatch).
+        - on_turn_complete reserved for future per-turn logic.
         """
-        from onyx.agents.bud_agent.tool_definitions import LOCAL_TOOL_SCHEMAS
+        async def _on_turn_complete(turn: TurnResult) -> None:
+            """Callback fired after each LLM turn completes."""
+            # Nothing needed here currently — skip checks run after
+            # the full driver result is returned.  This hook is
+            # reserved for future per-turn logic.
+            pass
 
-        tools: list[FunctionTool] = []
-        for tool_name, schema in LOCAL_TOOL_SCHEMAS.items():
-            tool = self._create_suspension_tool(tool_name, schema, result)
-            tools.append(tool)
-        return tools
-
-    def _create_suspension_tool(
-        self,
-        tool_name: str,
-        schema: dict[str, Any],
-        result: CronRunResult,
-    ) -> FunctionTool:
-        """Create a single FunctionTool that suspends execution on invocation."""
-        from agents import RunContextWrapper
-
-        async def handler(
-            _ctx: RunContextWrapper[Any], json_string: str
-        ) -> str:
-            tool_input: dict[str, Any] = (
-                json.loads(json_string) if json_string else {}
-            )
-
-            import uuid as _uuid
-            tool_call_id = str(_uuid.uuid4())
-
-            # Signal suspension
-            result.suspended = True
-            result.suspended_tool_name = tool_name
-            result.suspended_tool_input = tool_input
-            result.suspended_tool_call_id = tool_call_id
-
-            # Persist tool call in session history
-            add_session_message(
-                db_session=self._db_session,
-                session_id=self._session_id,
-                role=AgentMessageRole.ASSISTANT,
-                tool_name=tool_name,
-                tool_input=tool_input,
-            )
-
-            # Return a placeholder that won't be used (agent loop will break)
-            return f"[SUSPENDED: waiting for local execution of {tool_name}]"
-
-        return FunctionTool(
-            name=tool_name,
-            description=schema["description"],
-            params_json_schema=schema["parameters"],
-            on_invoke_tool=handler,
+        config = TurnDriverConfig(
+            mode=AgentExecutionMode.CRON,
+            emitter=None,
+            tool_requester=None,
+            on_turn_complete=_on_turn_complete,
         )
+        return TurnDriver(config=config, ctx=ctx)
+
+    def _map_driver_result(
+        self,
+        driver_result: TurnDriverResult,
+        result: CronRunResult,
+    ) -> None:
+        """Map a TurnDriverResult to CronRunResult fields.
+
+        TurnDriver already persists assistant messages and stats via
+        ``persist_turn_result``, so we only need to extract the
+        response text and tool counts for the CronRunResult.
+        """
+        status = driver_result.status
+
+        if status == "awaiting_tool":
+            result.suspended = True
+            # Populate suspended_* fields from the dispatched tool info
+            # so the Celery task can persist them for later resume.
+            dt = driver_result.dispatched_tool
+            if dt is not None:
+                result.suspended_tool_name = dt.get("name")
+                result.suspended_tool_input = dt.get("input")
+                result.suspended_tool_call_id = dt.get("call_id")
+        elif status == "max_tools_reached":
+            result.error = "Maximum tool calls reached"
+        elif status == "stopped":
+            # Early stop signal — treat as no-action to avoid
+            # spurious output injection.
+            result.skipped = True
+            result.skip_reason = "early-stop"
+
+        if driver_result.turn is not None:
+            turn = driver_result.turn
+            result.response_text = turn.full_response_text or ""
+            result.tool_call_count = turn.tool_call_count
 
     def _apply_post_llm_skip_checks(self, result: CronRunResult) -> None:
         """Apply post-LLM skip checks (NO_ACTION_NEEDED and dedup)."""

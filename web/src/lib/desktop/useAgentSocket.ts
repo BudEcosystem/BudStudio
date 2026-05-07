@@ -2,9 +2,17 @@
 
 import { useRef, useCallback, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
-import type { Packet, UserQuestionItem } from "@/app/chat/services/streamingModels";
+import type {
+  Packet,
+  UserQuestionItem,
+  SubSessionSpawnedObj,
+  SubSessionProgressObj,
+  SubSessionCompleteObj,
+  SubSessionFailedObj,
+} from "@/app/chat/services/streamingModels";
+import type { ToolCallInfo } from "@/components/desktop/AgentSessionContext";
 
-// ── Callback interface (mirrors AgentEventCallbacks from useAgentSSE) ──
+// ── Callback interface ──
 
 export interface AgentSocketCallbacks {
   /** Called with a synthesized Packet for the existing packet-based UI. */
@@ -41,8 +49,33 @@ export interface AgentSocketCallbacks {
   ) => void;
   onArtifact?: (openuiLang: string, title: string) => void;
   onUserQuestions?: (questions: UserQuestionItem[], toolCallId: string) => void;
+  /** Called with real DB message IDs after the backend persists messages.
+   *  Either userMessageId or assistantMessageId will be set (not both).
+   */
+  onMessageIds?: (ids: { userMessageId?: string; assistantMessageId?: string }) => void;
   /** Called after a Socket.IO reconnect when an execution was in flight. */
   onReconnected?: (sessionId: string) => void;
+
+  // Sub-session lifecycle callbacks
+  onSubSessionSpawned?: (data: SubSessionSpawnedObj) => void;
+  onSubSessionProgress?: (data: SubSessionProgressObj) => void;
+  onSubSessionComplete?: (data: SubSessionCompleteObj) => void;
+  onSubSessionFailed?: (data: SubSessionFailedObj) => void;
+
+  // Sub-session streaming callbacks
+  onSubSessionStream?: (data: SubSessionStreamEvent) => void;
+}
+
+/** Streaming delta event from a sub-session running in a Celery worker. */
+export interface SubSessionStreamEvent {
+  type: "text_delta" | "reasoning_delta" | "tool_start" | "tool_result" | "section_end";
+  sub_session_id: string;
+  parent_session_id?: string;
+  delta?: string;
+  tool_name?: string;
+  tool_call_id?: string;
+  result?: string;
+  step?: number;
 }
 
 export interface AgentSocketParams {
@@ -57,6 +90,10 @@ export interface UseAgentSocketReturn {
     params: AgentSocketParams,
     callbacks: AgentSocketCallbacks
   ) => Promise<void>;
+  /** Join a session room to receive streaming events without executing. */
+  joinSession: (sessionId: string, callbacks: AgentSocketCallbacks) => Promise<void>;
+  /** Join a session room without touching callbacks or executing state. */
+  rejoinRoom: (sessionId: string) => Promise<void>;
   abort: () => void;
   stop: (sessionId: string) => void;
   approve: (
@@ -158,6 +195,12 @@ const RELAY_EVENTS: string[] = [
   "tool:start",
   "tool:delta",
   "tool:request",
+  "agent:message_ids",
+  "agent:sub_session_spawned",
+  "agent:sub_session_progress",
+  "agent:sub_session_complete",
+  "agent:sub_session_failed",
+  "agent:sub_session_stream",
   "gateway:connected",
   "gateway:disconnected",
   "gateway:error",
@@ -165,7 +208,8 @@ const RELAY_EVENTS: string[] = [
 
 export function useAgentSocket(
   backendUrl: string,
-  _authToken: string
+  _authToken: string,
+  options?: { forceNew?: boolean }
 ): UseAgentSocketReturn {
   const socketRef = useRef<Socket | null>(null);
   const callbacksRef = useRef<AgentSocketCallbacks>({});
@@ -188,6 +232,9 @@ export function useAgentSocket(
     socketRef.current?.disconnect();
 
     const config = await getSocketConfig(backendUrl);
+    if (options?.forceNew) {
+      config.opts = { ...config.opts, forceNew: true };
+    }
 
     return new Promise<Socket>((resolve, reject) => {
       const socket = io(config.url, config.opts);
@@ -308,6 +355,31 @@ export function useAgentSocket(
     [ensureConnected]
   );
 
+  /**
+   * Join a session's Socket.IO room to receive streaming events
+   * without sending a message. Used by the thread panel to watch
+   * background Celery sub-session execution in real time.
+   */
+  const joinSession = useCallback(
+    async (sessionId: string, callbacks: AgentSocketCallbacks): Promise<void> => {
+      callbacksRef.current = callbacks;
+      accumulatedContentRef.current = "";
+      executingSessionRef.current = sessionId;
+
+      const socket = await ensureConnected();
+      socket.emit(
+        "agent:rejoin",
+        { session_id: sessionId },
+        (ack: { ok?: boolean; error?: string }) => {
+          if (ack?.error) {
+            console.warn("[useAgentSocket] joinSession error:", ack.error);
+          }
+        }
+      );
+    },
+    [ensureConnected]
+  );
+
   const abort = useCallback(() => {
     socketRef.current?.disconnect();
     socketRef.current = null;
@@ -348,7 +420,16 @@ export function useAgentSocket(
     []
   );
 
-  return { execute, abort, stop, approve, sendToolResult };
+  /** Join a session room without touching callbacks or executing state. */
+  const rejoinRoom = useCallback(
+    async (sessionId: string): Promise<void> => {
+      const socket = await ensureConnected();
+      socket.emit("agent:rejoin", { session_id: sessionId });
+    },
+    [ensureConnected]
+  );
+
+  return { execute, joinSession, rejoinRoom, abort, stop, approve, sendToolResult };
 }
 
 // ── Event dispatcher ──
@@ -453,11 +534,37 @@ function dispatchEvent(
       // Map tool_name to correct packet type for the renderer
       if (toolName === "web_search" && rawData && typeof rawData === "object") {
         const results = rawData as Record<string, unknown>;
+        // Extract documents from search_docs (packet drainer) or
+        // reconstructed tool output.  Fall back to null if absent.
+        const searchDocs = (results.search_docs as unknown[] | undefined) ?? null;
+        const queries = (results.queries as string[] | undefined)
+          ?? (results.results as unknown[] | undefined)?.map(
+            (r: unknown) => (r as Record<string, string>).title
+          )
+          ?? [];
         emitPacket({
           type: "internal_search_tool_delta",
-          queries: (results.results as unknown[])?.map((r: unknown) => (r as Record<string, string>).title) ?? [],
-          documents: null,
+          queries,
+          documents: searchDocs,
         });
+      } else if (toolName === "open_url" && rawData && typeof rawData === "object") {
+        const results = rawData as Record<string, unknown>;
+        const fetchDocs = (results.fetch_docs as unknown[] | undefined) ?? null;
+        if (fetchDocs) {
+          emitPacket({
+            type: "fetch_tool_start",
+            documents: fetchDocs,
+          });
+        } else {
+          emitPacket({
+            type: "custom_tool_delta",
+            tool_name: toolName,
+            response_type: responseType,
+            data: rawData,
+            openui_response: data.openui_response ?? null,
+            file_ids: data.file_ids ?? null,
+          });
+        }
       } else {
         emitPacket({
           type: "custom_tool_delta",
@@ -522,6 +629,13 @@ function dispatchEvent(
       );
       break;
 
+    case "agent:message_ids":
+      cbs.onMessageIds?.({
+        userMessageId: data.user_message_id as string | undefined,
+        assistantMessageId: data.assistant_message_id as string | undefined,
+      });
+      break;
+
     case "agent:stopped":
       emitPacket({ type: "stop" });
       cbs.onStopped?.();
@@ -539,6 +653,61 @@ function dispatchEvent(
       cbs.onDone?.();
       break;
 
+    case "agent:sub_session_spawned":
+      cbs.onSubSessionSpawned?.({
+        type: "sub_session_spawned",
+        parent_session_id: data.parent_session_id as string,
+        sub_session_id: data.sub_session_id as string,
+        task: data.task as string,
+        task_name: data.task_name as string | undefined,
+        mode: data.mode as string,
+      });
+      break;
+
+    case "agent:sub_session_progress":
+      cbs.onSubSessionProgress?.({
+        type: "sub_session_progress",
+        sub_session_id: data.sub_session_id as string,
+        turns_completed: (data.turns_completed as number) ?? 0,
+        tokens_used: data.tokens_used as number | undefined,
+      });
+      break;
+
+    case "agent:sub_session_complete":
+      cbs.onSubSessionComplete?.({
+        type: "sub_session_complete",
+        sub_session_id: data.sub_session_id as string,
+        task: data.task as string,
+        summary: data.summary as string,
+        status: data.status as string,
+        message: (data.message as string) || undefined,
+      });
+      break;
+
+    case "agent:sub_session_failed":
+      cbs.onSubSessionFailed?.({
+        type: "sub_session_failed",
+        sub_session_id: data.sub_session_id as string,
+        task: data.task as string,
+        error: data.error as string | undefined,
+        partial_result: data.partial_result as string | undefined,
+        message: (data.message as string) || undefined,
+      });
+      break;
+
+    case "agent:sub_session_stream":
+      cbs.onSubSessionStream?.({
+        type: data.type as SubSessionStreamEvent["type"],
+        sub_session_id: data.sub_session_id as string,
+        parent_session_id: data.parent_session_id as string | undefined,
+        delta: data.delta as string | undefined,
+        tool_name: data.tool_name as string | undefined,
+        tool_call_id: data.tool_call_id as string | undefined,
+        result: data.result as string | undefined,
+        step: data.step as number | undefined,
+      });
+      break;
+
     case "gateway:connected":
     case "gateway:disconnected":
     case "gateway:error":
@@ -549,9 +718,62 @@ function dispatchEvent(
   }
 }
 
-// Re-exported helpers for drop-in replacement
-export {
-  createToolCallInfo,
-  updateToolCallWithResult,
-  updateToolCallApprovalRequired,
-} from "./useAgentSSE";
+// ── ToolCallInfo helpers ──
+
+/**
+ * Helper to create a ToolCallInfo object from tool_start event.
+ */
+export function createToolCallInfo(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  toolCallId: string
+): ToolCallInfo {
+  return {
+    id: toolCallId,
+    name: toolName,
+    input: toolInput,
+    status: "running",
+  };
+}
+
+/**
+ * Helper to update a ToolCallInfo with tool_result.
+ */
+export function updateToolCallWithResult(
+  toolCalls: ToolCallInfo[] | undefined,
+  toolCallId: string,
+  toolOutput: string,
+  toolError?: string
+): ToolCallInfo[] {
+  if (!toolCalls) return [];
+
+  return toolCalls.map((tc) =>
+    tc.id === toolCallId
+      ? {
+          ...tc,
+          output: toolOutput,
+          error: toolError,
+          status: toolError ? ("error" as const) : ("complete" as const),
+        }
+      : tc
+  );
+}
+
+/**
+ * Helper to update a ToolCallInfo to approval_required status.
+ */
+export function updateToolCallApprovalRequired(
+  toolCalls: ToolCallInfo[] | undefined,
+  toolCallId: string
+): ToolCallInfo[] {
+  if (!toolCalls) return [];
+
+  return toolCalls.map((tc) =>
+    tc.id === toolCallId
+      ? {
+          ...tc,
+          status: "approval_required" as const,
+        }
+      : tc
+  );
+}

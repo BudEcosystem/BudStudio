@@ -37,6 +37,16 @@ module.exports = {
           "0%": { opacity: "1", transform: "scale(1)" },
           "100%": { opacity: "0", transform: "scale(0.95)" },
         },
+        "flash-success": {
+          "0%": { boxShadow: "inset 0 0 0 100px rgba(34, 197, 94, 0)" },
+          "40%": { boxShadow: "inset 0 0 0 100px rgba(34, 197, 94, 0.15)" },
+          "100%": { boxShadow: "inset 0 0 0 100px rgba(34, 197, 94, 0)" },
+        },
+        "flash-error": {
+          "0%": { boxShadow: "inset 0 0 0 100px rgba(239, 68, 68, 0)" },
+          "40%": { boxShadow: "inset 0 0 0 100px rgba(239, 68, 68, 0.15)" },
+          "100%": { boxShadow: "inset 0 0 0 100px rgba(239, 68, 68, 0)" },
+        },
       },
       animation: {
         "fade-in-up": "fadeInUp 0.5s ease-out",
@@ -44,6 +54,8 @@ module.exports = {
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "fade-in-scale": "fade-in-scale 0.2s ease-out forwards",
         "fade-out-scale": "fade-out-scale 0.2s ease-in forwards",
+        "flash-success": "flash-success 0.8s ease-out forwards",
+        "flash-error": "flash-error 0.8s ease-out forwards",
       },
       gradientColorStops: {
         "neutral-10": "var(--neutral-10) 5%",

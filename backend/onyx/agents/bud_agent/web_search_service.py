@@ -311,7 +311,12 @@ def create_web_search_tools(
                     )
 
             _close_step(step=tool_step)
-            return json.dumps({"results": results})
+            result_json = json.dumps({"results": results})
+            return (
+                f"{result_json}\n\n"
+                "Cite information from these results inline using "
+                "[1], [2], [3], etc. matching the tag numbers above."
+            )
 
         except Exception as e:
             logger.exception("web_search tool failed")

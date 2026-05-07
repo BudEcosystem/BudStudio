@@ -416,6 +416,9 @@ class OnyxRedisLocks:
     # Agent cron
     CHECK_AGENT_CRON_BEAT_LOCK = "da_lock:check_agent_cron_beat"
 
+    # Agent session event cleanup
+    CLEANUP_AGENT_SESSION_EVENTS_LOCK = "da_lock:cleanup_agent_session_events"
+
     # Skill evolution pipeline
     CHECK_CONVERSATION_CLOSE_BEAT_LOCK = "da_lock:check_conversation_close_beat"
     CHECK_SKILL_EVOLUTION_BEAT_LOCK = "da_lock:check_skill_evolution_beat"
@@ -431,6 +434,12 @@ class OnyxRedisLocks:
     USER_FILE_DELETE_BEAT_LOCK = "da_lock:check_user_file_delete_beat"
     USER_FILE_DELETE_LOCK_PREFIX = "da_lock:user_file_delete"
     USER_FILE_DOCID_MIGRATION_LOCK = "da_lock:user_file_docid_migration"
+
+    # Sub-session zombie reaper
+    REAP_ZOMBIE_SUB_SESSIONS_LOCK = "da_lock:reap_zombie_sub_sessions"
+
+    # Sub-session persistent expiry
+    EXPIRE_PERSISTENT_SUB_SESSIONS_LOCK = "da_lock:expire_persistent_sub_sessions"
 
 
 class OnyxRedisSignals:
@@ -565,11 +574,19 @@ class OnyxCeleryTask:
     # Agent inbox messaging
     PROCESS_INBOX_MESSAGE = "process_inbox_message"
 
+    # Agent session event cleanup
+    CLEANUP_AGENT_SESSION_EVENTS = "cleanup_agent_session_events"
+
     # Skill evolution pipeline
     CHECK_CONVERSATION_CLOSE = "check_conversation_close"
     RUN_POST_CONVERSATION_PIPELINE = "run_post_conversation_pipeline_task"
     CHECK_SKILL_EVOLUTION = "check_skill_evolution"
     RUN_SKILL_FEEDBACK_DESCENT = "run_skill_feedback_descent"
+
+    # Sub-session execution
+    EXECUTE_SUB_SESSION = "execute_sub_session"
+    REAP_ZOMBIE_SUB_SESSIONS = "reap_zombie_sub_sessions"
+    EXPIRE_PERSISTENT_SUB_SESSIONS = "expire_persistent_sub_sessions"
 
 
 # this needs to correspond to the matching entry in supervisord

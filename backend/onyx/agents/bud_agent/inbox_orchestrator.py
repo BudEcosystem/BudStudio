@@ -5,8 +5,9 @@ inter-agent messages. Includes the ``escalate_to_user`` tool for escalation
 and tracks whether the agent sent a reply or escalated.
 """
 
+import asyncio
+import concurrent.futures
 import json
-import queue
 from typing import Any
 from uuid import UUID
 
@@ -15,21 +16,40 @@ from sqlalchemy.orm import Session
 
 from onyx.agents.bud_agent.agent_context import AgentExecutionMode
 from onyx.agents.bud_agent.agent_context import build_agent_run_context
-from onyx.agents.bud_agent.agent_context import run_sync_agent_loop
 from onyx.agents.bud_agent.inbox_service import create_complete_goal_tool
 from onyx.agents.bud_agent.inbox_service import create_escalate_to_user_tool
 from onyx.agents.bud_agent.inbox_service import create_reply_tool
+from onyx.agents.bud_agent.turn_driver import TurnDriver
+from onyx.agents.bud_agent.turn_driver import TurnDriverConfig
+from onyx.agents.bud_agent.turn_driver import TurnDriverResult
 from onyx.db.agent import add_session_message
-from onyx.db.agent import update_session_stats
 from onyx.db.enums import AgentMessageRole
 from onyx.db.models import InboxMessage
 from onyx.db.models import User
-from onyx.server.query_and_chat.streaming_models import Packet
 from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
 
 MAX_TOOL_CALLS = 30
+
+
+def _run_async(coro: Any) -> Any:
+    """Bridge async coroutine into a synchronous call.
+
+    Handles three scenarios:
+    1. No event loop exists — use ``asyncio.run()``.
+    2. An event loop exists but is not running — use ``loop.run_until_complete()``.
+    3. An event loop is already running (e.g. inside a Celery worker with
+       an active loop) — offload to a thread pool to avoid nesting.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result()
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 
 class InboxRunResult:
@@ -67,9 +87,6 @@ class InboxAgentOrchestrator:
         self._message = message
         self._tenant_id = tenant_id
         self._model = model
-        self._packet_queue: queue.Queue[Packet | Exception | object] = (
-            queue.Queue()
-        )
 
     def run(self, user_message: str) -> InboxRunResult:
         """Run the agent loop synchronously, returning accumulated results."""
@@ -145,7 +162,7 @@ class InboxAgentOrchestrator:
                 session_id=self._session_id,
                 user=self._user,
                 db_session=self._db_session,
-                user_message=user_message,
+                search_query=user_message,
                 mode=AgentExecutionMode.INBOX,
                 local_tools=[],
                 inbox_tools=reply_tools,
@@ -168,39 +185,66 @@ class InboxAgentOrchestrator:
                 content=user_message,
             )
 
-            # 4. Run the agent loop
-            loop_result = run_sync_agent_loop(
-                agent=ctx.agent,
-                messages=messages,
-                run_config=ctx.run_config,
-                max_tool_calls=30,
+            # 4. Create TurnDriver and run the agent loop
+            config = TurnDriverConfig(
+                mode=AgentExecutionMode.INBOX,
+                max_tool_calls=MAX_TOOL_CALLS,
                 should_stop=lambda: result.replied or result.awaiting_user,
+                emitter=None,
+                tool_requester=None,
             )
-            result.response_text = loop_result.response_text
-            result.tool_call_count = loop_result.tool_call_count
+            driver = TurnDriver(config=config, ctx=ctx)
 
-            # 5. Check if no action was taken
-            if (
-                not result.replied
-                and not result.awaiting_user
-                and result.error is None
-            ):
-                result.no_action = True
-
-            # 6. Persist response
-            if result.response_text:
-                add_session_message(
-                    db_session=self._db_session,
+            driver_result: TurnDriverResult = _run_async(
+                driver.run_next_turn(
                     session_id=self._session_id,
-                    role=AgentMessageRole.ASSISTANT,
-                    content=result.response_text,
+                    db_session=self._db_session,
+                    messages=messages,
+                    step_number=0,
                 )
-
-            update_session_stats(
-                self._db_session,
-                self._session_id,
-                tool_calls=result.tool_call_count,
             )
+
+            # 5. Map TurnDriverResult to InboxRunResult
+            if driver_result.turn is not None:
+                result.response_text = (
+                    driver_result.turn.full_response_text or ""
+                )
+                result.tool_call_count = driver_result.turn.tool_call_count
+
+            # For all terminal statuses, check whether the tracking
+            # wrappers actually fired.  TurnDriver persists the turn
+            # via persist_turn_result already, but we still need to
+            # set no_action if nothing happened.
+            if driver_result.status in (
+                "complete",
+                "stopped",
+                "max_tools_reached",
+            ):
+                if (
+                    not result.replied
+                    and not result.awaiting_user
+                    and result.error is None
+                ):
+                    result.no_action = True
+            elif driver_result.status == "awaiting_tool":
+                # Should not happen for inbox (no local tools), but
+                # handle gracefully.
+                logger.warning(
+                    "Unexpected awaiting_tool status in inbox orchestrator "
+                    "for session %s",
+                    self._session_id,
+                )
+                if (
+                    not result.replied
+                    and not result.awaiting_user
+                    and result.error is None
+                ):
+                    result.no_action = True
+
+            # 6. Persist standalone assistant message
+            # NOTE: TurnDriver already persists via persist_turn_result
+            # (which calls add_session_message + update_session_stats),
+            # so we do NOT duplicate persistence here.
 
         except Exception as e:
             logger.exception(

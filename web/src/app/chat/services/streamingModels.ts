@@ -45,6 +45,12 @@ export enum PacketType {
 
   // Artifact packets
   ARTIFACT_GENERATION = "artifact_generation",
+
+  // Sub-session packets
+  SUB_SESSION_SPAWNED = "sub_session_spawned",
+  SUB_SESSION_PROGRESS = "sub_session_progress",
+  SUB_SESSION_COMPLETE = "sub_session_complete",
+  SUB_SESSION_FAILED = "sub_session_failed",
 }
 
 // Basic Message Packets
@@ -203,6 +209,47 @@ export interface ArtifactGeneration extends BaseObj {
   title: string;
 }
 
+// Sub-session packets
+export interface SubSessionSpawnedObj extends BaseObj {
+  type: "sub_session_spawned";
+  parent_session_id: string;
+  sub_session_id: string;
+  task: string;
+  task_name?: string;
+  mode: string;
+}
+
+export interface SubSessionProgressObj extends BaseObj {
+  type: "sub_session_progress";
+  sub_session_id: string;
+  turns_completed: number;
+  tokens_used?: number;
+}
+
+export interface SubSessionCompleteObj extends BaseObj {
+  type: "sub_session_complete";
+  sub_session_id: string;
+  task: string;
+  summary: string;
+  status: string;
+  message?: string;
+}
+
+export interface SubSessionFailedObj extends BaseObj {
+  type: "sub_session_failed";
+  sub_session_id: string;
+  task: string;
+  error?: string;
+  partial_result?: string;
+  message?: string;
+}
+
+export type SubSessionObj =
+  | SubSessionSpawnedObj
+  | SubSessionProgressObj
+  | SubSessionCompleteObj
+  | SubSessionFailedObj;
+
 export type AgentObj =
   | AgentApprovalRequired
   | AgentSessionCompacted
@@ -244,6 +291,7 @@ export type ObjTypes =
   | SectionEndObj
   | CitationObj
   | AgentObj
+  | SubSessionObj
   | ArtifactGeneration
   | PacketException;
 
@@ -297,4 +345,9 @@ export interface ReasoningPacket {
 export interface SectionEndPacket {
   ind: number;
   obj: SectionEndObj;
+}
+
+export interface SubSessionPacket {
+  ind: number;
+  obj: SubSessionObj;
 }

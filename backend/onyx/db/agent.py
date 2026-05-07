@@ -1,6 +1,7 @@
 """Database operations for agent sessions and messages."""
 
 from datetime import datetime
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -49,7 +50,21 @@ def create_session(
     """Create a new agent session for the user.
 
     Deactivates any existing ACTIVE sessions first so only one is active at a time.
+    Active sub-sessions of the old session are re-pointed to the new session
+    so they are not orphaned (design decision 0.3).
     """
+    # Capture the current active session ID *before* deactivation so we can
+    # re-point its sub-sessions to the new session afterwards.
+    old_active_stmt = (
+        select(AgentSession.id)
+        .where(
+            AgentSession.user_id == user_id,
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+        )
+        .limit(1)
+    )
+    old_active_id: UUID | None = db_session.execute(old_active_stmt).scalar_one_or_none()
+
     _deactivate_user_sessions(db_session, user_id)
 
     session = AgentSession(
@@ -57,10 +72,16 @@ def create_session(
         title=title,
         workspace_path=workspace_path,
         status=AgentSessionStatus.ACTIVE,
+        session_type="INTERACTIVE",
     )
     db_session.add(session)
     db_session.commit()
     db_session.refresh(session)
+
+    # Re-point active sub-sessions from the old session to the newly created one.
+    if old_active_id is not None:
+        repoint_sub_sessions_parent(db_session, old_active_id, session.id)
+
     return session
 
 
@@ -81,6 +102,7 @@ def create_cron_session(
         title=title,
         workspace_path=workspace_path,
         status=AgentSessionStatus.ACTIVE,
+        session_type="CRON",
     )
     db_session.add(session)
     db_session.commit()
@@ -357,12 +379,17 @@ def get_or_create_active_session(
     user_id: UUID | None,
     workspace_path: str | None = None,
 ) -> AgentSession:
-    """Return the most recent ACTIVE session for the user, creating one if none exists."""
+    """Return the most recent ACTIVE session for the user, creating one if none exists.
+
+    Sub-sessions (SUB_ONE_SHOT, SUB_PERSISTENT) are excluded — they are
+    background tasks, not the user's primary interactive session.
+    """
     stmt = (
         select(AgentSession)
         .where(
             AgentSession.user_id == user_id,
             AgentSession.status == AgentSessionStatus.ACTIVE,
+            AgentSession.session_type.notin_(["SUB_ONE_SHOT", "SUB_PERSISTENT"]),
         )
         .order_by(desc(AgentSession.updated_at))
         .limit(1)
@@ -383,15 +410,16 @@ def get_active_session_for_user(
     user_id: UUID | None,
     exclude_session_id: UUID | None = None,
 ) -> AgentSession | None:
-    """Return the most recent ACTIVE session for the user, or None if none exists.
+    """Return the most recent ACTIVE interactive session for the user, or None.
 
     Unlike get_or_create_active_session(), this never creates a new session.
-    Use *exclude_session_id* to skip a known session (e.g. an inbox
-    processing session that is still technically ACTIVE).
+    Sub-sessions are excluded. Use *exclude_session_id* to skip a known
+    session (e.g. an inbox processing session that is still ACTIVE).
     """
     conditions = [
         AgentSession.user_id == user_id,
         AgentSession.status == AgentSessionStatus.ACTIVE,
+        AgentSession.session_type.notin_(["SUB_ONE_SHOT", "SUB_PERSISTENT"]),
     ]
     if exclude_session_id is not None:
         conditions.append(AgentSession.id != exclude_session_id)
@@ -622,6 +650,181 @@ def mark_session_compacted(
         session.status = AgentSessionStatus.COMPACTED
         session.completed_at = datetime.utcnow()
         db_session.commit()
+
+
+# --- Sub-session operations ---
+
+
+def create_sub_session(
+    db_session: Session,
+    user_id: UUID | None,
+    parent_session_id: UUID,
+    task_description: str,
+    task_context: str | None = None,
+    session_type: str = "SUB_ONE_SHOT",
+    max_context_tokens: int | None = None,
+    max_turns: int | None = None,
+    title: str | None = None,
+    anchor_message_id: UUID | None = None,
+) -> AgentSession:
+    """Create a sub-session linked to a parent session.
+
+    Unlike ``create_session()``, this does NOT deactivate existing
+    ACTIVE sessions.  Sub-sessions run concurrently with (or are
+    orchestrated by) their parent.
+    """
+    session = AgentSession(
+        user_id=user_id,
+        parent_session_id=parent_session_id,
+        title=title or (task_description[:255] if task_description else None),
+        description=task_context,
+        task_description=task_description,
+        session_type=session_type,
+        max_context_tokens=max_context_tokens,
+        max_turns=max_turns,
+        anchor_message_id=anchor_message_id,
+        status=AgentSessionStatus.ACTIVE,
+    )
+    db_session.add(session)
+    db_session.commit()
+    db_session.refresh(session)
+    return session
+
+
+def get_thread_for_message(
+    db_session: Session,
+    anchor_message_id: UUID,
+) -> AgentSession | None:
+    """Find an existing thread session anchored to a specific message."""
+    stmt = (
+        select(AgentSession)
+        .where(AgentSession.anchor_message_id == anchor_message_id)
+        .order_by(desc(AgentSession.created_at))
+        .limit(1)
+    )
+    return db_session.execute(stmt).scalar_one_or_none()
+
+
+def get_threads_for_session(
+    db_session: Session,
+    parent_session_id: UUID,
+) -> dict[str, str]:
+    """Return a map of anchor_message_id -> thread session_id for all threads in a parent session."""
+    stmt = (
+        select(AgentSession.anchor_message_id, AgentSession.id)
+        .where(
+            AgentSession.parent_session_id == parent_session_id,
+            AgentSession.anchor_message_id.isnot(None),
+        )
+    )
+    rows = db_session.execute(stmt).all()
+    return {str(row[0]): str(row[1]) for row in rows}
+
+
+def count_active_sub_sessions(
+    db_session: Session,
+    user_id: UUID,
+) -> int:
+    """Count ACTIVE sub-sessions for a user.
+
+    Locks matching rows with ``FOR UPDATE`` to prevent race conditions
+    when enforcing concurrency limits (design decision 0.1).
+
+    PostgreSQL does not allow ``FOR UPDATE`` with aggregate functions,
+    so we select the rows first (locking them), then count in Python.
+    """
+    stmt = (
+        select(AgentSession.id)
+        .where(
+            AgentSession.user_id == user_id,
+            AgentSession.session_type.in_(["SUB_ONE_SHOT", "SUB_PERSISTENT"]),
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+        )
+        .with_for_update()
+    )
+    rows = db_session.execute(stmt).all()
+    return len(rows)
+
+
+def get_sub_sessions_for_parent(
+    db_session: Session,
+    parent_session_id: UUID,
+) -> list[AgentSession]:
+    """Return all sub-sessions for a given parent, newest first."""
+    stmt = (
+        select(AgentSession)
+        .where(AgentSession.parent_session_id == parent_session_id)
+        .order_by(desc(AgentSession.created_at))
+    )
+    return list(db_session.execute(stmt).scalars().all())
+
+
+def get_zombie_sub_sessions(
+    db_session: Session,
+    stale_minutes: int = 15,
+) -> list[AgentSession]:
+    """Return ACTIVE sub-sessions whose ``updated_at`` is older than *stale_minutes*.
+
+    Used by the zombie reaper to detect sub-sessions that have stalled
+    without a corresponding Redis heartbeat.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=stale_minutes)
+    stmt = (
+        select(AgentSession)
+        .where(
+            AgentSession.session_type.in_(["SUB_ONE_SHOT", "SUB_PERSISTENT"]),
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+            AgentSession.updated_at < cutoff,
+        )
+    )
+    return list(db_session.execute(stmt).scalars().all())
+
+
+def get_expired_persistent_sub_sessions(
+    db_session: Session,
+    expiry_seconds: int = 3600,
+) -> list[AgentSession]:
+    """Return SUB_PERSISTENT sessions that completed more than *expiry_seconds* ago.
+
+    These are sessions whose ``completed_at + expiry_seconds < now()``.
+    Used by the periodic expiry task to notify parents about expired
+    persistent sub-sessions.
+    """
+    cutoff = datetime.utcnow() - timedelta(seconds=expiry_seconds)
+    stmt = (
+        select(AgentSession)
+        .where(
+            AgentSession.session_type == "SUB_PERSISTENT",
+            AgentSession.status == AgentSessionStatus.COMPLETED,
+            AgentSession.completed_at.isnot(None),
+            AgentSession.completed_at < cutoff,
+        )
+    )
+    return list(db_session.execute(stmt).scalars().all())
+
+
+def repoint_sub_sessions_parent(
+    db_session: Session,
+    old_parent_id: UUID,
+    new_parent_id: UUID,
+) -> int:
+    """Move ACTIVE sub-sessions from *old_parent_id* to *new_parent_id*.
+
+    Used during compaction to keep sub-sessions attached to the
+    current active session in the chain.  Returns the number of
+    rows updated.
+    """
+    stmt = (
+        update(AgentSession)
+        .where(
+            AgentSession.parent_session_id == old_parent_id,
+            AgentSession.status == AgentSessionStatus.ACTIVE,
+        )
+        .values(parent_session_id=new_parent_id)
+    )
+    result = db_session.execute(stmt)
+    db_session.commit()
+    return result.rowcount  # type: ignore[return-value]
 
 
 def update_session_title(

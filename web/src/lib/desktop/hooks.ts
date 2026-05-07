@@ -34,8 +34,10 @@ export function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
+    // Allow forcing desktop mode via env var (for web deployments)
+    const forceDesktop = process.env.NEXT_PUBLIC_FORCE_DESKTOP_MODE === "true";
     const isTauri = detectTauri();
-    setIsDesktop(isTauri);
+    setIsDesktop(isTauri || forceDesktop);
 
     // If we detected Tauri, persist it for future checks
     if (isTauri) {
