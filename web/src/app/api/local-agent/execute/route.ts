@@ -22,7 +22,7 @@ import type { AgentEvent } from "@/lib/agent/types";
 import {
   resolveWorkspacePath as resolveWorkspace,
   createLocalToolRegistry,
-  syncWorkspaceFileToBackend,
+  syncAgentContextFileToBackend,
 } from "@/lib/agent/tools/local-execution";
 import { INTERNAL_URL } from "@/lib/constants";
 
@@ -283,11 +283,11 @@ async function executeLocalTool(
     const output = await tool.execute(toolInput);
     debugLog(`Tool ${toolName} completed successfully`);
 
-    // Sync workspace file to backend DB after write/edit operations
+    // Sync agent context file to backend DB after write/edit operations
     if (toolName === "write_file" || toolName === "edit_file") {
       const filePath = toolInput.path as string;
       if (filePath) {
-        syncWorkspaceFileToBackend(
+        syncAgentContextFileToBackend(
           registry.getWorkspacePath(),
           filePath,
           apiBaseUrl,

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AgentConfigSkeleton } from "./AgentConfigSkeleton";
 
-interface WorkspaceFile {
+interface AgentContextFile {
   path: string;
   content: string;
   created_at: string;
@@ -11,7 +11,7 @@ interface WorkspaceFile {
 }
 
 export function AgentConfigView() {
-  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const [files, setFiles] = useState<AgentContextFile[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
@@ -24,9 +24,9 @@ export function AgentConfigView() {
   const fetchFiles = useCallback(async () => {
     try {
       setLoading(true);
-      const resp = await fetch("/api/agent/workspace-files");
-      if (!resp.ok) throw new Error("Failed to fetch workspace files");
-      const data = (await resp.json()) as { files: WorkspaceFile[] };
+      const resp = await fetch("/api/agent/context");
+      if (!resp.ok) throw new Error("Failed to fetch context files");
+      const data = (await resp.json()) as { files: AgentContextFile[] };
       setFiles(data.files);
       const firstFile = data.files[0];
       if (firstFile && !selectedPath) {
@@ -57,10 +57,10 @@ export function AgentConfigView() {
           .map(encodeURIComponent)
           .join("/");
         const resp = await fetch(
-          `/api/agent/workspace-files/${encodedPath}`
+          `/api/agent/context/${encodedPath}`
         );
         if (!resp.ok) throw new Error("Failed to read file");
-        const data = (await resp.json()) as WorkspaceFile;
+        const data = (await resp.json()) as AgentContextFile;
         setSelectedPath(path);
         setEditorContent(data.content);
         setSavedContent(data.content);
@@ -78,7 +78,7 @@ export function AgentConfigView() {
     if (!selectedPath) return;
     try {
       setSaving(true);
-      const resp = await fetch("/api/agent/workspace-files", {
+      const resp = await fetch("/api/agent/context", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: selectedPath, content: editorContent }),
@@ -86,9 +86,9 @@ export function AgentConfigView() {
       if (!resp.ok) throw new Error("Failed to save file");
       setSavedContent(editorContent);
       // Refresh file list to update timestamps
-      const listResp = await fetch("/api/agent/workspace-files");
+      const listResp = await fetch("/api/agent/context");
       if (listResp.ok) {
-        const data = (await listResp.json()) as { files: WorkspaceFile[] };
+        const data = (await listResp.json()) as { files: AgentContextFile[] };
         setFiles(data.files);
       }
     } catch (err) {
@@ -118,13 +118,13 @@ export function AgentConfigView() {
             Configuration
           </h1>
           <p className="text-sm text-text-02">
-            View and edit workspace files that persist across agent sessions.
+            View and edit context files that persist across agent sessions.
           </p>
         </div>
 
         {files.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-text-02">
-            No workspace files found. Start a conversation with the Bud Agent
+            No context files found. Start a conversation with the Bud Agent
             to create them.
           </div>
         ) : (
